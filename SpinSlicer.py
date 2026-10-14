@@ -19,8 +19,19 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-if os.environ.get("QT_QPA_PLATFORM") == "offscreen" and sys.platform.startswith("linux"):
-    os.environ.pop("DISPLAY", None)
+if sys.platform.startswith("linux"):
+    if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        os.environ.pop("DISPLAY", None)
+        os.environ["PYVISTA_OFF_SCREEN"] = "true"
+    else:
+        try:
+            import ctypes
+            _x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+            _x11_handler_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+            _x11_err_handler = _x11_handler_type(lambda _disp, _evt: 0)
+            _x11.XSetErrorHandler(_x11_err_handler)
+        except Exception:
+            pass
 
 from qt_runtime import configure_qt_dll_search_path
 

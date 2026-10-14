@@ -109,5 +109,35 @@ if [[ -z "$RPM_FILE" ]]; then
 fi
 cp "$RPM_FILE" "$OUTPUT_DIR/SpinSlicer-${RPM_VERSION}-1.x86_64.rpm"
 
+# Arch Linux package (.pkg.tar.zst)
+ARCH_ROOT="$WORK_DIR/arch"
+mkdir -p "$ARCH_ROOT/usr/bin" \
+    "$ARCH_ROOT/usr/share/applications" \
+    "$ARCH_ROOT/usr/share/icons/hicolor/scalable/apps"
+install -m 0755 "$BINARY" "$ARCH_ROOT/usr/bin/spinslicer"
+install -m 0644 "$DESKTOP_FILE" "$ARCH_ROOT/usr/share/applications/spinslicer.desktop"
+install -m 0644 assets/spinslicer.svg "$ARCH_ROOT/usr/share/icons/hicolor/scalable/apps/spinslicer.svg"
+INSTALLED_SIZE=$(du -sb "$ARCH_ROOT/usr" | awk '{print $1}')
+cat > "$ARCH_ROOT/.PKGINFO" <<EOF
+pkgname = spinslicer
+pkgbase = spinslicer
+pkgver = ${RPM_VERSION}-1
+pkgdesc = Fast high-precision volumetric additive manufacturing (VAM/CAL) slicer
+url = https://github.com/redbluecarrot/SpinSlicer
+builddate = $(date +%s)
+packager = SpinSlicer maintainers <maintainers@example.invalid>
+size = ${INSTALLED_SIZE}
+arch = x86_64
+license = MIT
+depend = mesa
+depend = libxkbcommon
+depend = libxkbcommon-x11
+depend = dbus
+depend = glib2
+EOF
+
+ARCH_PKG="$OUTPUT_DIR/SpinSlicer-${RPM_VERSION}-1-x86_64.pkg.tar.zst"
+(cd "$ARCH_ROOT" && tar -cf - .PKGINFO usr | zstd -c -T0 > "$ARCH_PKG")
+
 echo "Created packages in $OUTPUT_DIR"
-ls -lh "$OUTPUT_DIR"/SpinSlicer-*.deb "$OUTPUT_DIR"/SpinSlicer-*.rpm
+ls -lh "$OUTPUT_DIR"/SpinSlicer-*.deb "$OUTPUT_DIR"/SpinSlicer-*.rpm "$OUTPUT_DIR"/SpinSlicer-*.pkg.tar.zst

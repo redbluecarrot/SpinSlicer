@@ -83,10 +83,10 @@ def build_system_matrix(
     n_resin: float = 1.50,
     alpha: float = 0.0,
     container_mode: int = 0,
+    report_cb: Optional[Callable[[float, str], None]] = None,
+    cancelled_cb: Optional[Callable[[], bool]] = None,
 ) -> Tuple[sp.csr_matrix, sp.csr_matrix]:
     """Build the physical optics projector matrix A and adjoint backprojector A^T."""
-    
-    # Check cache first to save ~12 seconds on subsequent runs
     cache_key = (
         hash(angles_rad.tobytes()), num_s, grid_res, round(grid_span_mm, 4),
         round(L_out, 4), round(L_in, 4), round(n_air, 4), round(n_glass, 4),
@@ -95,23 +95,38 @@ def build_system_matrix(
     if cache_key in _matrix_cache:
         return _matrix_cache[cache_key]
 
-    oversample = 2
-    num_s_ov = num_s * oversample
-    s_positions = np.linspace(-L_out / 2.0, L_out / 2.0, num_s_ov)
-    ray_cache = _precompute_rays(
-        angles_rad, s_positions, L_out, L_in,
-        n_air, n_glass, n_liquid, n_resin, container_mode
-    )
-
+    s_positions = np.linspace(-L_out / 2.0, L_out / 2.0, num_s)
     dx = grid_span_mm / grid_res
-    # Ray-driven exact projection (eliminates aliasing, banding, and moiré stripes)
-    t_samples = np.arange(-grid_span_mm, grid_span_mm, dx / 2.0)
+    R = grid_span_mm / 2.0
+    t_samples = np.arange(-R, R, dx)
     N_t = len(t_samples)
 
-    rows, cols, vals = [], [], []
+    batches = []
+    num_angles = len(angles_rad)
+    report_interval = max(1, num_angles // 10)
 
-    for i, (valid_idx, p_resin, v_resin) in enumerate(ray_cache):
+    for i, theta in enumerate(angles_rad):
+        if cancelled_cb and cancelled_cb():
+            from slicing_engine import SliceCancelled
+            raise SliceCancelled()
+
+        if container_mode == 1:
+            p_resin, v_resin, valid = trace_cuvette(s_positions, theta, L_out, L_in, n_air, n_glass, n_resin)
+        elif container_mode == 2:
+            p_resin, v_resin, valid = trace_immersion_vial(s_positions, theta, L_out, L_in, n_air, n_glass, n_liquid, n_resin)
+        else:
+            N = len(s_positions)
+            p_resin = np.column_stack([s_positions, np.full(N, L_out / 2.0)])
+            v_resin = np.tile(np.array([0.0, -1.0]), (N, 1))
+            valid = np.ones(N, dtype=bool)
+            c, s = np.cos(-theta), np.sin(-theta)
+            rot = np.array([[c, -s], [s, c]])
+            p_resin = p_resin @ rot.T
+            v_resin = v_resin @ rot.T
+
+        valid_idx = np.where(valid)[0]
         if len(valid_idx) == 0:
+            batches.append(sp.csr_matrix((num_s, grid_res**2), dtype=np.float32))
             continue
 
         p = p_resin[valid_idx]
@@ -120,83 +135,73 @@ def build_system_matrix(
         P_x = (p[:, 0:1] + v[:, 0:1] * t_samples).ravel()
         P_y = (p[:, 1:2] + v[:, 1:2] * t_samples).ravel()
 
+        inside = (P_x**2 + P_y**2) < (R**2)
+        P_x = P_x[inside]
+        P_y = P_y[inside]
+
         gx = (P_x - (-grid_span_mm / 2.0 + dx / 2.0)) / dx
         gy = (P_y - (-grid_span_mm / 2.0 + dx / 2.0)) / dx
 
-        valid = (gx >= 0) & (gx < grid_res - 1) & (gy >= 0) & (gy < grid_res - 1)
-        gx = gx[valid]
-        gy = gy[valid]
+        valid_pts = (gx >= 0) & (gx < grid_res - 1) & (gy >= 0) & (gy < grid_res - 1)
+        gx = gx[valid_pts]
+        gy = gy[valid_pts]
 
-        ray_idx = np.repeat(valid_idx, N_t)[valid]
-        row_idx = i * num_s_ov + ray_idx
+        if len(gx) == 0:
+            batches.append(sp.csr_matrix((num_s, grid_res**2), dtype=np.float32))
+            continue
+
+        ray_idx = np.repeat(valid_idx, N_t)[inside][valid_pts]
 
         x0 = np.floor(gx).astype(np.int32)
         y0 = np.floor(gy).astype(np.int32)
-        x1 = x0 + 1
-        y1 = y0 + 1
-
         wx = gx - x0
         wy = gy - y0
 
-        w00 = ((1.0 - wx) * (1.0 - wy)).astype(np.float32)
-        w10 = (wx * (1.0 - wy)).astype(np.float32)
-        w01 = ((1.0 - wx) * wy).astype(np.float32)
-        w11 = (wx * wy).astype(np.float32)
-
-        weight_factor = np.full(len(gx), dx / 2.0, dtype=np.float32)
+        w00 = ((1.0 - wx) * (1.0 - wy)).astype(np.float32) * dx
+        w10 = (wx * (1.0 - wy)).astype(np.float32) * dx
+        w01 = ((1.0 - wx) * wy).astype(np.float32) * dx
+        w11 = (wx * wy).astype(np.float32) * dx
 
         if alpha > 0.0:
-            R = grid_span_mm / 2.0
-            t_flat = np.tile(t_samples, len(valid_idx))[valid]
-            p_flat_x = np.repeat(p[:, 0], N_t)[valid]
-            p_flat_y = np.repeat(p[:, 1], N_t)[valid]
-            v_flat_x = np.repeat(v[:, 0], N_t)[valid]
-            v_flat_y = np.repeat(v[:, 1], N_t)[valid]
-
+            t_flat = np.tile(t_samples, len(valid_idx))[inside][valid_pts]
+            p_flat_x = np.repeat(p[:, 0], N_t)[inside][valid_pts]
+            p_flat_y = np.repeat(p[:, 1], N_t)[inside][valid_pts]
+            v_flat_x = np.repeat(v[:, 0], N_t)[inside][valid_pts]
+            v_flat_y = np.repeat(v[:, 1], N_t)[inside][valid_pts]
             p_dot_v = p_flat_x * v_flat_x + p_flat_y * v_flat_y
             p_sq = p_flat_x**2 + p_flat_y**2
             D = p_dot_v**2 - (p_sq - R**2)
-
             valid_D = D > 0
             dist = np.zeros(len(gx), dtype=np.float32)
             t_entry = -p_dot_v[valid_D] - np.sqrt(D[valid_D])
             dist[valid_D] = np.maximum(t_flat[valid_D] - t_entry, 0.0)
-
             atten = np.exp(-alpha * dist).astype(np.float32)
-            weight_factor *= atten
+            w00 *= atten
+            w10 *= atten
+            w01 *= atten
+            w11 *= atten
 
         c00 = y0 * grid_res + x0
-        c10 = y0 * grid_res + x1
-        c01 = y1 * grid_res + x0
-        c11 = y1 * grid_res + x1
+        c10 = y0 * grid_res + (x0 + 1)
+        c01 = (y0 + 1) * grid_res + x0
+        c11 = (y0 + 1) * grid_res + (x0 + 1)
 
-        rows.extend([row_idx, row_idx, row_idx, row_idx])
-        cols.extend([c00, c10, c01, c11])
-        vals.extend([w00 * weight_factor, w10 * weight_factor, w01 * weight_factor, w11 * weight_factor])
+        r_cat = np.concatenate([ray_idx, ray_idx, ray_idx, ray_idx])
+        c_cat = np.concatenate([c00, c10, c01, c11])
+        v_cat = np.concatenate([w00, w10, w01, w11])
 
-    num_frames = len(angles_rad)
-    num_rows_ov = num_frames * num_s_ov
-    num_cols = grid_res**2
+        chunk = sp.csr_matrix((v_cat, (r_cat, c_cat)), shape=(num_s, grid_res**2), dtype=np.float32)
+        chunk.sum_duplicates()
+        batches.append(chunk)
 
-    if len(rows) == 0:
-        A_ov = sp.csr_matrix((num_rows_ov, num_cols), dtype=np.float32)
-    else:
-        row_arr = np.concatenate(rows)
-        col_arr = np.concatenate(cols)
-        val_arr = np.concatenate(vals)
-        A_ov = sp.csr_matrix((val_arr, (row_arr, col_arr)), shape=(num_rows_ov, num_cols), dtype=np.float32)
+        if report_cb and (i % report_interval == 0 or i == num_angles - 1):
+            report_cb(0.30 + 0.04 * (i / num_angles), f"Построение матрицы лучей {i + 1}/{num_angles}...")
 
-    # Downsample matrix D to eliminate Moiré (strip integrals)
-    row_ind = np.repeat(np.arange(num_s), oversample)
-    col_ind = np.arange(num_s_ov)
-    data = np.full(num_s_ov, 1.0 / oversample, dtype=np.float32)
-    D_1d = sp.csr_matrix((data, (row_ind, col_ind)), shape=(num_s, num_s_ov), dtype=np.float32)
-    
-    D = sp.block_diag([D_1d] * num_frames, format='csr')
-    A = D @ A_ov
-    res = (A, A.T.tocsr())
+    A = sp.vstack(batches, format="csr")
+    del batches
+    AT = A.T.tocsr()
+    res = (A, AT)
 
-    # Keep only the last cached matrix to save memory
     _matrix_cache.clear()
     _matrix_cache[cache_key] = res
     return res
@@ -225,20 +230,46 @@ def filter_sinograms_3d(b_3d: np.ndarray, filter_name: str = "ram-lak") -> np.nd
 
 import ctypes
 import os
+import sys
 
 _sirt_lib = None
 _lib_loaded = False
+_dll_directory_handle = None
 
 def _load_cpp_backend():
-    global _sirt_lib, _lib_loaded
+    global _sirt_lib, _lib_loaded, _dll_directory_handle
     if _lib_loaded:
         return _sirt_lib
     
     _lib_loaded = True
     try:
+        candidate_dirs = []
+        bundle_root = getattr(sys, "_MEIPASS", None)
+        if bundle_root and os.path.isdir(str(bundle_root)):
+            candidate_dirs.append(os.path.join(str(bundle_root), "cpp_backend"))
+            candidate_dirs.append(str(bundle_root))
+
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        lib_path = os.path.join(base_dir, "cpp_backend", "libsirt.so")
-        if not os.path.exists(lib_path):
+        candidate_dirs.append(os.path.join(base_dir, "cpp_backend"))
+        candidate_dirs.append(base_dir)
+
+        lib_names = ["sirtsolver.dll", "sirtsolver.so", "libsirt.so", "sirtsolver.dylib"]
+        lib_path = None
+        for cdir in candidate_dirs:
+            for name in lib_names:
+                full_path = os.path.join(cdir, name)
+                if os.path.isfile(full_path):
+                    lib_path = full_path
+                    if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+                        try:
+                            _dll_directory_handle = os.add_dll_directory(cdir)
+                        except Exception:
+                            pass
+                    break
+            if lib_path:
+                break
+
+        if not lib_path:
             return None
         
         lib = ctypes.CDLL(lib_path)
@@ -309,6 +340,8 @@ def optimize_projections_sirt_volume(
         n_resin=n_resin,
         alpha=alpha,
         container_mode=container_mode,
+        report_cb=report_cb,
+        cancelled_cb=cancelled_cb,
     )
 
     if cancelled_cb and cancelled_cb():

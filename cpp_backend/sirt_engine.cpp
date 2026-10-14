@@ -3,9 +3,15 @@
 #include <cmath>
 #include <algorithm>
 
+#ifdef _WIN32
+#define SPIN_SLICER_EXPORT __declspec(dllexport)
+#else
+#define SPIN_SLICER_EXPORT __attribute__((visibility("default")))
+#endif
+
 extern "C" {
 
-void forward_project(
+SPIN_SLICER_EXPORT void forward_project(
     int num_rays,
     int num_pixels,
     int nz,
@@ -39,7 +45,7 @@ void forward_project(
     }
 }
 
-void sirt_loop(
+SPIN_SLICER_EXPORT void sirt_loop(
     int num_rays,
     int num_pixels,
     int nz,

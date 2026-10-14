@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -30,7 +31,8 @@ def check_release(app, window, output: Path) -> int:
                         and report.get("frame_count") == report.get("video_frame_count") == 8
                         and report.get("manifest_complete") is True and report.get("output_forwarded") is True)
         (output / "self-check.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        window.close()
+        if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            window.close()
         app.exit(0 if report["ok"] else 1)
 
     def exported(path):

@@ -39,6 +39,22 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller==6.22.2
 
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build C++ backend (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python build_sirt.py
+
+      - name: Build C++ backend (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python build_sirt.py
+
       - name: Build Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
@@ -65,7 +81,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rpm libegl1 libgl1 \
+          sudo apt-get install -y --no-install-recommends rpm zstd libegl1 libgl1 \
             libxkbcommon-x11-0 libxkbcommon0 libdbus-1-3 libglib2.0-0
 
       - name: Check packaged Windows application
@@ -177,6 +193,7 @@ jobs:
           path: |
             release-assets/*.deb
             release-assets/*.rpm
+            release-assets/*.pkg.tar.zst
           if-no-files-found: error
 
   publish:

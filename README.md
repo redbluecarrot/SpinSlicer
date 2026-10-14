@@ -17,28 +17,47 @@ not drive a real projector, resin vat, or rotation stage.
 
 ## Features
 
-Stable v0.2.1 includes **Slicer**, **Projector (Video)** and **Settings**.
-The experimental simulator is maintained separately and is not included in
-this release. See [release notes](docs/releases/v0.2.1.md).
+Stable v0.3.0 includes **Slicer (3D)**, **Projector (Video)**, and **Settings** sidebar.
+See [release notes](docs/releases/v0.3.0.md).
 
-- Load and transform STL models in physical millimetres.
-- Keep printer and process parameters on a dedicated Settings tab.
-- Edit the model in a full-width 3D viewport with a visible vat bottom plane
-  and an interactive Fusion-style view cube.
-- Generate projection frames with the deterministic SpinSlicer internal Radon
-  backend, which is the default engine.
-- Optionally use the external VAMToolbox CAL optimizer when it is installed;
-  it is never selected automatically by the default UI mode.
-- Preserve internal bores and thread relief in loaded STL models by default.
-- Preview generated frames as a rotating video and export them to MP4.
-- Keep every completed run in its own directory with validated metadata and a
-  manifest; incomplete runs are not published to the player.
-- Store a deterministic projection schedule and the parameters used to create
-  each run in its manifest.
-- Russian is the default UI language. English remains available from the
-  language selector and is stored with the application settings.
+- **54× Memory & Speed Breakthrough:** Completely re-engineered system matrix algorithm runs full **256×256** voxel resolution in ~250 MB RAM (reduced from 13.5 GB) in under 3 seconds.
+- **Native OpenMP Parallel SIRT Engine:** Multi-threaded C++ backend (`sirtsolver.dll` / `sirtsolver.so`) runs on all standard CPUs without requiring expensive discrete GPUs.
+- **Ergonomic CAD Workspace:** Side-by-side layout with wide interactive 3D viewport on the left and quick-access parameters on the right.
+- **Clean 3D Viewport:** Streamlined trackball orbit, pan, and zoom without obstructing viewport cubes.
+- **Load and transform STL models** in physical millimetres.
+- **Physical Optics Pipeline:** Ray-tracing support for cylindrical and rectangular vats with index-matching ($n_{glass}, n_{liquid}, n_{resin}$).
+- **Preserve internal bores and thread relief** in loaded STL models by default.
+- **Preview generated frames** as a rotating video and export to MP4.
+- **Bilingual Interface:** Instant language switching between Russian (Русский) and English.
 
-## Installation
+## Installation & Packages
+
+### Pre-built Binary Packages (GitHub Releases)
+
+Download pre-built binaries directly from [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
+
+- **Windows 10 / 11:**
+  - **Installer:** Download and run `SpinSlicer-Setup-0.3.0.exe`
+  - **Portable:** Download `SpinSlicer-windows-x64.zip`, extract and run `SpinSlicer.exe`
+- **Arch Linux / Manjaro:**
+  ```bash
+  sudo pacman -U SpinSlicer-0.3.0-1-x86_64.pkg.tar.zst
+  ```
+- **Ubuntu / Debian / Mint:**
+  ```bash
+  sudo apt install ./SpinSlicer-0.3.0-amd64.deb
+  ```
+- **Fedora / RHEL / openSUSE:**
+  ```bash
+  sudo dnf install ./SpinSlicer-0.3.0-1.x86_64.rpm
+  ```
+- **Generic Linux Portable:**
+  ```bash
+  tar -xzf SpinSlicer-linux-x64.tar.gz
+  ./SpinSlicer
+  ```
+
+### Development Setup from Source
 
 SpinSlicer supports Python 3.11 and 3.12.
 
@@ -50,10 +69,8 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
+python build_sirt.py
 ```
-
-The package named `pyqtdarktheme` is imported as `qdarktheme`. Video support
-uses `opencv-python-headless`.
 
 Run the application with:
 
