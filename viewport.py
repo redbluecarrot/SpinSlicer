@@ -29,16 +29,15 @@ import pyvista as pv
 import trimesh
 import trimesh.transformations as tf
 import vtk
-from PyQt6.QtCore import QEasingCurve, QEvent, QRect, Qt, QTimer, QVariantAnimation, pyqtSignal
-from PyQt6.QtWidgets import QVBoxLayout, QWidget
+from PyQt6.QtCore import QEasingCurve, QEvent, QRect, QSize, Qt, QTimer, QVariantAnimation, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtWidgets import QToolButton, QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 
 from constants import (
     MAX_VIEWPORT_TRIANGLES,
     MODEL_COLOR,
-    VAT_COLOR,
     VAT_HEIGHT_RATIO,
-    VAT_RESOLUTION,
     VIEWPORT_BG_BOTTOM,
     VIEWPORT_BG_TOP,
     VIEWPORT_ORIENTATION_AXIS_CONE_RADIUS,
@@ -46,17 +45,57 @@ from constants import (
     VIEWPORT_ORIENTATION_AXIS_LENGTH,
     VIEWPORT_ORIENTATION_AXIS_LINE_WIDTH,
     VIEWPORT_ORIENTATION_AXIS_ORIGINS,
+    VIEWPORT_ORIENTATION_AXIS_LABEL_GAP,
     VIEWPORT_ORIENTATION_AXIS_TIP_LENGTH,
     VIEWPORT_ORIENTATION_CUBE_SCALE,
     VIEWPORT_ORIENTATION_DRAG_SENSITIVITY,
+    VIEWPORT_ORIENTATION_MARKER_EDGE_MARGIN,
+    VIEWPORT_ORIENTATION_MARKER_PIXELS,
+    VIEWPORT_ORIENTATION_MARKER_TOP_OFFSET,
     VIEWPORT_ORIENTATION_VIEWPORT,
     VIEWPORT_ORIENTATION_WIDGET_SIZE,
-    VIEWPORT_WORKPLANE_MIN_SPAN_MM,
-    VIEWPORT_WORKPLANE_RESOLUTION,
-    VIEWPORT_WORKPLANE_SPAN_RATIO,
 )
+from i18n import tr
 
 CameraPose = tuple[np.ndarray, np.ndarray, np.ndarray, float]
+
+CAMERA_NAVIGATION_BINDINGS = {
+    "left": "rotate",
+    "shift_left": "rotate",
+    "control_left": "rotate",
+    "middle": "pan",
+    "shift_middle": "pan",
+    "control_middle": "pan",
+    "right": "pan",
+    "shift_right": "pan",
+    "control_right": "pan",
+}
+
+
+def _orientation_marker_viewport(width: int, height: int) -> tuple[float, float, float, float]:
+    """Return normalized VTK bounds for a fixed-size marker at upper right."""
+
+    if width <= 0 or height <= 0:
+        raise ValueError("Viewport dimensions must be positive.")
+
+    margin = min(VIEWPORT_ORIENTATION_MARKER_EDGE_MARGIN, max(0, (width - 1) // 2))
+    top = min(VIEWPORT_ORIENTATION_MARKER_TOP_OFFSET, max(0, height - margin - 1))
+    available_width = max(1, width - margin * 2)
+    available_height = max(1, height - top - margin)
+    marker_size = min(
+        VIEWPORT_ORIENTATION_MARKER_PIXELS,
+        available_width,
+        available_height,
+    )
+    left = width - margin - marker_size
+    right = width - margin
+    bottom = top + marker_size
+    return (
+        left / width,
+        1.0 - bottom / height,
+        right / width,
+        1.0 - top / height,
+    )
 
 
 def _trimesh_to_pyvista(mesh: trimesh.Trimesh) -> pv.PolyData:
@@ -81,6 +120,39 @@ def _vtk_transform_to_numpy(transform: vtk.vtkTransform) -> np.ndarray:
         [[vtk_matrix.GetElement(row, column) for column in range(4)] for row in range(4)],
         dtype=np.float64,
     )
+
+
+def _home_camera_icon() -> QIcon:
+    """Draw a small, high-contrast home glyph for the camera reset button."""
+
+    pixmap = QPixmap(24, 24)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(
+        QPen(
+            QColor("#E8E8E8"),
+            2.0,
+            Qt.PenStyle.SolidLine,
+            Qt.PenCapStyle.RoundCap,
+            Qt.PenJoinStyle.RoundJoin,
+        )
+    )
+    path = QPainterPath()
+    path.moveTo(3.0, 11.0)
+    path.lineTo(12.0, 3.0)
+    path.lineTo(21.0, 11.0)
+    path.moveTo(6.0, 9.5)
+    path.lineTo(6.0, 21.0)
+    path.lineTo(18.0, 21.0)
+    path.lineTo(18.0, 9.5)
+    path.moveTo(10.0, 21.0)
+    path.lineTo(10.0, 15.0)
+    path.lineTo(14.0, 15.0)
+    path.lineTo(14.0, 21.0)
+    painter.drawPath(path)
+    painter.end()
+    return QIcon(pixmap)
 
 
 def _transformed_bounds(
@@ -370,9 +442,25 @@ class Viewport3D(QWidget):
 
         self.plotter.interactor.installEventFilter(self)
         self._install_navigation_style()
-        # self._create_orientation_cube(plotter)
+        self._create_orientation_cube(plotter)
+        self._camera_home_button = QToolButton(self.plotter.interactor)
+        self._camera_home_button.setObjectName("cameraHomeButton")
+        self._camera_home_button.setIcon(_home_camera_icon())
+        self._camera_home_button.setIconSize(QSize(18, 18))
+        self._camera_home_button.setFixedSize(32, 32)
+        self._camera_home_button.setToolTip(tr("Домашнее положение камеры"))
+        self._camera_home_button.setAccessibleName(tr("Домашнее положение камеры"))
+        self._camera_home_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._camera_home_button.clicked.connect(self.reset_camera)
+        self._position_camera_home_button()
+        self._camera_home_button.show()
 
         self._reset_camera_view()
+
+    def update_language(self) -> None:
+        label = tr("Домашнее положение камеры")
+        self._camera_home_button.setToolTip(label)
+        self._camera_home_button.setAccessibleName(label)
 
     def _create_orientation_cube(self, plotter: Any) -> None:
         """Create the draggable CAD ViewCube and its face-aligned axes."""
@@ -439,7 +527,8 @@ class Viewport3D(QWidget):
         cube.SetYMinusFaceText("BACK")
         cube.SetZPlusFaceText("TOP")
         cube.SetZMinusFaceText("BOTTOM")
-        cube.SetFaceTextScale(0.14)
+        cube.SetFaceTextScale(0.16)
+        cube.SetZFaceTextRotation(180.0)
         cube.SetFaceTextVisibility(True)
         cube.SetTextEdgesVisibility(False)
         cube.SetCubeVisibility(True)
@@ -529,7 +618,8 @@ class Viewport3D(QWidget):
         )
         label_position = tuple(
             origin[index]
-            + direction[index] * (VIEWPORT_ORIENTATION_AXIS_LENGTH + 0.04)
+            + direction[index]
+            * (VIEWPORT_ORIENTATION_AXIS_LENGTH + VIEWPORT_ORIENTATION_AXIS_LABEL_GAP)
             for index in range(3)
         )
 
@@ -661,6 +751,44 @@ class Viewport3D(QWidget):
         bottom = int(round((1.0 - y_min) * height))
         return QRect(left, top, max(right - left, 1), max(bottom - top, 1))
 
+    def _position_camera_home_button(self) -> None:
+        """Place the home button in the viewport's upper-right corner."""
+
+        button = getattr(self, "_camera_home_button", None)
+        interactor = getattr(self.plotter, "interactor", None)
+        if button is None or interactor is None:
+            return
+
+        x = max(
+            6,
+            interactor.width() - button.width() - VIEWPORT_ORIENTATION_MARKER_EDGE_MARGIN,
+        )
+        y = max(6, min(8, interactor.height() - button.height() - 6))
+        button.move(x, y)
+        button.raise_()
+
+    def _update_orientation_widget_viewport(self) -> None:
+        """Keep the custom cube and axes the same pixel size across resizes."""
+
+        widget = self._orientation_widget
+        interactor = getattr(self.plotter, "interactor", None)
+        if (
+            not self._orientation_marker_uses_custom_drag
+            or widget is None
+            or interactor is None
+            or not widget.GetEnabled()
+        ):
+            return
+
+        width = int(interactor.width())
+        height = int(interactor.height())
+        if width <= 0 or height <= 0:
+            return
+
+        viewport = _orientation_marker_viewport(width, height)
+        if not np.allclose(tuple(widget.GetViewport()), viewport):
+            widget.SetViewport(*viewport)
+
     def eventFilter(self, watched: Any, event: Any) -> bool:  # noqa: N802 (Qt API name)
         """Use the ViewCube as a dedicated camera-orbit handle.
 
@@ -669,6 +797,13 @@ class Viewport3D(QWidget):
         marker's Qt rectangle lets a drag orbit the complete scene while
         leaving model transform handles and normal viewport navigation intact.
         """
+
+        if (
+            watched is self.plotter.interactor
+            and event.type() == QEvent.Type.Resize
+        ):
+            self._update_orientation_widget_viewport()
+            self._position_camera_home_button()
 
         if watched is self.plotter.interactor and self._orientation_marker_uses_custom_drag:
             event_type = event.type()
@@ -756,11 +891,9 @@ class Viewport3D(QWidget):
         if self._vtk_interactor(self.plotter) is None:
             return
         try:
-            # Tinkercad-style navigation: left drag orbits, right drag pans,
-            # and the middle button dollies. Modified buttons keep the same
-            # intent instead of unexpectedly rolling or changing interaction.
-            # Use terrain style to strictly lock the Z-axis (prevents rolling/crooked camera)
-            self.plotter.enable_terrain_style(mouse_wheel_zooms=True)
+            # CAD navigation: left-drag orbits, right/middle drag pan, and the
+            # wheel zooms. Keep modified drags predictable.
+            self.plotter.enable_custom_trackball_style(**CAMERA_NAVIGATION_BINDINGS)
             style = getattr(getattr(self.plotter, "iren", None), "style", None)
             if style is None:
                 return
@@ -1012,7 +1145,14 @@ class Viewport3D(QWidget):
         height = diameter_mm * VAT_HEIGHT_RATIO
 
         # Safely remove all old vat actors
-        for attr in ['_vat_actor', '_vat_inner_actor', '_vat_walls_actor', '_vat_liquid_actor', '_rays_actor']:
+        for attr in [
+            '_vat_actor',
+            '_vat_outer_actor',
+            '_vat_inner_actor',
+            '_vat_walls_actor',
+            '_vat_liquid_actor',
+            '_rays_actor',
+        ]:
             actor = getattr(self, attr, None)
             if actor is not None:
                 self.plotter.remove_actor(actor, render=False)
@@ -1039,26 +1179,26 @@ class Viewport3D(QWidget):
                 vial_geom, color="#add8e6", opacity=0.35, smooth_shading=True,
                 specular=0.9, specular_power=50, name="vat_vial", pickable=False, render=False,
             )
-            
+
             # 2. Outer Square Cuvette
             # "по размеру как подложка сетчатая под колбой" -> diameter_mm * 1.5
             # "сверху не имела грани" -> construct from 5 faces
             # "чуть ниже колбы" -> height_cuvette = height * 0.9
             grid_span = diameter_mm * 1.5
             h_cuv = height * 0.85
-            
+
             wall_t = 2.0
             outer_w = grid_span
-            
+
             # Build Cuvette out of 5 boxes to avoid boolean_difference failures (which cause lids)
             bottom = pv.Cube(center=(0, 0, -height/2 + wall_t/2), x_length=outer_w, y_length=outer_w, z_length=wall_t)
             left = pv.Cube(center=(-outer_w/2 + wall_t/2, 0, -height/2 + h_cuv/2), x_length=wall_t, y_length=outer_w, z_length=h_cuv)
             right = pv.Cube(center=(outer_w/2 - wall_t/2, 0, -height/2 + h_cuv/2), x_length=wall_t, y_length=outer_w, z_length=h_cuv)
             front = pv.Cube(center=(0, -outer_w/2 + wall_t/2, -height/2 + h_cuv/2), x_length=outer_w - 2*wall_t, y_length=wall_t, z_length=h_cuv)
             back = pv.Cube(center=(0, outer_w/2 - wall_t/2, -height/2 + h_cuv/2), x_length=outer_w - 2*wall_t, y_length=wall_t, z_length=h_cuv)
-            
+
             cuvette_geom = bottom.merge([left, right, front, back])
-            
+
             self._vat_outer_actor = self.plotter.add_mesh(
                 cuvette_geom, color="#80c0ff", opacity=0.15, smooth_shading=True,
                 specular=1.0, specular_power=20, name="vat_cuvette", pickable=False, render=False,

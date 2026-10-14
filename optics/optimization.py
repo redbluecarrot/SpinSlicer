@@ -14,13 +14,20 @@ References:
   - VAMToolbox: https://github.com/computed-axial-lithography/VAMToolbox
 """
 
+import ctypes
+import math
+import os
+import sys
 from typing import Callable, Optional, Tuple
+
 import numpy as np
 import scipy.sparse as sp
 from scipy.fft import fft, ifft
 
-from .ray_tracing import trace_cuvette, trace_immersion_vial
+from constants import MAX_ESTIMATED_MEMORY_BYTES
+from validation import ValidationError, estimate_physical_projection_memory
 
+from .ray_tracing import trace_cuvette, trace_immersion_vial, trace_vial_in_air
 
 # ---------------------------------------------------------------------------
 #  Ray tracing
@@ -49,15 +56,9 @@ def _precompute_rays(
                 s_positions, theta, L_out, L_in, n_air, n_glass, n_liquid, n_resin
             )
         else:
-            # Mode 0: ideal parallel rays (no container refraction)
-            N = len(s_positions)
-            p_resin = np.column_stack([s_positions, np.full(N, L_out / 2.0)])
-            v_resin = np.tile(np.array([0.0, -1.0]), (N, 1))
-            valid = np.ones(N, dtype=bool)
-            c, s = np.cos(-theta), np.sin(-theta)
-            rot = np.array([[c, -s], [s, c]])
-            p_resin = p_resin @ rot.T
-            v_resin = v_resin @ rot.T
+            p_resin, v_resin, valid = trace_vial_in_air(
+                s_positions, theta, L_out, L_in, n_air, n_glass, n_resin
+            )
 
         valid_idx = np.where(valid)[0]
         cache.append((valid_idx, p_resin, v_resin))
@@ -68,7 +69,121 @@ def _precompute_rays(
 #  Sparse system matrix construction
 # ---------------------------------------------------------------------------
 
-_matrix_cache = {}
+_matrix_cache: dict[tuple, tuple[sp.csr_matrix, sp.csr_matrix]] = {}
+
+
+def _build_angle_chunk_matrix(
+    ray_cache: list,
+    num_s_ov: int,
+    grid_res: int,
+    grid_span_mm: float,
+    alpha: float,
+) -> sp.csr_matrix:
+    """Build a small CSR batch so raw ray weights never accumulate by run."""
+
+    dx = grid_span_mm / grid_res
+    t_samples = np.arange(-grid_span_mm, grid_span_mm, dx / 2.0)
+    sample_count = len(t_samples)
+    rows: list[np.ndarray] = []
+    cols: list[np.ndarray] = []
+    values: list[np.ndarray] = []
+
+    for local_index, (valid_idx, p_resin, v_resin) in enumerate(ray_cache):
+        if len(valid_idx) == 0:
+            continue
+
+        p = p_resin[valid_idx]
+        v = v_resin[valid_idx]
+        px = (p[:, 0:1] + v[:, 0:1] * t_samples).ravel()
+        py = (p[:, 1:2] + v[:, 1:2] * t_samples).ravel()
+        gx = (px + grid_span_mm / 2.0 - dx / 2.0) / dx
+        gy = (py + grid_span_mm / 2.0 - dx / 2.0) / dx
+
+        inside = (gx >= 0) & (gx < grid_res - 1) & (gy >= 0) & (gy < grid_res - 1)
+        gx = gx[inside]
+        gy = gy[inside]
+        if gx.size == 0:
+            continue
+
+        ray_idx = np.repeat(valid_idx, sample_count)[inside]
+        row_idx = local_index * num_s_ov + ray_idx
+        x0 = np.floor(gx).astype(np.int32)
+        y0 = np.floor(gy).astype(np.int32)
+        x1 = x0 + 1
+        y1 = y0 + 1
+        wx = gx - x0
+        wy = gy - y0
+
+        weight = np.full(len(gx), dx / 2.0, dtype=np.float32)
+        if alpha > 0.0:
+            ray_t = np.tile(t_samples, len(valid_idx))[inside]
+            start_x = np.repeat(p[:, 0], sample_count)[inside]
+            start_y = np.repeat(p[:, 1], sample_count)[inside]
+            direction_x = np.repeat(v[:, 0], sample_count)[inside]
+            direction_y = np.repeat(v[:, 1], sample_count)[inside]
+            radius = grid_span_mm / 2.0
+            p_dot_v = start_x * direction_x + start_y * direction_y
+            discriminant = p_dot_v**2 - (start_x**2 + start_y**2 - radius**2)
+            intersects = discriminant > 0
+            entry_t = np.zeros(len(gx), dtype=np.float32)
+            entry_t[intersects] = (
+                -p_dot_v[intersects] - np.sqrt(discriminant[intersects])
+            )
+            distance = np.zeros(len(gx), dtype=np.float32)
+            distance[intersects] = np.maximum(
+                ray_t[intersects] - entry_t[intersects], 0.0
+            )
+            weight *= np.exp(-alpha * distance).astype(np.float32)
+
+        row_values = [row_idx] * 4
+        column_values = [
+            y0 * grid_res + x0,
+            y0 * grid_res + x1,
+            y1 * grid_res + x0,
+            y1 * grid_res + x1,
+        ]
+        contribution_values = [
+            ((1.0 - wx) * (1.0 - wy)).astype(np.float32) * weight,
+            (wx * (1.0 - wy)).astype(np.float32) * weight,
+            ((1.0 - wx) * wy).astype(np.float32) * weight,
+            (wx * wy).astype(np.float32) * weight,
+        ]
+        rows.extend(row_values)
+        cols.extend(column_values)
+        values.extend(contribution_values)
+
+    num_angles = len(ray_cache)
+    num_columns = grid_res**2
+    if rows:
+        A_ov = sp.csr_matrix(
+            (
+                np.concatenate(values),
+                (np.concatenate(rows), np.concatenate(cols)),
+            ),
+            shape=(num_angles * num_s_ov, num_columns),
+            dtype=np.float32,
+        )
+    else:
+        A_ov = sp.csr_matrix((num_angles * num_s_ov, num_columns), dtype=np.float32)
+
+    oversample = num_s_ov // grid_res
+    row_indices = np.repeat(np.arange(grid_res), oversample)
+    column_indices = np.arange(num_s_ov)
+    downsample_data = np.full(num_s_ov, 1.0 / oversample, dtype=np.float32)
+    downsample = sp.csr_matrix(
+        (downsample_data, (row_indices, column_indices)),
+        shape=(grid_res, num_s_ov),
+        dtype=np.float32,
+    )
+    D = sp.block_diag([downsample] * num_angles, format="csr")
+    chunk = (D @ A_ov).tocsr()
+    chunk.sum_duplicates()
+    chunk.eliminate_zeros()
+    return chunk
+
+
+def _csr_bytes(matrix: sp.csr_matrix) -> int:
+    return int(matrix.data.nbytes + matrix.indices.nbytes + matrix.indptr.nbytes)
 
 def build_system_matrix(
     angles_rad: np.ndarray,
@@ -83,9 +198,12 @@ def build_system_matrix(
     n_resin: float = 1.50,
     alpha: float = 0.0,
     container_mode: int = 0,
+    memory_budget_bytes: int = MAX_ESTIMATED_MEMORY_BYTES,
+    cancelled_cb: Optional[Callable[[], bool]] = None,
+    report_cb: Optional[Callable[[float, str], None]] = None,
 ) -> Tuple[sp.csr_matrix, sp.csr_matrix]:
     """Build the physical optics projector matrix A and adjoint backprojector A^T."""
-    
+
     # Check cache first to save ~12 seconds on subsequent runs
     cache_key = (
         hash(angles_rad.tobytes()), num_s, grid_res, round(grid_span_mm, 4),
@@ -95,6 +213,18 @@ def build_system_matrix(
     if cache_key in _matrix_cache:
         return _matrix_cache[cache_key]
 
+    _matrix_cache.clear()
+    if num_s != grid_res:
+        raise ValidationError("The physical projector currently requires num_s == grid_res.")
+    estimated_bytes = estimate_physical_projection_memory(grid_res, len(angles_rad))
+    if estimated_bytes > memory_budget_bytes:
+        raise ValidationError(
+            "The optical projector is estimated to need "
+            f"{estimated_bytes / 1024**3:.2f} GiB; "
+            f"the available generation budget is {memory_budget_bytes / 1024**3:.2f} GiB. "
+            "Reduce the voxel-grid resolution or the number of frames."
+        )
+
     oversample = 2
     num_s_ov = num_s * oversample
     s_positions = np.linspace(-L_out / 2.0, L_out / 2.0, num_s_ov)
@@ -103,101 +233,52 @@ def build_system_matrix(
         n_air, n_glass, n_liquid, n_resin, container_mode
     )
 
-    dx = grid_span_mm / grid_res
-    # Ray-driven exact projection (eliminates aliasing, banding, and moiré stripes)
-    t_samples = np.arange(-grid_span_mm, grid_span_mm, dx / 2.0)
-    N_t = len(t_samples)
+    angle_batch_size = 4
+    batches: list[sp.csr_matrix] = []
+    built_angle_count = 0
+    matrix_bytes = 0
+    chunk_workspace = max(64 * 1024**2, grid_res * grid_res * 1024)
+    for start in range(0, len(ray_cache), angle_batch_size):
+        if cancelled_cb and cancelled_cb():
+            from slicing_engine import SliceCancelled
 
-    rows, cols, vals = [], [], []
+            raise SliceCancelled()
+        stop = min(start + angle_batch_size, len(ray_cache))
+        chunk = _build_angle_chunk_matrix(
+            ray_cache[start:stop],
+            num_s_ov,
+            grid_res,
+            grid_span_mm,
+            alpha,
+        )
+        batches.append(chunk)
+        built_angle_count = stop
+        matrix_bytes += _csr_bytes(chunk)
 
-    for i, (valid_idx, p_resin, v_resin) in enumerate(ray_cache):
-        if len(valid_idx) == 0:
-            continue
+        # Stacking temporarily holds the batches and their joined matrix at
+        # once. The transpose then has the same storage cost as the final A.
+        projected_peak = (
+            math.ceil(2 * matrix_bytes * len(ray_cache) / built_angle_count)
+            + chunk_workspace
+        )
+        if projected_peak > memory_budget_bytes:
+            raise ValidationError(
+                "The optical projector is estimated to exceed the available "
+                f"generation memory budget ({projected_peak / 1024**3:.2f} GiB). "
+                "Reduce the voxel-grid resolution or the number of frames."
+            )
+        if report_cb:
+            report_cb(
+                0.31 + 0.03 * built_angle_count / len(ray_cache),
+                f"Optical matrix {built_angle_count}/{len(ray_cache)} angles...",
+            )
 
-        p = p_resin[valid_idx]
-        v = v_resin[valid_idx]
+    A = sp.vstack(batches, format="csr")
+    del batches, ray_cache
+    AT = A.T.tocsr()
+    res = (A, AT)
 
-        P_x = (p[:, 0:1] + v[:, 0:1] * t_samples).ravel()
-        P_y = (p[:, 1:2] + v[:, 1:2] * t_samples).ravel()
-
-        gx = (P_x - (-grid_span_mm / 2.0 + dx / 2.0)) / dx
-        gy = (P_y - (-grid_span_mm / 2.0 + dx / 2.0)) / dx
-
-        valid = (gx >= 0) & (gx < grid_res - 1) & (gy >= 0) & (gy < grid_res - 1)
-        gx = gx[valid]
-        gy = gy[valid]
-
-        ray_idx = np.repeat(valid_idx, N_t)[valid]
-        row_idx = i * num_s_ov + ray_idx
-
-        x0 = np.floor(gx).astype(np.int32)
-        y0 = np.floor(gy).astype(np.int32)
-        x1 = x0 + 1
-        y1 = y0 + 1
-
-        wx = gx - x0
-        wy = gy - y0
-
-        w00 = ((1.0 - wx) * (1.0 - wy)).astype(np.float32)
-        w10 = (wx * (1.0 - wy)).astype(np.float32)
-        w01 = ((1.0 - wx) * wy).astype(np.float32)
-        w11 = (wx * wy).astype(np.float32)
-
-        weight_factor = np.full(len(gx), dx / 2.0, dtype=np.float32)
-
-        if alpha > 0.0:
-            R = grid_span_mm / 2.0
-            t_flat = np.tile(t_samples, len(valid_idx))[valid]
-            p_flat_x = np.repeat(p[:, 0], N_t)[valid]
-            p_flat_y = np.repeat(p[:, 1], N_t)[valid]
-            v_flat_x = np.repeat(v[:, 0], N_t)[valid]
-            v_flat_y = np.repeat(v[:, 1], N_t)[valid]
-
-            p_dot_v = p_flat_x * v_flat_x + p_flat_y * v_flat_y
-            p_sq = p_flat_x**2 + p_flat_y**2
-            D = p_dot_v**2 - (p_sq - R**2)
-
-            valid_D = D > 0
-            dist = np.zeros(len(gx), dtype=np.float32)
-            t_entry = -p_dot_v[valid_D] - np.sqrt(D[valid_D])
-            dist[valid_D] = np.maximum(t_flat[valid_D] - t_entry, 0.0)
-
-            atten = np.exp(-alpha * dist).astype(np.float32)
-            weight_factor *= atten
-
-        c00 = y0 * grid_res + x0
-        c10 = y0 * grid_res + x1
-        c01 = y1 * grid_res + x0
-        c11 = y1 * grid_res + x1
-
-        rows.extend([row_idx, row_idx, row_idx, row_idx])
-        cols.extend([c00, c10, c01, c11])
-        vals.extend([w00 * weight_factor, w10 * weight_factor, w01 * weight_factor, w11 * weight_factor])
-
-    num_frames = len(angles_rad)
-    num_rows_ov = num_frames * num_s_ov
-    num_cols = grid_res**2
-
-    if len(rows) == 0:
-        A_ov = sp.csr_matrix((num_rows_ov, num_cols), dtype=np.float32)
-    else:
-        row_arr = np.concatenate(rows)
-        col_arr = np.concatenate(cols)
-        val_arr = np.concatenate(vals)
-        A_ov = sp.csr_matrix((val_arr, (row_arr, col_arr)), shape=(num_rows_ov, num_cols), dtype=np.float32)
-
-    # Downsample matrix D to eliminate Moiré (strip integrals)
-    row_ind = np.repeat(np.arange(num_s), oversample)
-    col_ind = np.arange(num_s_ov)
-    data = np.full(num_s_ov, 1.0 / oversample, dtype=np.float32)
-    D_1d = sp.csr_matrix((data, (row_ind, col_ind)), shape=(num_s, num_s_ov), dtype=np.float32)
-    
-    D = sp.block_diag([D_1d] * num_frames, format='csr')
-    A = D @ A_ov
-    res = (A, A.T.tocsr())
-
-    # Keep only the last cached matrix to save memory
-    _matrix_cache.clear()
+    # Keep only the last cached matrix to save memory.
     _matrix_cache[cache_key] = res
     return res
 
@@ -223,24 +304,31 @@ def filter_sinograms_3d(b_3d: np.ndarray, filter_name: str = "ram-lak") -> np.nd
     return np.real(ifft(filt_img, axis=0)[:pX, :, :])
 
 
-import ctypes
-import os
-
 _sirt_lib = None
 _lib_loaded = False
+_dll_directory_handle = None
 
 def _load_cpp_backend():
     global _sirt_lib, _lib_loaded
     if _lib_loaded:
         return _sirt_lib
-    
+
     _lib_loaded = True
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        lib_path = os.path.join(base_dir, "cpp_backend", "libsirt.so")
-        if not os.path.exists(lib_path):
+        if sys.platform == "win32":
+            library_name = "sirtsolver.dll"
+        elif sys.platform == "darwin":
+            library_name = "sirtsolver.dylib"
+        else:
+            library_name = "sirtsolver.so"
+        lib_directory = os.path.join(base_dir, "cpp_backend")
+        lib_path = os.path.join(lib_directory, library_name)
+        if not os.path.isfile(lib_path):
             return None
-        
+        if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+            global _dll_directory_handle
+            _dll_directory_handle = os.add_dll_directory(lib_directory)
         lib = ctypes.CDLL(lib_path)
         lib.forward_project.argtypes = [
             ctypes.c_int, ctypes.c_int, ctypes.c_int,
@@ -283,6 +371,7 @@ def optimize_projections_sirt_volume(
     container_mode: int = 0,
     report_cb: Optional[Callable[[float, str], None]] = None,
     cancelled_cb: Optional[Callable[[], bool]] = None,
+    memory_budget_bytes: int = MAX_ESTIMATED_MEMORY_BYTES,
 ) -> np.ndarray:
     """Optimise projection sequence using the canonical OpenCAL / Tomo algorithm."""
     nz = target_vol.shape[2]
@@ -309,6 +398,9 @@ def optimize_projections_sirt_volume(
         n_resin=n_resin,
         alpha=alpha,
         container_mode=container_mode,
+        memory_budget_bytes=memory_budget_bytes,
+        cancelled_cb=cancelled_cb,
+        report_cb=report_cb,
     )
 
     if cancelled_cb and cancelled_cb():
@@ -321,14 +413,14 @@ def optimize_projections_sirt_volume(
         report_cb(0.34, "OpenCAL: C++ прямое проецирование и Ram-Lak фильтрация...")
 
     lib = _load_cpp_backend()
-    
+
     if lib is not None:
         num_rays = A.shape[0]
         num_pixels = A.shape[1]
         P0 = np.zeros((num_rays, nz), dtype=np.float32)
         A_csr = A.tocsr()
         AT_csr = AT.tocsr()
-        
+
         lib.forward_project(
             num_rays, num_pixels, nz,
             V_target.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
@@ -349,13 +441,13 @@ def optimize_projections_sirt_volume(
     # Calculate SIRT normalization factors (matrix norm based learning rate)
     ones_pixels = np.ones(A.shape[1], dtype=np.float32)
     ones_rays = np.ones(A.shape[0], dtype=np.float32)
-    
+
     row_sums = A.dot(ones_pixels)
     col_sums = AT.dot(ones_rays)
-    
+
     R_norm = np.zeros_like(row_sums)
     R_norm[row_sums > 0] = 1.0 / row_sums[row_sums > 0]
-    
+
     C_norm = np.zeros_like(col_sums)
     C_norm[col_sums > 0] = 1.0 / col_sums[col_sums > 0]
 
@@ -367,11 +459,11 @@ def optimize_projections_sirt_volume(
     if lib is not None:
         if report_cb:
             report_cb(0.36, "OpenCAL: C++ SIRT оптимизация (AVX/OpenMP)...")
-            
+
         b_flat = b.transpose(1, 0, 2).reshape(num_frames * num_s, nz).astype(np.float32)
         b_opt = np.zeros_like(b_flat)
         ray_hits_bool = ray_hits_any.astype(np.bool_)
-        
+
         lib.sirt_loop(
             num_rays, num_pixels, nz, max(1, iterations), d_h,
             b_flat.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),

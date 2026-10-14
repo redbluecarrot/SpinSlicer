@@ -1,15 +1,16 @@
-import numpy as np
-import trimesh
-from optics.optimization import optimize_projections_sirt_volume, build_system_matrix
+import time
 
-grid_res = 112
+import numpy as np
+
+from optics.optimization import optimize_projections_sirt_volume
+
+grid_res = 64
 nz = 5
 num_frames = 360
 
 slices = np.zeros((grid_res, grid_res, nz), dtype=np.float32)
-slices[40:80, 40:80, :] = 1.0
+slices[20:44, 20:44, :] = 1.0
 
-import time
 t0 = time.time()
 b_opt = optimize_projections_sirt_volume(
     slices,

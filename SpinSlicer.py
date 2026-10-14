@@ -82,17 +82,8 @@ class CALSlicerMainWindow(QMainWindow):
         self._log(tr("Готово к работе. Загрузите STL-модель на вкладке «Слайсер», чтобы начать."))
 
     @property
-    def tabs(self):
-        class _TabAdapter:
-            def __init__(self, win):
-                self._widgets = [win.slicer_tab, win.projector_tab, win.settings_tab]
-            def count(self):
-                return len(self._widgets)
-            def widget(self, index):
-                return self._widgets[index]
-            def currentIndex(self):
-                return 0
-        return _TabAdapter(self)
+    def tabs(self) -> QTabWidget:
+        return self.view_tabs
 
     # =======================================================================
     # Построение интерфейса
@@ -104,65 +95,49 @@ class CALSlicerMainWindow(QMainWindow):
         root.setContentsMargins(16, 12, 16, 10)
         root.setSpacing(10)
 
-        header = QHBoxLayout()
-        title = QLabel(APP_TITLE)
-        title.setObjectName("appTitle")
-        header.addWidget(title)
-        header.addStretch(1)
+        self.settings_tab = ProcessSettingsPanel()
         self.language_label = QLabel("Язык:")
-        header.addWidget(self.language_label)
-        self.language_combo = QComboBox()
+        self.language_combo = QComboBox(self.settings_tab)
         for code, label in LANGUAGES.items():
             self.language_combo.addItem(label, code)
-        header.addWidget(self.language_combo)
-        root.addLayout(header)
+        language_row = QHBoxLayout()
+        language_row.setContentsMargins(12, 8, 12, 0)
+        language_row.addStretch(1)
+        language_row.addWidget(self.language_label)
+        language_row.addWidget(self.language_combo)
+        self.settings_tab.layout().insertLayout(0, language_row)
 
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_splitter.setChildrenCollapsible(True)
-        
-        # Left side: Viewports (Slicer and Projector)
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        
         self.view_tabs = QTabWidget()
         self.view_tabs.setDocumentMode(True)
-        
-        self.settings_tab = ProcessSettingsPanel()
+        self.view_tabs.tabBar().setDrawBase(False)
+        self.view_tabs.setObjectName("mainTabs")
         self.slicer_tab = SlicerTab(
             job_controller=self._job_controller,
             process_panel=self.settings_tab,
         )
         self.projector_tab = ProjectorTab(job_controller=self._job_controller)
-        
+
         self.view_tabs.addTab(self.slicer_tab, "Слайсер (3D)")
         self.view_tabs.addTab(self.projector_tab, "Проектор (Кадры)")
-        left_layout.addWidget(self.view_tabs)
-        
-        main_splitter.addWidget(left_panel)
-        
-        # Right side: Settings Sidebar
-        self.right_panel = QWidget()
-        self.right_panel.setMinimumWidth(200)
-        right_layout = QVBoxLayout(self.right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(self.settings_tab)
-        
-        main_splitter.addWidget(self.right_panel)
-        
-        # Set initial sizes (70% left, 30% right)
-        main_splitter.setStretchFactor(0, 1)
-        main_splitter.setStretchFactor(1, 0)
-        main_splitter.setSizes([1040, 500])
-        
-        root.addWidget(main_splitter, 1)
+        self.view_tabs.addTab(self.settings_tab, "Настройки")
 
         self._log_panel = QPlainTextEdit()
         self._log_panel.setObjectName("logPanel")
         self._log_panel.setReadOnly(True)
-        self._log_panel.setMinimumHeight(64)
-        self._log_panel.setMaximumHeight(96)
-        root.addWidget(self._log_panel)
+        self._log_panel.setMinimumHeight(0)
+        self._log_panel.setMaximumHeight(16777215)
+
+        self.main_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.main_splitter.setChildrenCollapsible(True)
+        self.main_splitter.setHandleWidth(8)
+        self.main_splitter.addWidget(self.view_tabs)
+        self.main_splitter.addWidget(self._log_panel)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
+        self.main_splitter.setCollapsible(0, False)
+        self.main_splitter.setCollapsible(1, True)
+        self.main_splitter.setSizes([760, 120])
+        root.addWidget(self.main_splitter, 1)
 
         self.setCentralWidget(central)
 
@@ -193,10 +168,9 @@ class CALSlicerMainWindow(QMainWindow):
         self._on_tab_changed(self.view_tabs.currentIndex())
 
     def _on_tab_changed(self, index: int) -> None:
-        """Show progress bar and settings sidebar only on the 3D Slicer tab."""
+        """Show the progress bar only on the 3D Slicer tab."""
         is_slicer = (index == self.view_tabs.indexOf(self.slicer_tab))
         self._progress_bar.setVisible(is_slicer)
-        self.right_panel.setVisible(is_slicer)
 
     def _on_language_changed(self, index: int) -> None:
         selected = self.language_combo.itemData(index)
@@ -205,16 +179,24 @@ class CALSlicerMainWindow(QMainWindow):
         set_language(selected)
         self._settings.setValue("language", selected)
         apply_translations(self)
+        self.slicer_tab.update_language()
         if hasattr(self.projector_tab, "update_language"):
             self.projector_tab.update_language()
-        self._log(tr("Язык изменён") + ". " + tr("Перезапустите приложение, чтобы применить язык."))
+        self._update_projector_tab_tooltip()
+        self._log(tr("Язык изменён") + ".")
 
     def _on_output_generated(self, out_dir: str) -> None:
         projector_index = self.view_tabs.indexOf(self.projector_tab)
-        self.view_tabs.setTabToolTip(projector_index, f"Кадры готовы: {out_dir}")
+        self.view_tabs.setTabToolTip(projector_index, f"{tr('Кадры готовы: ')}{out_dir}")
         self.view_tabs.setCurrentIndex(projector_index)
         # Автоматически загружаем и запускаем видео
         self.projector_tab._on_assemble_clicked()
+
+    def _update_projector_tab_tooltip(self) -> None:
+        projector_index = self.view_tabs.indexOf(self.projector_tab)
+        out_dir = self.slicer_tab._last_output_dir
+        tooltip = f"{tr('Кадры готовы: ')}{out_dir}" if out_dir else ""
+        self.view_tabs.setTabToolTip(projector_index, tooltip)
 
     # =======================================================================
     # Статус / лог (общие для всех вкладок)
@@ -229,7 +211,6 @@ class CALSlicerMainWindow(QMainWindow):
         self._log_panel.appendPlainText(f"[{stamp}] {tr(message)}")
 
     def closeEvent(self, event) -> None:  # noqa: N802 (имя метода задано Qt)
-        self.settings_tab.shutdown()
         if self._job_controller.shutdown():
             event.accept()
         else:

@@ -85,6 +85,14 @@ def validate_slice_parameters(
     frame_rate_hz: Any = 24.0,
     angle_offset_deg: Any = 90.0,
     angle_direction: Any = 1,
+    container_mode: Any = 0,
+    cuvette_outer_mm: Any = None,
+    cuvette_inner_mm: Any = None,
+    n_air: Any = 1.0,
+    n_glass: Any = 1.51,
+    n_liquid: Any = 1.45,
+    n_resin: Any = 1.50,
+    alpha: Any = 0.0,
 ) -> None:
     """Validate parameters before they influence array dimensions or math."""
 
@@ -141,6 +149,27 @@ def validate_slice_parameters(
     direction = _integer(angle_direction, "angle_direction")
     if direction not in {-1, 1}:
         raise ValidationError("angle_direction must be -1 or 1.")
+    if projection_backend == "physical":
+        mode = _integer(container_mode, "container_mode")
+        if mode not in {0, 1, 2}:
+            raise ValidationError("container_mode must be 0, 1, or 2.")
+        outer = _finite_number(cuvette_outer_mm, "cuvette_outer_mm")
+        inner = _finite_number(cuvette_inner_mm, "cuvette_inner_mm")
+        if outer <= 0.0 or inner <= 0.0 or inner >= outer:
+            raise ValidationError(
+                "The physical optics needs an inner diameter greater than zero "
+                "and smaller than the glass outer diameter. Reduce the wall thickness."
+            )
+        for name, value in (
+            ("n_air", n_air),
+            ("n_glass", n_glass),
+            ("n_liquid", n_liquid),
+            ("n_resin", n_resin),
+        ):
+            if _finite_number(value, name) <= 0.0:
+                raise ValidationError(f"{name} must be greater than zero.")
+        if _finite_number(alpha, "alpha") < 0.0:
+            raise ValidationError("alpha must not be negative.")
 
 
 def validate_stl_path(path: str) -> int:
@@ -230,13 +259,32 @@ def estimate_slicing_memory(
     anti_alias = (grid * ANTI_ALIAS_FACTOR) ** 2
     output_buffers = 0
     if output_res is not None:
-        target_height = max(int(round(int(output_res) * nz / grid)), 1)
-        output_pixels = target_height * int(output_res) * frames
-        # skimage.resize and the uint8 output coexist briefly during a frame
-        # export, so count two output-sized buffers before adding headroom.
-        output_buffers = output_pixels * (4 + 1)
+        target_height = max(
+            int(round(int(output_res) * nz / max(grid, int(output_res)))),
+            1,
+        )
+        # Frames are written one at a time. Count the float64 resize result and
+        # uint8 frame that coexist for the current frame, not the whole output
+        # sequence, which lives on disk.
+        output_pixels = target_height * int(output_res)
+        output_buffers = output_pixels * (8 + 1)
     # Include temporary Radon/resize buffers and a conservative headroom.
     return int((slices + sinograms + anti_alias + output_buffers) * 1.5)
+
+
+def estimate_physical_projection_memory(grid_res: int, num_frames: int) -> int:
+    """Budget the sparse projector, its adjoint, and one ray-build batch."""
+
+    grid = max(1, int(grid_res))
+    frames = max(1, int(num_frames))
+    # Budget both A and A.T plus the extra full matrix held while stacking
+    # angle batches. The 240-byte factor includes room above the expected
+    # compressed bilinear ray weights.
+    sparse_matrices = frames * grid * grid * 240
+    # Also allow for raw coordinates and SciPy CSR conversion in a four-angle
+    # build batch while earlier compressed batches remain resident.
+    chunk_workspace = max(64 * 1024**2, grid * grid * 2048)
+    return sparse_matrices + chunk_workspace
 
 
 def preflight_mesh(
@@ -262,6 +310,14 @@ def preflight_mesh(
             getattr(params, "frame_rate_hz", 24.0),
             getattr(params, "angle_offset_deg", 90.0),
             getattr(params, "angle_direction", 1),
+            getattr(params, "container_mode", 0),
+            getattr(params, "cuvette_outer_mm", None),
+            getattr(params, "cuvette_inner_mm", None),
+            getattr(params, "n_air", 1.0),
+            getattr(params, "n_glass", 1.51),
+            getattr(params, "n_liquid", 1.45),
+            getattr(params, "n_resin", 1.50),
+            getattr(params, "alpha", 0.0),
         )
     except ValidationError as exc:
         return PreflightReport(False, [str(exc)], [], 0, (0.0, 0.0, 0.0), 0, 0)
@@ -302,14 +358,17 @@ def preflight_mesh(
     diameter = float(params.diameter_mm)
     grid = int(params.grid_res)
     frames = int(params.num_frames)
-    pitch = diameter / grid
+    pitch = diameter / max(grid, int(params.output_res))
     estimated_layers = estimate_layer_count(float(bounds[0, 2]), float(bounds[1, 2]), pitch)
     if estimated_layers > MAX_LAYERS:
         errors.append(
             f"Estimated layer count is {estimated_layers:,}; limit is {MAX_LAYERS:,}."
         )
 
-    target_height = max(int(round(params.output_res * estimated_layers / grid)), 1)
+    target_height = max(
+        int(round((float(bounds[1, 2]) - float(bounds[0, 2])) * params.output_res / diameter)),
+        1,
+    )
     if target_height > MAX_FRAME_DIMENSION or params.output_res > MAX_FRAME_DIMENSION:
         errors.append(
             f"Output frame dimensions would be {target_height}×{params.output_res} px; "
@@ -325,9 +384,11 @@ def preflight_mesh(
     estimated_memory = estimate_slicing_memory(
         grid, estimated_layers, frames, output_res=int(params.output_res)
     )
+    if getattr(params, "projection_backend", "internal") == "physical":
+        estimated_memory += estimate_physical_projection_memory(grid, frames)
     if estimated_memory > MAX_ESTIMATED_MEMORY_BYTES:
         errors.append(
-            f"Estimated slicing memory is {estimated_memory / 1024**3:.2f} GiB; "
+            f"Estimated generation memory is {estimated_memory / 1024**3:.2f} GiB; "
             f"limit is {MAX_ESTIMATED_MEMORY_BYTES / 1024**3:.2f} GiB."
         )
 

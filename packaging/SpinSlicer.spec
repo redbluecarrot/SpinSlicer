@@ -17,9 +17,19 @@ from PyInstaller.utils.hooks import collect_all
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 
 datas = [(str(PROJECT_ROOT / "assets"), "assets")]
-if (PROJECT_ROOT / "cpp_backend").is_dir():
-    datas.append((str(PROJECT_ROOT / "cpp_backend"), "cpp_backend"))
 binaries: list[tuple[str, str]] = []
+cpp_backend = PROJECT_ROOT / "cpp_backend"
+if cpp_backend.is_dir():
+    native_suffixes = {".dll", ".dylib", ".so"}
+    for path in sorted(cpp_backend.rglob("*")):
+        if not path.is_file():
+            continue
+        destination = str(path.parent.relative_to(cpp_backend))
+        destination = "cpp_backend" if destination == "." else f"cpp_backend/{destination}"
+        if path.suffix.casefold() in native_suffixes:
+            binaries.append((str(path), destination))
+        else:
+            datas.append((str(path), destination))
 qt_bin: Path | None = None
 if sys.platform.startswith("win"):
     pyqt_spec = find_spec("PyQt6")

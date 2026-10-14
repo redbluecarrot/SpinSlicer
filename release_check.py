@@ -10,6 +10,7 @@ import trimesh
 from PyQt6.QtCore import QTimer
 
 from frame_io import FrameRepository, load_manifest
+from optics.optimization import _load_cpp_backend
 from slicing_engine import ResinSettings, SliceParams
 from workers import GenerationWorker, VideoExportWorker
 
@@ -28,6 +29,9 @@ def check_release(app, window, output: Path) -> int:
         report["ok"] = (not error and report["shutdown_ok"] and not report["simulation_loaded"]
                         and report["tabs"] == ["SlicerTab", "ProjectorTab", "ProcessSettingsPanel"]
                         and report.get("frame_count") == report.get("video_frame_count") == 8
+                        and report.get("physical_backend") is True
+                        and report.get("native_backend_available") is True
+                        and report.get("optics_manifest") is True
                         and report.get("manifest_complete") is True and report.get("output_forwarded") is True)
         (output / "self-check.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         window.close()
@@ -59,6 +63,13 @@ def check_release(app, window, output: Path) -> int:
             manifest = load_manifest(info.resolved_dir)
             report["frame_count"] = info.frame_count
             report["manifest_complete"] = bool(manifest and manifest.complete)
+            optics = manifest.slice_parameters.get("optics") if manifest else None
+            report["optics_manifest"] = bool(
+                isinstance(optics, dict)
+                and optics.get("container_mode") == 0
+                and optics.get("cuvette_outer_mm", 0) > optics.get("cuvette_inner_mm", 0)
+                and optics.get("n_glass", 0) > 0
+            )
             window.slicer_tab.outputGenerated.emit(path)
             report["output_forwarded"] = window.projector_tab._output_dir == path
             window.projector_tab._on_assemble_clicked()
@@ -77,7 +88,15 @@ def check_release(app, window, output: Path) -> int:
             node.set_rotation_deg(z=15)
             params = SliceParams(diameter_mm=window.settings_tab.vat_diameter_mm(), grid_res=24,
                                  output_res=32, num_frames=8, fill_holes=True,
-                                 resin=ResinSettings(), output_dir=str(output / "frames"))
+                                 resin=ResinSettings(), output_dir=str(output / "frames"),
+                                 projection_backend="physical", container_mode=0,
+                                 cuvette_outer_mm=window.settings_tab.vat_diameter_mm(),
+                                 cuvette_inner_mm=(window.settings_tab.vat_diameter_mm()
+                                                   - 2 * window.settings_tab.glass_thickness_mm()))
+            report["physical_backend"] = params.projection_backend == "physical"
+            report["native_backend_available"] = _load_cpp_backend() is not None
+            if not report["native_backend_available"]:
+                raise RuntimeError("The packaged native physical projection backend is unavailable.")
             context = {"source_path": str(source), "transform_matrix": node.matrix().tolist(), "units": "mm"}
             worker = GenerationWorker(node.get_transformed_mesh(), params, window, context)
             workers.append(worker)

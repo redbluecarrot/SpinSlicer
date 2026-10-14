@@ -30,7 +30,7 @@ from typing import Any, Callable, Optional, Tuple
 import numpy as np
 import trimesh
 from PIL import Image, ImageDraw
-from scipy.ndimage import binary_closing, binary_fill_holes
+from scipy.ndimage import binary_fill_holes
 from skimage.transform import radon
 from skimage.transform import resize as sk_resize
 
@@ -38,6 +38,7 @@ from constants import (
     ANTI_ALIAS_FACTOR,
     DEFAULT_ANGLE_OFFSET_DEG,
     DEFAULT_FRAME_RATE_HZ,
+    MAX_ESTIMATED_MEMORY_BYTES,
     VAT_HEIGHT_RATIO,
 )
 from frame_io import (
@@ -58,11 +59,11 @@ from profiles import (
 from validation import (
     ValidationError,
     ensure_directory,
+    estimate_slicing_memory,
     preflight_mesh,
     validate_slice_parameters,
     validate_stl_path,
 )
-from optics.optimization import optimize_projections_sirt
 from vam_backend import (
     DEFAULT_VAM_ENV_NAME,
     VAMToolboxUnavailable,
@@ -111,6 +112,45 @@ def _radon_sinograms(
             if done_count % report_step == 0 or done_count == num_layers:
                 report(0.30 + 0.50 * (done_count / num_layers), f"Radon {done_count}/{num_layers}...")
     return sinograms
+
+
+def _dose_response_and_rmse(
+    dose: np.ndarray,
+    target: np.ndarray,
+    *,
+    threshold: float = 0.65,
+    slope: float = 15.0,
+) -> tuple[np.ndarray, float]:
+    """Return predicted resin response and resolution-independent RMSE."""
+
+    dose_values = np.asarray(dose, dtype=np.float64)
+    target_values = np.asarray(target, dtype=np.float64)
+    if dose_values.shape != target_values.shape:
+        raise ValueError(
+            f"Dose and target shapes differ: {dose_values.shape} vs {target_values.shape}."
+        )
+    if not np.all(np.isfinite(dose_values)) or not np.all(np.isfinite(target_values)):
+        raise ValueError("Dose reconstruction and target must contain only finite values.")
+
+    dose_max = max(float(np.max(dose_values)), 1e-6)
+    dose_norm = np.clip(dose_values / dose_max, 0.0, 1.0)
+    sigmoid_input = np.clip(-slope * (dose_norm - threshold), -80.0, 80.0)
+    response = 1.0 / (1.0 + np.exp(sigmoid_input))
+    rmse = float(np.sqrt(np.mean(np.square(target_values - response))))
+    return response.astype(np.float32), rmse
+
+
+def _exported_detector_row(
+    output_frame: np.ndarray,
+    row_index: int,
+    grid_res: int,
+) -> np.ndarray:
+    """Read an exported frame row in the same left-to-right order as ray bins."""
+
+    detector_row = Image.fromarray(output_frame[row_index : row_index + 1, :]).resize(
+        (grid_res, 1), Image.Resampling.BOX
+    )
+    return np.asarray(detector_row, dtype=np.float32).reshape(-1) / 255.0
 
 
 @dataclass
@@ -168,6 +208,14 @@ class SliceParams:
             self.frame_rate_hz,
             self.angle_offset_deg,
             self.angle_direction,
+            self.container_mode,
+            self.cuvette_outer_mm,
+            self.cuvette_inner_mm,
+            self.n_air,
+            self.n_glass,
+            self.n_liquid,
+            self.n_resin,
+            self.alpha,
         )
 
 
@@ -354,7 +402,7 @@ class SlicingEngine:
                         py = discrete_pts[:, 1] * scale_2d + offset
                         draw.line(list(zip(px, py)), fill=255, width=line_width)
 
-                arr = np.array(img) > 127
+                arr: Any = np.array(img) > 127
 
                 # 3. Опциональный ремонт сетки (для монолитных / сломанных STL)
                 if fill_holes:
@@ -363,7 +411,7 @@ class SlicingEngine:
                     kernel = np.ones((3, 3), np.uint8)
                     import cv2
                     arr_u8 = cv2.morphologyEx(arr_u8, cv2.MORPH_CLOSE, kernel)
-                    
+
                     if not preserve_internal_voids:
                         arr = binary_fill_holes(arr_u8 > 127)
                     else:
@@ -372,7 +420,10 @@ class SlicingEngine:
                 # Уменьшаем с антиалиасингом для мягких краёв
                 img_filled = Image.fromarray((arr * 255).astype(np.uint8))
                 img_resized = img_filled.resize((grid_res, grid_res), Image.Resampling.LANCZOS)
-                slices[:, :, i] = (np.array(img_resized, dtype=np.float32) / 255.0).T
+                # Keep the raster in conventional (y, x) order.  The physical
+                # ray matrix flattens voxels as y * grid_res + x, so transposing
+                # here made its optimizer project a reflected/transposed model.
+                slices[:, :, i] = np.array(img_resized, dtype=np.float32) / 255.0
 
             if i % report_step == 0:
                 report(0.05 + 0.25 * (i / nz), f"Нарезка слоя {i}/{nz}...")
@@ -392,6 +443,7 @@ class SlicingEngine:
         if backend == "physical":
             report(0.30, "Физическая оптика OpenCAL: трассировка лучей и оптимизация...")
             import importlib
+
             import optics.optimization
             importlib.reload(optics.optimization)
             from optics.optimization import optimize_projections_sirt_volume
@@ -415,6 +467,15 @@ class SlicingEngine:
                 container_mode=params.container_mode,
                 report_cb=report,
                 cancelled_cb=cancelled,
+                memory_budget_bytes=(
+                    MAX_ESTIMATED_MEMORY_BYTES
+                    - estimate_slicing_memory(
+                        grid_res,
+                        nz,
+                        num_frames,
+                        output_res=output_res,
+                    )
+                ),
             )
         elif backend in {"auto", "vamtoolbox"}:
             report(0.30, "Optimizing projections with VAMToolbox CAL...")
@@ -464,53 +525,18 @@ class SlicingEngine:
         # выбрана для просмотра в Projector.
         out_dir = FrameRepository.create_run_dir(params.output_dir)
 
-        # Вычисление и сохранение карты реконструкции дозы (как в Tomo / VAMToolbox)
-        try:
-            import matplotlib
-            mid_z = nz // 2
-            if backend == "physical":
-                from optics.optimization import build_system_matrix
-                _, AT_recon = build_system_matrix(
-                    angles_rad,
-                    num_s=grid_res,
-                    grid_res=grid_res,
-                    grid_span_mm=diameter_mm,
-                    L_out=params.cuvette_outer_mm,
-                    L_in=params.cuvette_inner_mm,
-                    n_air=params.n_air,
-                    n_glass=params.n_glass,
-                    n_liquid=params.n_liquid,
-                    n_resin=params.n_resin,
-                    alpha=params.alpha,
-                    container_mode=params.container_mode,
-                )
-                b_flat_mid = sinograms.transpose(2, 1, 0).reshape(num_frames * grid_res, nz)[:, mid_z]
-                dose_mid = AT_recon.dot(b_flat_mid).reshape(grid_res, grid_res)
-            else:
-                from skimage.transform import iradon
-                dose_mid = iradon(sinograms[mid_z], theta=angles, circle=True)
-
-            d_max = float(np.max(dose_mid))
-            dose_norm = np.clip(dose_mid / max(d_max, 1e-6), 0.0, 1.0)
-
-            cmap = matplotlib.colormaps['viridis']
-            rgba = cmap(dose_norm)
-            rgb = (rgba[:, :, :3] * 255.0).astype(np.uint8)
-            Image.fromarray(rgb).save(os.path.join(out_dir, "reconstruction_preview.png"))
-
-            # L2 ошибка дозы относительно целевого слоя
-            V_mid = slices[:, :, mid_z]
-            d_h = 0.65
-            dose_thresh = 1.0 / (1.0 + np.exp(np.clip(-15.0 * (dose_norm - d_h), -80.0, 80.0)))
-            dose_error = float(np.sum((V_mid - dose_thresh) ** 2))
-            with open(os.path.join(out_dir, "dose_stats.txt"), "w") as f:
-                f.write(f"loss={dose_error:.2f}\n")
-        except Exception:
-            pass
-
         # Calculate target_h based on physical aspect ratio, independent of slicing resolution
         model_height_mm = z_max - z_min
         target_h = max(int(round(output_res * model_height_mm / diameter_mm)), 1)
+        mid_z = nz // 2
+        mid_frame_row = min(
+            int(round((mid_z + 0.5) * target_h / nz)),
+            target_h - 1,
+        )
+        # Capture the actual exported gray values for one middle Z plane. This
+        # keeps dose reconstruction tied to thresholding, clipping, resizing,
+        # and 8-bit quantization in the files that users will play.
+        exported_mid_sinograms = np.empty((grid_res, num_frames), dtype=np.float32)
 
         # Вычисление коэффициента масштабирования для ярких и чётких кадров (Tomo Auto-Scale)
         active_rays = sinograms[sinograms > 1e-4]
@@ -550,12 +576,70 @@ class SlicingEngine:
                 output, (target_h, output_res), order=3, mode="edge",
                 anti_aliasing=True, preserve_range=True,
             ).astype(np.uint8)
+            # The image's columns already follow the ray matrix's detector order
+            # (s from -diameter/2 on the left to +diameter/2 on the right).
+            exported_mid_sinograms[:, i] = _exported_detector_row(
+                output_resized, mid_frame_row, grid_res
+            )
             Image.fromarray(output_resized).save(
                 os.path.join(out_dir, f"frame_{i:04d}.png")
             )
 
             if i % save_step == 0:
                 report(0.80 + 0.19 * (i / num_frames), f"Сохранение кадра {i}/{num_frames}...")
+
+        # Reconstruct the dose from the same quantized mid-slice pixels that
+        # were saved in the projection frames.
+        try:
+            import matplotlib
+
+            if backend == "physical":
+                from optics.optimization import build_system_matrix
+
+                _, adjoint = build_system_matrix(
+                    angles_rad,
+                    num_s=grid_res,
+                    grid_res=grid_res,
+                    grid_span_mm=diameter_mm,
+                    L_out=params.cuvette_outer_mm,
+                    L_in=params.cuvette_inner_mm,
+                    n_air=params.n_air,
+                    n_glass=params.n_glass,
+                    n_liquid=params.n_liquid,
+                    n_resin=params.n_resin,
+                    alpha=params.alpha,
+                    container_mode=params.container_mode,
+                    memory_budget_bytes=(
+                        MAX_ESTIMATED_MEMORY_BYTES
+                        - estimate_slicing_memory(
+                            grid_res,
+                            nz,
+                            num_frames,
+                            output_res=output_res,
+                        )
+                    ),
+                )
+                dose_mid = adjoint.dot(exported_mid_sinograms.T.reshape(-1)).reshape(
+                    grid_res, grid_res
+                )
+            else:
+                from skimage.transform import iradon
+
+                dose_mid = iradon(exported_mid_sinograms, theta=angles, circle=True)
+
+            target_slice = slices[:, :, mid_z]
+            dose_response, dose_rmse = _dose_response_and_rmse(dose_mid, target_slice)
+            rgba = matplotlib.colormaps["viridis"](dose_response)
+            rgb = (rgba[:, :, :3] * 255.0).astype(np.uint8)
+            Image.fromarray(rgb).save(os.path.join(out_dir, "reconstruction_preview.png"))
+
+            # Keep the legacy L2 entry for older viewers, while new viewers
+            # use RMSE so scores stay comparable across grid resolutions.
+            dose_l2 = float(np.linalg.norm(target_slice - dose_response))
+            with open(os.path.join(out_dir, "dose_stats.txt"), "w", encoding="utf-8") as handle:
+                handle.write(f"rmse={dose_rmse:.4f}\nloss={dose_l2:.4f}\n")
+        except Exception as exc:
+            raise ValidationError(f"Could not reconstruct exported projection frames: {exc}") from exc
 
         # Metadata становится видимым только после того, как все PNG уже
         # записаны. Manifest публикуется после проверки полного frame-set.
@@ -620,6 +704,16 @@ class SlicingEngine:
                     "frame_rate_hz": params.frame_rate_hz,
                     "angle_offset_deg": params.angle_offset_deg,
                     "angle_direction": params.angle_direction,
+                    "optics": {
+                        "container_mode": params.container_mode,
+                        "cuvette_outer_mm": params.cuvette_outer_mm,
+                        "cuvette_inner_mm": params.cuvette_inner_mm,
+                        "n_air": params.n_air,
+                        "n_glass": params.n_glass,
+                        "n_liquid": params.n_liquid,
+                        "n_resin": params.n_resin,
+                        "alpha_per_mm": params.alpha,
+                    } if params.projection_backend == "physical" else None,
                     "model_type": str(context.get("model_type", "stl")),
                     "model_parameters": context.get("model_parameters", {}),
                     "resin": {

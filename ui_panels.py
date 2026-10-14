@@ -15,11 +15,11 @@ ui_panels.py
 """
 from __future__ import annotations
 
-import subprocess
+from contextlib import ExitStack
 from typing import Optional
 
 import numpy as np
-from PyQt6.QtCore import QProcess, QSettings, QSignalBlocker, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QSettings, QSignalBlocker, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
@@ -31,7 +31,6 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -49,14 +48,12 @@ from constants import (
 )
 from i18n import tr
 from model_node import ModelNode
+from theme import AXIS_X, AXIS_Y, AXIS_Z
 from vam_backend import (
     DEFAULT_VAM_ENV_NAME,
-    build_vam_install_command,
-    build_vam_probe_command,
     find_conda_executable,
     is_vamtoolbox_available,
 )
-from theme import AXIS_X, AXIS_Y, AXIS_Z
 from widgets import LabeledSlider
 
 
@@ -87,30 +84,45 @@ class ObjectTransformPanel(QGroupBox):
         layout = QGridLayout(self)
         layout.setContentsMargins(12, 16, 12, 12)
         layout.setHorizontalSpacing(8)
-        
+
         # Headers
         layout.addWidget(QLabel(""), 0, 0)
-        lbl_x = QLabel("X"); lbl_x.setStyleSheet("color: #FF4444; font-weight: bold;"); layout.addWidget(lbl_x, 0, 1)
-        lbl_y = QLabel("Y"); lbl_y.setStyleSheet("color: #44FF44; font-weight: bold;"); layout.addWidget(lbl_y, 0, 2)
-        lbl_z = QLabel("Z"); lbl_z.setStyleSheet("color: #4444FF; font-weight: bold;"); layout.addWidget(lbl_z, 0, 3)
+        lbl_x = QLabel("X")
+        lbl_x.setStyleSheet("color: #FF4444; font-weight: bold;")
+        layout.addWidget(lbl_x, 0, 1)
+        lbl_y = QLabel("Y")
+        lbl_y.setStyleSheet("color: #44FF44; font-weight: bold;")
+        layout.addWidget(lbl_y, 0, 2)
+        lbl_z = QLabel("Z")
+        lbl_z.setStyleSheet("color: #4444FF; font-weight: bold;")
+        layout.addWidget(lbl_z, 0, 3)
 
         # Position
         layout.addWidget(QLabel("Позиция, мм"), 1, 0)
-        self.pos_x = QDoubleSpinBox(); self.pos_x.setRange(-1000, 1000); layout.addWidget(self.pos_x, 1, 1)
-        self.pos_y = QDoubleSpinBox(); self.pos_y.setRange(-1000, 1000); layout.addWidget(self.pos_y, 1, 2)
-        self.pos_z = QDoubleSpinBox(); self.pos_z.setRange(-1000, 1000); layout.addWidget(self.pos_z, 1, 3)
+        self.pos_x = self._make_value_field(-1000, 1000)
+        layout.addWidget(self.pos_x, 1, 1)
+        self.pos_y = self._make_value_field(-1000, 1000)
+        layout.addWidget(self.pos_y, 1, 2)
+        self.pos_z = self._make_value_field(-1000, 1000)
+        layout.addWidget(self.pos_z, 1, 3)
 
         # Rotation
         layout.addWidget(QLabel("Вращение, °"), 2, 0)
-        self.rot_x = QDoubleSpinBox(); self.rot_x.setRange(-360, 360); layout.addWidget(self.rot_x, 2, 1)
-        self.rot_y = QDoubleSpinBox(); self.rot_y.setRange(-360, 360); layout.addWidget(self.rot_y, 2, 2)
-        self.rot_z = QDoubleSpinBox(); self.rot_z.setRange(-360, 360); layout.addWidget(self.rot_z, 2, 3)
+        self.rot_x = self._make_value_field(-360, 360)
+        layout.addWidget(self.rot_x, 2, 1)
+        self.rot_y = self._make_value_field(-360, 360)
+        layout.addWidget(self.rot_y, 2, 2)
+        self.rot_z = self._make_value_field(-360, 360)
+        layout.addWidget(self.rot_z, 2, 3)
 
         # Size
         layout.addWidget(QLabel("Размер, мм"), 3, 0)
-        self.size_x = QDoubleSpinBox(); self.size_x.setRange(0.01, 1000); layout.addWidget(self.size_x, 3, 1)
-        self.size_y = QDoubleSpinBox(); self.size_y.setRange(0.01, 1000); layout.addWidget(self.size_y, 3, 2)
-        self.size_z = QDoubleSpinBox(); self.size_z.setRange(0.01, 1000); layout.addWidget(self.size_z, 3, 3)
+        self.size_x = self._make_value_field(0.01, 1000)
+        layout.addWidget(self.size_x, 3, 1)
+        self.size_y = self._make_value_field(0.01, 1000)
+        layout.addWidget(self.size_y, 3, 2)
+        self.size_z = self._make_value_field(0.01, 1000)
+        layout.addWidget(self.size_z, 3, 3)
 
         # Action Buttons
         btn_row = QHBoxLayout()
@@ -125,15 +137,22 @@ class ObjectTransformPanel(QGroupBox):
         self._wire_signals()
         self.setEnabled(False)
 
+    @staticmethod
+    def _make_value_field(minimum: float, maximum: float) -> QDoubleSpinBox:
+        field = QDoubleSpinBox()
+        field.setRange(minimum, maximum)
+        field.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        return field
+
     def _wire_signals(self):
         self.pos_x.valueChanged.connect(lambda v: self.positionChanged.emit(0, v))
         self.pos_y.valueChanged.connect(lambda v: self.positionChanged.emit(1, v))
         self.pos_z.valueChanged.connect(lambda v: self.positionChanged.emit(2, v))
-        
+
         self.rot_x.valueChanged.connect(lambda v: self.rotationChanged.emit(0, v))
         self.rot_y.valueChanged.connect(lambda v: self.rotationChanged.emit(1, v))
         self.rot_z.valueChanged.connect(lambda v: self.rotationChanged.emit(2, v))
-        
+
         self.size_x.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(0, v))
         self.size_y.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(1, v))
         self.size_z.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(2, v))
@@ -143,29 +162,39 @@ class ObjectTransformPanel(QGroupBox):
         self.reset_btn.clicked.connect(self.resetRequested.emit)
 
     def sync_from_model(self, node):
-            self.blockSignals(True)
-            t = node.transform.translation
-            r = node.transform.rotation_deg
-            s = node.current_size_mm()
-            
+        t = node.transform.translation
+        r = node.transform.rotation_deg
+        s = node.current_size_mm()
+        controls = (
+            self.pos_x,
+            self.pos_y,
+            self.pos_z,
+            self.rot_x,
+            self.rot_y,
+            self.rot_z,
+            self.size_x,
+            self.size_y,
+            self.size_z,
+        )
+        with ExitStack() as blockers:
+            for control in controls:
+                blockers.enter_context(QSignalBlocker(control))
             self.pos_x.setValue(t[0])
             self.pos_y.setValue(t[1])
             self.pos_z.setValue(t[2])
-            
+
             self.rot_x.setValue(r[0])
             self.rot_y.setValue(r[1])
             self.rot_z.setValue(r[2])
-            
+
             self.size_x.setValue(s[0])
             self.size_y.setValue(s[1])
             self.size_z.setValue(s[2])
-            
-            self.setEnabled(True)
-            self.blockSignals(False)
-    
-    
+        self.setEnabled(True)
+
+
 class ProcessSettingsPanel(QWidget):
-    """Настройки принтера и процесса печати для отдельной вкладки."""
+    """Параметры печати, геометрия колбы и оптика."""
 
     diameterChanged = pyqtSignal(float)
     settingsChanged = pyqtSignal()
@@ -174,8 +203,6 @@ class ProcessSettingsPanel(QWidget):
         super().__init__(parent)
 
         self._settings = QSettings(APP_ORG, APP_TITLE)
-        self._vam_process: Optional[QProcess] = None
-        self._vam_process_stage = ""
         self._vam_conda_executable = str(
             self._settings.value("vam/conda_executable", "") or ""
         )
@@ -200,35 +227,35 @@ class ProcessSettingsPanel(QWidget):
         title.setObjectName("panelTitle")
         layout.addWidget(title)
 
-        self.transform_panel = ObjectTransformPanel(self)
-        layout.addWidget(self.transform_panel)
-
-        # --- Колба / принтер -----------------------------------------------
-        vat_box = QGroupBox("Печатная колба")
-        vat_layout = QVBoxLayout(vat_box)
+        # Геометрия колбы находится в настройках, рядом с параметрами печати.
+        self.vat_controls = QGroupBox("Печатная колба", self)
+        vat_layout = QVBoxLayout(self.vat_controls)
         self.container_mode = NoScrollComboBox()
-        self.container_mode.addItem("Колба (без кюветы и жидкости)", 0)
+        self.container_mode.addItem("Колба (в воздухе)", 0)
         self.container_mode.addItem("Виала (в иммерсионной ванне)", 2)
         vat_layout.addWidget(QLabel("Оптический режим:"))
         vat_layout.addWidget(self.container_mode)
-        
-        self.diameter = LabeledSlider("Диаметр колбы (или внутр. сторона), мм", 20.0, 200.0, DEFAULT_DIAMETER_MM, decimals=1)
+
+        self.diameter = LabeledSlider("Диаметр колбы, мм", 20.0, 200.0, DEFAULT_DIAMETER_MM, decimals=1)
         vat_layout.addWidget(self.diameter)
         self.container_mode.currentIndexChanged.connect(lambda: self.diameterChanged.emit(self.diameter.value()))
-        
-        self.glass_thickness = LabeledSlider("Толщина стекла кюветы, мм", 1.0, 10.0, 2.0, decimals=1)
-        vat_layout.addWidget(self.glass_thickness)
+        layout.addWidget(self.vat_controls)
+
+        # Детальные оптические свойства остаются в Settings.
+        optics_box = QGroupBox("Оптические параметры колбы")
+        optics_layout = QVBoxLayout(optics_box)
+        self.glass_thickness = LabeledSlider("Толщина стенки колбы, мм", 1.0, 10.0, 2.0, decimals=1)
+        optics_layout.addWidget(self.glass_thickness)
         self.n_glass = LabeledSlider("Показатель преломления (Стекло)", 1.0, 2.0, 1.51, decimals=2)
-        vat_layout.addWidget(self.n_glass)
+        optics_layout.addWidget(self.n_glass)
         self.n_liquid = LabeledSlider("Показатель преломления (Жидкость)", 1.0, 2.0, 1.45, decimals=2)
-        vat_layout.addWidget(self.n_liquid)
+        optics_layout.addWidget(self.n_liquid)
         self.n_resin = LabeledSlider("Показатель преломления (Смола)", 1.0, 2.0, 1.50, decimals=2)
-        vat_layout.addWidget(self.n_resin)
+        optics_layout.addWidget(self.n_resin)
         self.alpha_absorption = LabeledSlider("Затухание (Бугер-Ламберт) 1/мм", 0.0, 0.10, 0.0, decimals=3)
         self.alpha_absorption.setToolTip("Коэффициент оптического затухания света смолой (для CAL обычно 0.000 - 0.030 мм⁻¹)")
-        vat_layout.addWidget(self.alpha_absorption)
-
-        layout.addWidget(vat_box)
+        optics_layout.addWidget(self.alpha_absorption)
+        layout.addWidget(optics_box)
 
         # --- Смола -----------------------------------------------------------
         resin_box = QGroupBox("Параметры фотополимера")
@@ -269,14 +296,14 @@ class ProcessSettingsPanel(QWidget):
         # --- Projection engine --------------------------------------------
         backend_box = QGroupBox("Движок проекций (Собственный C++ SIRT)")
         backend_layout = QVBoxLayout(backend_box)
-        
+
         self.optimizer_iterations = LabeledSlider(
             "Итерации оптимизатора", 1, 100, 8, decimals=0, step=1,
         )
         backend_layout.addWidget(self.optimizer_iterations)
         backend_hint = QLabel(
-            "Встроенный сверхбыстрый физический движок (SIRT + C++ OpenMP). "
-            "Учитывает преломление света по закону Снеллиуса и поглощение по Бугеру-Ламберту."
+            "Встроенный физический движок SIRT на C++ (OpenMP в Linux). "
+            "Учитывает преломление по Снеллиусу и поглощение по Бугеру-Ламберту."
         )
         backend_hint.setObjectName("hintLabel")
         backend_hint.setWordWrap(True)
@@ -335,157 +362,9 @@ class ProcessSettingsPanel(QWidget):
 
     def n_resin_value(self) -> float:
         return self.n_resin.value()
-        
+
     def alpha_absorption_value(self) -> float:
         return self.alpha_absorption.value()
-
-
-    def shutdown(self) -> None:
-        """Stop an in-progress optional dependency installation."""
-
-        process = self._vam_process
-        if process is None or process.state() == QProcess.ProcessState.NotRunning:
-            return
-        process.terminate()
-        if not process.waitForFinished(1000):
-            process.kill()
-            process.waitForFinished(1000)
-
-    def _refresh_vam_status(self) -> None:
-        if is_vamtoolbox_available():
-            self._vam_ready = True
-            self.vam_status.setText("VAMToolbox доступен в текущем Python-окружении.")
-            self.vam_install_btn.setText("VAMToolbox уже доступен")
-            self.vam_install_btn.setEnabled(False)
-            return
-
-        if self._vam_ready and self._vam_conda_executable:
-            self.vam_status.setText(
-                f"Проверенное окружение: {self._vam_environment_name}. "
-                "Его можно выбрать как движок проекций."
-            )
-            self.vam_install_btn.setText("Проверить окружение VAMToolbox")
-            self.vam_install_btn.setEnabled(False)
-            QTimer.singleShot(0, self._start_vam_probe)
-            return
-
-        if self._vam_conda_executable:
-            self.vam_status.setText(
-                "Conda найдена. Установщик создаст отдельное окружение "
-                f"«{self._vam_environment_name}» и не изменит внутренний Radon."
-            )
-            self.vam_install_btn.setEnabled(True)
-        else:
-            self.vam_status.setText(
-                "Conda не найдена. Установите Miniconda или Anaconda, "
-                "перезапустите приложение и повторите установку."
-            )
-            self.vam_install_btn.setEnabled(False)
-
-    def _qprocess_argv(self, command: list[str]) -> tuple[str, list[str]]:
-        executable = command[0]
-        if executable.lower().endswith((".bat", ".cmd")):
-            return "cmd.exe", ["/d", "/s", "/c", subprocess.list2cmdline(command)]
-        return executable, command[1:]
-
-    def _run_vam_process(self, command: list[str], stage: str) -> None:
-        if self._vam_process is not None:
-            return
-        program, arguments = self._qprocess_argv(command)
-        process = QProcess(self)
-        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        process.readyReadStandardOutput.connect(self._on_vam_output)
-        process.finished.connect(self._on_vam_process_finished)
-        self._vam_process = process
-        self._vam_process_stage = stage
-        process.start(program, arguments)
-
-    def _on_vam_output(self) -> None:
-        process = self._vam_process
-        if process is None:
-            return
-        raw = process.readAllStandardOutput().data().decode("utf-8", errors="replace")
-        lines = [line.strip() for line in raw.splitlines() if line.strip()]
-        if lines:
-            self.vam_status.setText(lines[-1][-240:])
-
-    def _on_vam_process_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
-        process = self._vam_process
-        stage = self._vam_process_stage
-        self._vam_process = None
-        self._vam_process_stage = ""
-        if process is not None:
-            process.deleteLater()
-
-        if stage == "install":
-            if exit_code != 0:
-                self._vam_ready = False
-                self.vam_status.setText(
-                    "Установка VAMToolbox завершилась с ошибкой. "
-                    "Проверьте вывод команды и каналы Conda."
-                )
-                self.vam_install_btn.setEnabled(bool(self._vam_conda_executable))
-                return
-            self.vam_status.setText("Проверяю установленный VAMToolbox...")
-            self._start_vam_probe()
-            return
-
-        if stage == "probe":
-            self._vam_ready = exit_code == 0
-            self._settings.setValue("vam/ready", self._vam_ready)
-            self._settings.setValue("vam/conda_executable", self._vam_conda_executable)
-            self._settings.setValue("vam/environment_name", self._vam_environment_name)
-            if self._vam_ready:
-                self.vam_status.setText(
-                    f"VAMToolbox установлен в окружении «{self._vam_environment_name}»."
-                )
-                self.vam_install_btn.setText("VAMToolbox установлен")
-                self.vam_install_btn.setEnabled(False)
-                self.settingsChanged.emit()
-            else:
-                self.vam_status.setText(
-                    "Не удалось импортировать VAMToolbox из окружения. "
-                    "Переустановите его или используйте внутренний Radon."
-                )
-                self.vam_install_btn.setEnabled(bool(self._vam_conda_executable))
-
-    def _start_vam_install(self) -> None:
-        if self._vam_process is not None:
-            return
-        self._vam_conda_executable = find_conda_executable() or self._vam_conda_executable
-        if not self._vam_conda_executable:
-            QMessageBox.information(
-                self,
-                tr("VAMToolbox — альтернативный движок"),
-                "Установите Miniconda или Anaconda с официального сайта, "
-                "добавьте Conda в PATH и перезапустите приложение.",
-            )
-            return
-
-        self._vam_ready = False
-        self.vam_install_btn.setEnabled(False)
-        self.vam_status.setText(
-            f"Устанавливаю VAMToolbox в окружение «{self._vam_environment_name}». "
-            "Это может занять несколько минут..."
-        )
-        self._run_vam_process(
-            build_vam_install_command(
-                self._vam_conda_executable,
-                self._vam_environment_name,
-            ),
-            "install",
-        )
-
-    def _start_vam_probe(self) -> None:
-        if self._vam_process is not None or not self._vam_conda_executable:
-            return
-        self._run_vam_process(
-            build_vam_probe_command(
-                self._vam_conda_executable,
-                self._vam_environment_name,
-            ),
-            "probe",
-        )
 
 
 class ScaleControls(QFrame):
@@ -539,11 +418,6 @@ class ScaleControls(QFrame):
                 lambda value, index=axis: self.sizeChanged.emit(index, value)
             )
 
-        self.uniform_scale = QCheckBox("Равномерное масштабирование")
-        self.uniform_scale.setChecked(True)
-        self.uniform_scale.setToolTip("Сохранять соотношение сторон модели")
-        layout.addWidget(self.uniform_scale, 3, 0, 1, 4)
-
     @staticmethod
     def _make_field(
         minimum: float,
@@ -583,6 +457,7 @@ class TransformToolbar(QWidget):
     modeChanged = pyqtSignal(str)
     centerRequested = pyqtSignal()
     autoFitRequested = pyqtSignal()
+    resetRequested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -595,10 +470,6 @@ class TransformToolbar(QWidget):
         tool_row = QHBoxLayout()
         tool_row.setSpacing(6)
         layout.addLayout(tool_row)
-
-        tool_label = QLabel("Инструмент:")
-        tool_label.setObjectName("fieldLabel")
-        tool_row.addWidget(tool_label)
 
         self.move_mode_btn = QPushButton("Перемещение")
         self.rotate_mode_btn = QPushButton("Вращение")
@@ -617,23 +488,21 @@ class TransformToolbar(QWidget):
             tool_row.addWidget(button)
         self.move_mode_btn.setChecked(True)
 
-        self.uniform_scale = QCheckBox("Пропорционально")
-        self.uniform_scale.setChecked(True)
-        self.uniform_scale.setToolTip("Сохранять пропорции при масштабировании")
-        tool_row.addWidget(self.uniform_scale)
-
         tool_row.addStretch(1)
 
         self.center_btn = QPushButton("Центрировать")
         self.center_btn.setToolTip("Переместить модель в центр XY")
         self.autofit_btn = QPushButton("Авто-фит под колбу")
         self.autofit_btn.setToolTip("Вписать модель в текущий размер колбы")
+        self.reset_btn = QPushButton("Сбросить")
+        self.reset_btn.setToolTip("Вернуть исходное положение и масштаб модели")
         tool_row.addWidget(self.center_btn)
         tool_row.addWidget(self.autofit_btn)
+        tool_row.addWidget(self.reset_btn)
 
         self.scale_controls = ScaleControls(self)
         self.scale_controls.setVisible(False)
-        layout.addWidget(self.scale_controls, 0, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.scale_controls, 0, Qt.AlignmentFlag.AlignLeft)
 
         self._wire_signals()
         self.set_enabled_state(False)
@@ -643,29 +512,25 @@ class TransformToolbar(QWidget):
             button.clicked.connect(lambda _checked=False, m=mode: self._on_mode_clicked(m))
         self.center_btn.clicked.connect(self.centerRequested.emit)
         self.autofit_btn.clicked.connect(self.autoFitRequested.emit)
-        self.scale_controls.uniform_scale.toggled.connect(self._sync_uniform_checkboxes)
-        self.uniform_scale.toggled.connect(self._sync_detail_uniform_checkbox)
+        self.reset_btn.clicked.connect(self.resetRequested.emit)
 
     def _on_mode_clicked(self, mode: str) -> None:
         self.scale_controls.setVisible(mode == "scale")
         self.modeChanged.emit(mode)
 
-    def _sync_uniform_checkboxes(self, checked: bool) -> None:
-        with QSignalBlocker(self.uniform_scale):
-            self.uniform_scale.setChecked(checked)
-
-    def _sync_detail_uniform_checkbox(self, checked: bool) -> None:
-        with QSignalBlocker(self.scale_controls.uniform_scale):
-            self.scale_controls.uniform_scale.setChecked(checked)
-
     def is_uniform(self) -> bool:
-        return self.uniform_scale.isChecked()
+        return True
 
     def sync_from_model(self, node: ModelNode) -> None:
         self.scale_controls.sync_from_model(node)
 
     def set_enabled_state(self, enabled: bool) -> None:
-        for widget in (*self._mode_buttons, self.uniform_scale, self.center_btn, self.autofit_btn):
+        for widget in (
+            *self._mode_buttons,
+            self.center_btn,
+            self.autofit_btn,
+            self.reset_btn,
+        ):
             widget.setEnabled(enabled)
         self.scale_controls.set_enabled_state(enabled)
 
@@ -749,9 +614,6 @@ class ObjectPanel(QWidget):
         transform_layout.addWidget(QLabel("Размер"))
         transform_layout.addWidget(self.size_value)
 
-        self.uniform_scale = QCheckBox("Uniform Scale (сохранять пропорции)")
-        self.uniform_scale.setChecked(True)
-        transform_layout.addWidget(self.uniform_scale)
         layout.addWidget(transform_box)
 
         # --- Быстрые действия -------------------------------------------
@@ -780,12 +642,11 @@ class ObjectPanel(QWidget):
         self.reset_btn.clicked.connect(self.resetRequested.emit)
 
     def is_uniform(self) -> bool:
-        return self.uniform_scale.isChecked()
+        return True
 
     # --- состояние -------------------------------------------------------------
     def set_enabled_state(self, enabled: bool) -> None:
-        for w in (*self._mode_buttons, self.uniform_scale,
-                  self.center_btn, self.autofit_btn, self.reset_btn):
+        for w in (*self._mode_buttons, self.center_btn, self.autofit_btn, self.reset_btn):
             w.setEnabled(enabled)
 
     def show_model_info(self, filename: str, node: ModelNode) -> None:

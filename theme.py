@@ -192,13 +192,22 @@ QFrame#scaleControls {{
     background-color: {SURFACE}; border: 1px solid {BORDER}; border-radius: {RADIUS}px;
 }}
 QWidget#transformToolbar {{ background: transparent; }}
+QToolButton#cameraHomeButton {{
+    background-color: {SURFACE_ALT}; border: 1px solid {BORDER};
+    border-radius: 6px; padding: 5px;
+}}
+QToolButton#cameraHomeButton:hover {{
+    background-color: {INPUT}; border-color: {ACCENT};
+}}
+QToolButton#cameraHomeButton:pressed {{ background-color: {ACCENT_SOFT}; }}
 
 /* --- Вкладки ---------------------------------------------------------- */
 QTabWidget::pane {{
-    border: 1px solid {BORDER_SOFT}; border-radius: {RADIUS}px;
-    background-color: {SURFACE}; top: -1px;
+    border: none; background-color: {SURFACE};
 }}
-QTabBar {{ background: transparent; }}
+QTabWidget::tab-bar {{ border: none; }}
+QTabBar {{ background: transparent; border: none; }}
+QTabBar::base {{ border: none; }}
 QTabBar::tab {{
     background: transparent; color: {TEXT_DIM}; font-weight: 500;
     padding: 9px 20px; margin-right: 2px; border: none;
@@ -219,6 +228,13 @@ QSplitter::handle:horizontal:hover {{
     background-color: #1E90FF;
     image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='15 18 9 12 15 6'></polyline></svg>");
 }}
+QSplitter::handle:vertical {{
+    background-color: #333333;
+    height: 8px;
+    border-top: 1px solid #1E1E1E;
+    border-bottom: 1px solid #1E1E1E;
+}}
+QSplitter::handle:vertical:hover {{ background-color: #1E90FF; }}
 
 QDoubleSpinBox {{
     background-color: #2D2D2D;

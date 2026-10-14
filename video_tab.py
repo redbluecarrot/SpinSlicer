@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from i18n import language, tr
+from i18n import tr
 from job_controller import JobController
 from widgets import LabeledSlider
 from workers import VideoAssembleWorker, VideoExportWorker
@@ -100,6 +100,9 @@ class ProjectorTab(QWidget):
         self._frame_index = 0
         self._assemble_worker: Optional[VideoAssembleWorker] = None
         self._export_worker: Optional[VideoExportWorker] = None
+        self._output_revision = 0
+        self._assembling_revision: Optional[int] = None
+        self._assemble_again = False
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance_frame)
@@ -127,7 +130,7 @@ class ProjectorTab(QWidget):
         self.preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         content_row.addWidget(self.preview, 3)
 
-        # Side column on right: Dose Reconstruction + CyberPepe Meme
+        # Side column on right: Dose Reconstruction
         side_col = QVBoxLayout()
         side_col.setSpacing(8)
 
@@ -150,68 +153,13 @@ class ProjectorTab(QWidget):
         self.recon_label.setFixedSize(160, 160)
         recon_layout.addWidget(self.recon_label, 0, Qt.AlignmentFlag.AlignCenter)
 
-        self.recon_stats = QLabel("Потери дозы (L2): —\nДвижок: OpenCAL SIRT")
+        self.recon_stats = QLabel("Ошибка дозы (RMSE): —\nДвижок: OpenCAL SIRT")
         self.recon_stats.setWordWrap(True)
         self.recon_stats.setMinimumHeight(32)
         self.recon_stats.setStyleSheet("color: #CCCCCC; font-size: 11px; margin-top: 2px;")
         recon_layout.addWidget(self.recon_stats)
 
         side_col.addWidget(recon_box)
-
-        # CyberPepe CAL Lab Easter Egg Card
-        pepe_box = QGroupBox("Лаборатория Пепе 🐸")
-        pepe_box.setObjectName("pepeBox")
-        pepe_box.setFixedWidth(265)
-        pepe_layout = QVBoxLayout(pepe_box)
-        pepe_layout.setContentsMargins(10, 8, 10, 8)
-        pepe_layout.setSpacing(4)
-
-        pepe_img_label = QLabel()
-        pepe_img_label.setProperty("_spinslicer_skip_text_translation", True)
-        pepe_img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pepe_img_label.setFixedSize(160, 160)
-        pepe_img_label.setStyleSheet("border-radius: 8px; border: none; background-color: #0d0d0d;")
-        pepe_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "pepe_meme.jpg")
-        if os.path.exists(pepe_path):
-            pix = QPixmap(pepe_path)
-            if not pix.isNull():
-                pepe_img_label.setPixmap(pix.scaled(160, 160, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-        pepe_layout.addWidget(pepe_img_label, 0, Qt.AlignmentFlag.AlignCenter)
-
-        self._pepe_quotes_ru = [
-            "«Кайф, когда доза сошлась» 🐸⚡",
-            "«Нельзя просто так напечатать без OpenCAL» 🐸🧪",
-            "«Когда Бугер-Ламберт лёг как надо» 🐸🔬",
-            "«0% поддержек, 100% объёмная скорость» 🐸🚀",
-            "«Фотонное превосходство в действии» 🐸✨",
-            "«Томография за 30 секунд — это база» 🐸⏱",
-            "«Свет пронзает смолу, деталь растёт» 🐸💡",
-        ]
-        self._pepe_quotes_en = [
-            "“Feels good when dose converges” 🐸⚡",
-            "“One does not simply print without OpenCAL” 🐸🧪",
-            "“When Beer-Lambert hits just right” 🐸🔬",
-            "“0% supports, 100% volumetric speed” 🐸🚀",
-            "“Photon supremacy in full effect” 🐸✨",
-            "“30-second tomography is the standard” 🐸⏱",
-            "“Light penetrates resin, structure rises” 🐸💡",
-        ]
-        self._pepe_quote_idx = 0
-        self.pepe_caption = QLabel(self._current_quotes()[0])
-        self.pepe_caption.setProperty("_spinslicer_skip_text_translation", True)
-        self.pepe_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.pepe_caption.setWordWrap(True)
-        self.pepe_caption.setMinimumHeight(34)
-        self.pepe_caption.setStyleSheet("color: #00FF88; font-weight: bold; font-size: 10px; margin-top: 2px; margin-bottom: 2px;")
-        pepe_layout.addWidget(self.pepe_caption)
-
-        quote_btn = QPushButton("🎲 Другая цитата")
-        quote_btn.setObjectName("secondaryButton")
-        quote_btn.setMinimumHeight(28)
-        quote_btn.clicked.connect(self._cycle_pepe_quote)
-        pepe_layout.addWidget(quote_btn)
-
-        side_col.addWidget(pepe_box)
         side_col.addStretch(1)
 
         content_row.addLayout(side_col, 1)
@@ -222,6 +170,7 @@ class ProjectorTab(QWidget):
         self.assemble_btn.setObjectName("generateButton")
         self.assemble_btn.setToolTip("Прочитать все кадры из папки и запустить проигрывание")
         self.assemble_btn.clicked.connect(self._on_assemble_clicked)
+        self.assemble_btn.setEnabled(False)
         buttons.addWidget(self.assemble_btn)
 
         self.play_pause_btn = QPushButton("⏸ Пауза")
@@ -254,27 +203,28 @@ class ProjectorTab(QWidget):
     def _on_live_intensity_changed(self, val: float) -> None:
         self.preview.set_intensity(val)
 
-    def _current_quotes(self) -> list[str]:
-        if language() == "ru":
-            return self._pepe_quotes_ru
-        return self._pepe_quotes_en
-
-    def _cycle_pepe_quote(self) -> None:
-        quotes = self._current_quotes()
-        self._pepe_quote_idx = (self._pepe_quote_idx + 1) % len(quotes)
-        self.pepe_caption.setText(quotes[self._pepe_quote_idx])
-
     def update_language(self) -> None:
-        quotes = self._current_quotes()
-        self._pepe_quote_idx = self._pepe_quote_idx % len(quotes)
-        self.pepe_caption.setText(quotes[self._pepe_quote_idx])
-        if self._output_dir and os.path.exists(os.path.join(self._output_dir, "reconstruction_preview.png")):
-            self._load_dose_preview(self._output_dir)
+        label = "⏸ Пауза" if self._frames and self._timer.isActive() else "▶ Воспроизведение"
+        self.play_pause_btn.setText(tr(label))
+        if self._output_dir:
+            self.dir_label.setText(f"{tr('Папка кадров: ')}{self._output_dir}")
         else:
-            self.recon_label.setText(tr("Нет данных\n(Сгенерируйте срез)"))
-            self.recon_stats.setText(f"{tr('Потери дозы (L2):')} —\n{tr('Движок: OpenCAL SIRT')}")
+            self.dir_label.setText(
+                tr("Папка кадров не выбрана — сначала сгенерируйте проекции на вкладке «Слайсер».")
+            )
+        self._reset_dose_preview()
+        if self._output_dir:
+            self._load_dose_preview(self._output_dir)
+
+    def _reset_dose_preview(self) -> None:
+        self.recon_label.clear()
+        self.recon_label.setText(tr("Нет данных\n(Сгенерируйте срез)"))
+        self.recon_stats.setText(
+            f"{tr('Ошибка дозы (RMSE):')} —\n{tr('Движок: OpenCAL SIRT')}"
+        )
 
     def _load_dose_preview(self, path: str) -> None:
+        self._reset_dose_preview()
         if not path or not os.path.isdir(path):
             return
         preview_path = os.path.join(path, "reconstruction_preview.png")
@@ -287,64 +237,123 @@ class ProjectorTab(QWidget):
         stats_path = os.path.join(path, "dose_stats.txt")
         if os.path.exists(stats_path):
             try:
-                with open(stats_path, "r") as f:
+                with open(stats_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                loss_val = content.split("loss=")[1].split("\n")[0] if "loss=" in content else "OK"
-                self.recon_stats.setText(f"{tr('Потери дозы (L2 Loss):')} {loss_val}\n{tr('Оптимизация: OpenCAL SIRT + Нелинейный отклик')}")
-            except Exception:
-                pass
+                if "rmse=" in content:
+                    error_value = content.split("rmse=", 1)[1].split("\n", 1)[0]
+                    error_label = tr("Ошибка дозы (RMSE):")
+                elif "loss=" in content:
+                    # Older frame sets stored a resolution-dependent L2 norm.
+                    error_value = content.split("loss=", 1)[1].split("\n", 1)[0]
+                    error_label = tr("Потери дозы (L2):")
+                else:
+                    error_value = "—"
+                    error_label = tr("Ошибка дозы (RMSE):")
+                self.recon_stats.setText(
+                    f"{error_label} {error_value}\n"
+                    f"{tr('Оптимизация: OpenCAL SIRT + Нелинейный отклик')}"
+                )
+            except OSError:
+                self.recon_stats.setText(tr("Не удалось прочитать статистику реконструкции."))
 
     # --- общая папка вывода (устанавливается из вкладки "Слайсер") -------------
     def set_output_dir(self, path: str) -> None:
-        if path != self._output_dir:
-            self._timer.stop()
-            self._frames = []
-            self._frame_index = 0
-            self.play_pause_btn.setEnabled(False)
-            self.save_btn.setEnabled(False)
-            self.preview.clear_frame()
+        # A new generation can reuse the same directory, so every notification
+        # invalidates any preview or in-flight assembly from the previous run.
+        self._output_revision += 1
+        self._timer.stop()
+        self._frames = []
+        self._frame_index = 0
+        self.play_pause_btn.setEnabled(False)
+        self.play_pause_btn.setText(tr("▶ Воспроизведение"))
+        self.preview.clear_frame()
         self._output_dir = path
         self.dir_label.setText(f"{tr('Папка кадров: ')}{path}")
+        self._reset_dose_preview()
         self._load_dose_preview(path)
+        self._refresh_action_buttons()
+
+    def _worker_running(self, worker) -> bool:
+        return worker is not None and worker.isRunning()
+
+    def _refresh_action_buttons(self) -> None:
+        assembling = self._worker_running(self._assemble_worker)
+        exporting = self._worker_running(self._export_worker)
+        has_output = bool(self._output_dir and os.path.isdir(self._output_dir))
+        self.assemble_btn.setEnabled(has_output and not assembling and not exporting)
+        self.save_btn.setEnabled(bool(self._frames) and not assembling and not exporting)
 
     # --- сборка и проигрывание ---------------------------------------------------
     def _on_assemble_clicked(self) -> None:
+        if self._worker_running(self._export_worker):
+            self._assemble_again = True
+            self._refresh_action_buttons()
+            return
+        if self._worker_running(self._assemble_worker):
+            if self._assembling_revision != self._output_revision:
+                self._assemble_again = True
+            return
         if not self._output_dir or not os.path.isdir(self._output_dir):
             QMessageBox.warning(
-                self, tr("Внимание"), "Select a frame folder first (output_frames)."
+                self, tr("Внимание"), tr("Сначала выберите папку кадров (output_frames).")
             )
             return
 
         self._timer.stop()
+        if self._frames:
+            self.play_pause_btn.setText(tr("▶ Воспроизведение"))
         self.assemble_btn.setEnabled(False)
+        self.save_btn.setEnabled(False)
         self.progress.emit(0.0, "Сборка видео из кадров...")
 
+        revision = self._output_revision
+        self._assembling_revision = revision
         self._assemble_worker = VideoAssembleWorker(self._output_dir, self)
         self._job_controller.register(self._assemble_worker)
         self._assemble_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
-        self._assemble_worker.finished_ok.connect(self._on_assembled)
-        self._assemble_worker.failed.connect(self._on_assemble_failed)
-        self._assemble_worker.cancelled.connect(
-            lambda: self.progress.emit(0.0, "Video assembly cancelled.")
+        self._assemble_worker.finished_ok.connect(
+            lambda frames, job_revision=revision: self._on_assembled(frames, job_revision)
         )
-        self._assemble_worker.finished.connect(lambda: self.assemble_btn.setEnabled(True))
+        self._assemble_worker.failed.connect(
+            lambda msg, job_revision=revision: self._on_assemble_failed(msg, job_revision)
+        )
+        self._assemble_worker.cancelled.connect(
+            lambda: self.progress.emit(0.0, tr("Сборка видео отменена."))
+        )
+        self._assemble_worker.finished.connect(
+            lambda job_revision=revision: self._on_assemble_thread_finished(job_revision)
+        )
         self._assemble_worker.start()
 
-    def _on_assembled(self, frames: List[np.ndarray]) -> None:
+    def _on_assembled(self, frames: List[np.ndarray], revision: int) -> None:
+        if revision != self._output_revision:
+            return
         self._frames = frames
         self._frame_index = 0
-        self.play_pause_btn.setEnabled(True)
-        self.save_btn.setEnabled(True)
-        self.play_pause_btn.setText(tr("⏸ Пауза"))
+        self.play_pause_btn.setEnabled(bool(frames))
+        self.play_pause_btn.setText(
+            tr("⏸ Пауза") if frames else tr("▶ Воспроизведение")
+        )
         self.progress.emit(1.0, tr("Видео собрано."))
         self.logMessage.emit(f"{tr('Собрано')} {len(frames)} {tr('кадров для воспроизведения.')}")
         if frames:
             self.preview.set_frame(frames[0])
         self._start_playback()
+        self._refresh_action_buttons()
 
-    def _on_assemble_failed(self, msg: str) -> None:
+    def _on_assemble_failed(self, msg: str, revision: int) -> None:
+        if revision != self._output_revision:
+            return
         self.progress.emit(0.0, tr("Сборка видео не удалась."))
         QMessageBox.critical(self, tr("Ошибка"), msg)
+
+    def _on_assemble_thread_finished(self, revision: int) -> None:
+        if self._assembling_revision == revision:
+            self._assembling_revision = None
+        self._refresh_action_buttons()
+        if self._assemble_again:
+            self._assemble_again = False
+            self._on_assemble_clicked()
 
     def _start_playback(self) -> None:
         if not self._frames:
@@ -375,12 +384,15 @@ class ProjectorTab(QWidget):
 
     # --- экспорт в MP4 -----------------------------------------------------------
     def _on_save_clicked(self) -> None:
-        if not self._frames:
-            QMessageBox.warning(self, "Warning", "Assemble the video first.")
+        if self._worker_running(self._assemble_worker) or self._worker_running(self._export_worker):
+            return
+        frames = self._frames
+        if not frames:
+            QMessageBox.warning(self, tr("Внимание"), tr("Сначала соберите видео."))
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save video", "projection_preview.mp4", "MP4 (*.mp4)"
+            self, tr("Сохранить видео"), "projection_preview.mp4", tr("Видео MP4 (*.mp4)")
         )
         if not path:
             return
@@ -389,25 +401,33 @@ class ProjectorTab(QWidget):
         self.save_btn.setEnabled(False)
         self.progress.emit(0.0, "Экспорт в MP4...")
 
-        self._export_worker = VideoExportWorker(self._frames, fps, path, self)
+        self._export_worker = VideoExportWorker(frames, fps, path, self)
         self._job_controller.register(self._export_worker)
         self._export_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
         self._export_worker.finished_ok.connect(self._on_export_done)
         self._export_worker.failed.connect(self._on_export_failed)
         self._export_worker.cancelled.connect(
-            lambda: self.progress.emit(0.0, "Video export cancelled.")
+            lambda: self.progress.emit(0.0, tr("Экспорт видео отменён."))
         )
-        self._export_worker.finished.connect(lambda: self.save_btn.setEnabled(True))
+        self._export_worker.finished.connect(self._on_export_thread_finished)
+        self.assemble_btn.setEnabled(False)
         self._export_worker.start()
 
+    def _on_export_thread_finished(self) -> None:
+        self._export_worker = None
+        self._refresh_action_buttons()
+        if self._assemble_again:
+            self._assemble_again = False
+            self._on_assemble_clicked()
+
     def _on_export_done(self, path: str) -> None:
-        self.progress.emit(1.0, "Video saved.")
-        self.logMessage.emit(f"MP4 saved: {path}")
-        QMessageBox.information(self, "Success", f"Video saved:\n{path}")
+        self.progress.emit(1.0, tr("Видео сохранено."))
+        self.logMessage.emit(f"{tr('Видео сохранено:')} {path}")
+        QMessageBox.information(self, tr("Успех"), f"{tr('Видео сохранено:')}\n{path}")
 
     def _on_export_failed(self, msg: str) -> None:
-        self.progress.emit(0.0, "Video export failed.")
-        QMessageBox.critical(self, "Video export failed", msg)
+        self.progress.emit(0.0, tr("Ошибка экспорта видео."))
+        QMessageBox.critical(self, tr("Ошибка экспорта видео."), msg)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (имя метода задано Qt)
         if self._job_controller.shutdown():
