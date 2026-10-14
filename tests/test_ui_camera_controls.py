@@ -5,6 +5,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("PYVISTA_OFF_SCREEN", "true")
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel
 
 from constants import (
@@ -16,6 +17,7 @@ from constants import (
     VIEWPORT_ORIENTATION_WIDGET_SIZE,
 )
 from SpinSlicer import CALSlicerMainWindow
+from ui_panels import ProcessSettingsPanel, QuickSettingsSidebar
 from viewport import CAMERA_NAVIGATION_BINDINGS, _orientation_marker_viewport
 
 
@@ -95,6 +97,30 @@ def test_quick_settings_sidebar_and_camera_controls() -> None:
 
 def test_middle_button_uses_the_same_pan_action_as_right_button() -> None:
     assert CAMERA_NAVIGATION_BINDINGS["middle"] == CAMERA_NAVIGATION_BINDINGS["right"] == "pan"
+
+
+def test_quick_settings_sidebar_fits_without_horizontal_scrolling() -> None:
+    app = QApplication.instance() or QApplication([])
+    settings = ProcessSettingsPanel()
+    sidebar = QuickSettingsSidebar(settings)
+    try:
+        assert (
+            sidebar.horizontalScrollBarPolicy()
+            == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        for width in (280, 300, 320, 360):
+            sidebar.resize(width, 800)
+            sidebar.show()
+            app.processEvents()
+
+            assert sidebar.horizontalScrollBar().maximum() == 0
+            assert sidebar.widget().width() <= sidebar.viewport().width()
+            checkbox = settings.preserve_internal_voids
+            assert checkbox.sizeHint().width() <= checkbox.parentWidget().contentsRect().width()
+            sidebar.hide()
+    finally:
+        sidebar.close()
+        settings.close()
 
 
 def test_orientation_marker_size_stays_fixed_when_viewport_height_changes() -> None:

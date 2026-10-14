@@ -290,8 +290,9 @@ class ProcessSettingsPanel(QWidget):
         self.fill_holes = QCheckBox("Сплошная заливка (ремонт сетки)")
         self.fill_holes.setChecked(True)
         grid_layout.addWidget(self.fill_holes)
-        self.preserve_internal_voids = QCheckBox(
-            "Сохранять внутренние полости (отверстия / резьба)"
+        self.preserve_internal_voids = QCheckBox("Сохранять полости")
+        self.preserve_internal_voids.setToolTip(
+            "Сохраняет отверстия и резьбу при растеризации STL-сетки."
         )
         # Threaded STL models need their bore and thread relief to survive
         # rasterization; keep the safe behavior enabled for every model.
@@ -385,11 +386,16 @@ class QuickSettingsSidebar(QScrollArea):
         self.setObjectName("quickSettingsSidebar")
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setMinimumWidth(280)
         self.setMaximumWidth(360)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
         content = QWidget()
+        content.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
         layout = QVBoxLayout(content)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)

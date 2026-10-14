@@ -37,6 +37,9 @@ _EN: dict[str, str] = {
     "Разрешение кадра, px": "Frame resolution, px",
     "Количество кадров": "Number of frames",
     "Сплошная заливка (ремонт сетки)": "Fill holes (mesh repair)",
+    "Сохранять полости": "Preserve internal cavities",
+    "Сохраняет отверстия и резьбу при растеризации STL-сетки.":
+        "Preserves holes and threads when rasterizing the STL mesh.",
     "Preserve internal voids (bores / threads)": "Preserve internal voids (bores / threads)",
     "Объект": "Object",
     "Модель": "Model",
