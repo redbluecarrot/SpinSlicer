@@ -32,7 +32,7 @@ from i18n import tr
 from job_controller import JobController
 from model_node import ModelNode
 from slicing_engine import ResinSettings, SliceParams
-from ui_panels import ProcessSettingsPanel, TransformToolbar
+from ui_panels import ProcessSettingsPanel, QuickSettingsSidebar, TransformToolbar
 from validation import format_preflight_report, preflight_mesh
 from viewport import Viewport3D
 from workers import GenerationWorker, LoadMeshWorker
@@ -113,10 +113,22 @@ class SlicerTab(QWidget):
         # Инструменты трансформации относятся к модели; управление камерой
         # доступно мышью и через куб ориентации во вьюпорте.
         self._transform_toolbar = TransformToolbar()
-        root.addWidget(self._transform_toolbar)
-
         self._viewport = Viewport3D()
-        root.addWidget(self._viewport, 1)
+
+        self.quick_settings_sidebar = QuickSettingsSidebar(self._process_panel, self)
+        workspace = QHBoxLayout()
+        workspace.setContentsMargins(0, 0, 0, 0)
+        workspace.setSpacing(10)
+
+        canvas = QVBoxLayout()
+        canvas.setContentsMargins(0, 0, 0, 0)
+        canvas.setSpacing(6)
+        canvas.addWidget(self._transform_toolbar)
+        canvas.addWidget(self._viewport, 1)
+
+        workspace.addLayout(canvas, 1)
+        workspace.addWidget(self.quick_settings_sidebar)
+        root.addLayout(workspace, 1)
 
     def _wire_signals(self) -> None:
         self._process_panel.diameterChanged.connect(self._on_diameter_changed)
@@ -131,7 +143,11 @@ class SlicerTab(QWidget):
         self._transform_toolbar.centerRequested.connect(self._on_center)
         self._transform_toolbar.autoFitRequested.connect(self._on_autofit)
         self._transform_toolbar.resetRequested.connect(self._on_reset_transform)
+        self._transform_toolbar.uniformScaleChanged.connect(
+            self._on_uniform_scale_changed
+        )
         self._viewport.transformChanged.connect(self._on_viewport_transform_changed)
+        self._viewport.set_uniform_scale(self._transform_toolbar.is_uniform())
 
     # =======================================================================
     # Колба (не зависит от модели)
@@ -232,6 +248,9 @@ class SlicerTab(QWidget):
             scale[axis] = target_scale
         node.transform.scale = np.maximum(scale, 1e-6)
         self._sync_and_redraw()
+
+    def _on_uniform_scale_changed(self, enabled: bool) -> None:
+        self._viewport.set_uniform_scale(enabled)
 
     def _on_scale_size_changed(self, axis: int, value: float) -> None:
         node = self._model_node

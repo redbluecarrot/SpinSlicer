@@ -29,7 +29,7 @@ def _viewport_pixel_bounds(viewport: tuple[float, float, float, float], width: i
     )
 
 
-def test_camera_controls_replace_the_vat_sidebar() -> None:
+def test_quick_settings_sidebar_and_camera_controls() -> None:
     app = QApplication.instance() or QApplication([])
     window = CALSlicerMainWindow()
     try:
@@ -37,8 +37,11 @@ def test_camera_controls_replace_the_vat_sidebar() -> None:
         labels = [label.text() for label in slicer.findChildren(QLabel)]
 
         assert not window.view_tabs.tabBar().drawBase()
-        assert window.settings_tab.isAncestorOf(window.settings_tab.vat_controls)
-        assert not slicer.isAncestorOf(window.settings_tab.vat_controls)
+        assert slicer.quick_settings_sidebar.isAncestorOf(window.settings_tab.vat_controls)
+        assert slicer.quick_settings_sidebar.isAncestorOf(window.settings_tab.resin_controls)
+        assert slicer.quick_settings_sidebar.isAncestorOf(window.settings_tab.grid_controls)
+        assert not window.settings_tab.isAncestorOf(window.settings_tab.vat_controls)
+        assert window.settings_tab.isAncestorOf(window.settings_tab.glass_thickness)
         viewport = slicer._viewport
         assert viewport._orientation_widget is not None
         assert viewport._camera_home_button.parent() is viewport.plotter.interactor
@@ -50,7 +53,16 @@ def test_camera_controls_replace_the_vat_sidebar() -> None:
         assert not any("Инструмент:" in text for text in labels)
         assert not any("Пропорционально" in text for text in labels)
         assert not any("ЛКМ — вращение" in text for text in labels)
-        assert not slicer.findChildren(QCheckBox)
+        uniform_checkbox = slicer._transform_toolbar.scale_controls.uniform_checkbox
+        assert isinstance(uniform_checkbox, QCheckBox)
+        assert uniform_checkbox.text() == "Равномерное масштабирование"
+        assert uniform_checkbox.isChecked()
+        assert slicer._transform_toolbar.is_uniform()
+        uniform_checkbox.setChecked(False)
+        assert not slicer._transform_toolbar.is_uniform()
+        assert not viewport._uniform_scale
+        uniform_checkbox.setChecked(True)
+        assert viewport._uniform_scale
 
         interactor = viewport.plotter.interactor
         interactor.resize(1000, 640)

@@ -222,13 +222,15 @@ class ProcessSettingsPanel(QWidget):
         layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
+        self._content_layout = layout
 
-        title = QLabel("Настройки принтера и процесса")
+        title = QLabel("Дополнительные настройки процесса")
         title.setObjectName("panelTitle")
         layout.addWidget(title)
 
         # Геометрия колбы находится в настройках, рядом с параметрами печати.
         self.vat_controls = QGroupBox("Печатная колба", self)
+        self.vat_controls.setObjectName("quickVatSettings")
         vat_layout = QVBoxLayout(self.vat_controls)
         self.container_mode = NoScrollComboBox()
         self.container_mode.addItem("Колба (в воздухе)", 0)
@@ -259,6 +261,8 @@ class ProcessSettingsPanel(QWidget):
 
         # --- Смола -----------------------------------------------------------
         resin_box = QGroupBox("Параметры фотополимера")
+        resin_box.setObjectName("quickExposureSettings")
+        self.resin_controls = resin_box
         resin_layout = QVBoxLayout(resin_box)
         self.exposure = LabeledSlider("Базовое время засветки, с", 0.1, 20.0, 1.0, decimals=2)
         self.intensity = LabeledSlider("Интенсивность источника, %", 1.0, 200.0, 100.0, decimals=1)
@@ -273,6 +277,8 @@ class ProcessSettingsPanel(QWidget):
 
         # --- Сетка и рендер -----------------------------------------------
         grid_box = QGroupBox("Разрешение и кадры")
+        grid_box.setObjectName("quickProjectionSettings")
+        self.grid_controls = grid_box
         grid_layout = QVBoxLayout(grid_box)
         self.grid_res = LabeledSlider("Разрешение сетки (Voxel Grid)", 64, 256, DEFAULT_GRID_RESOLUTION, decimals=0, step=1)
         self.output_res = LabeledSlider("Разрешение кадра, px", 128, 2048, DEFAULT_OUTPUT_RESOLUTION, decimals=0, step=1)
@@ -367,11 +373,49 @@ class ProcessSettingsPanel(QWidget):
         return self.alpha_absorption.value()
 
 
+class QuickSettingsSidebar(QScrollArea):
+    """Frequently adjusted print settings shown beside the 3D workspace."""
+
+    def __init__(
+        self,
+        settings_panel: ProcessSettingsPanel,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__(parent)
+        self.setObjectName("quickSettingsSidebar")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setWidgetResizable(True)
+        self.setMinimumWidth(280)
+        self.setMaximumWidth(360)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        title = QLabel("Быстрые настройки")
+        title.setObjectName("panelTitle")
+        layout.addWidget(title)
+
+        for group in (
+            settings_panel.vat_controls,
+            settings_panel.resin_controls,
+            settings_panel.grid_controls,
+        ):
+            settings_panel._content_layout.removeWidget(group)
+            layout.addWidget(group)
+
+        layout.addStretch(1)
+        self.setWidget(content)
+
+
 class ScaleControls(QFrame):
     """Compact Fusion-style percentage/size controls for the scale gizmo."""
 
     scalePercentChanged = pyqtSignal(int, float)
     sizeChanged = pyqtSignal(int, float)
+    uniformScaleChanged = pyqtSignal(bool)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -418,6 +462,11 @@ class ScaleControls(QFrame):
                 lambda value, index=axis: self.sizeChanged.emit(index, value)
             )
 
+        self.uniform_checkbox = QCheckBox("Равномерное масштабирование")
+        self.uniform_checkbox.setChecked(True)
+        layout.addWidget(self.uniform_checkbox, 3, 0, 1, 4)
+        self.uniform_checkbox.toggled.connect(self.uniformScaleChanged.emit)
+
     @staticmethod
     def _make_field(
         minimum: float,
@@ -458,6 +507,7 @@ class TransformToolbar(QWidget):
     centerRequested = pyqtSignal()
     autoFitRequested = pyqtSignal()
     resetRequested = pyqtSignal()
+    uniformScaleChanged = pyqtSignal(bool)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -502,6 +552,7 @@ class TransformToolbar(QWidget):
 
         self.scale_controls = ScaleControls(self)
         self.scale_controls.setVisible(False)
+        self.scale_controls.uniformScaleChanged.connect(self.uniformScaleChanged)
         layout.addWidget(self.scale_controls, 0, Qt.AlignmentFlag.AlignLeft)
 
         self._wire_signals()
@@ -519,7 +570,7 @@ class TransformToolbar(QWidget):
         self.modeChanged.emit(mode)
 
     def is_uniform(self) -> bool:
-        return True
+        return self.scale_controls.uniform_checkbox.isChecked()
 
     def sync_from_model(self, node: ModelNode) -> None:
         self.scale_controls.sync_from_model(node)

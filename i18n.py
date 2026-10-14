@@ -18,6 +18,8 @@ _language = "ru"
 _EN: dict[str, str] = {
     "Настройки процесса": "Process settings",
     "Настройки принтера и процесса": "Printer and process settings",
+    "Дополнительные настройки процесса": "Advanced process settings",
+    "Быстрые настройки": "Quick settings",
     "Настройки": "Settings",
     "Настройки принтера, процесса и альтернативного движка":
         "Printer, process, and alternate engine settings",
