@@ -17,9 +17,9 @@ not drive a real projector, resin vat, or rotation stage.
 
 ## Features
 
-Stable v0.2.1 includes **Slicer**, **Projector (Video)** and **Settings**.
+Stable v0.2.2 includes **Slicer**, **Projector (Video)** and **Settings**.
 The experimental simulator is maintained separately and is not included in
-this release. See [release notes](docs/releases/v0.2.1.md).
+this release. See [release notes](docs/releases/v0.2.2.md).
 
 - Load and transform STL models in physical millimetres.
 - Keep printer and process parameters on a dedicated Settings tab.

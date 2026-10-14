@@ -29,7 +29,16 @@ import pyvista as pv
 import trimesh
 import trimesh.transformations as tf
 import vtk
-from PyQt6.QtCore import QEasingCurve, QEvent, QRect, QSize, Qt, QTimer, QVariantAnimation, pyqtSignal
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QRect,
+    QSize,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+    pyqtSignal,
+)
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import QToolButton, QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
@@ -42,10 +51,10 @@ from constants import (
     VIEWPORT_BG_TOP,
     VIEWPORT_ORIENTATION_AXIS_CONE_RADIUS,
     VIEWPORT_ORIENTATION_AXIS_CONE_RESOLUTION,
+    VIEWPORT_ORIENTATION_AXIS_LABEL_GAP,
     VIEWPORT_ORIENTATION_AXIS_LENGTH,
     VIEWPORT_ORIENTATION_AXIS_LINE_WIDTH,
     VIEWPORT_ORIENTATION_AXIS_ORIGINS,
-    VIEWPORT_ORIENTATION_AXIS_LABEL_GAP,
     VIEWPORT_ORIENTATION_AXIS_TIP_LENGTH,
     VIEWPORT_ORIENTATION_CUBE_SCALE,
     VIEWPORT_ORIENTATION_DRAG_SENSITIVITY,

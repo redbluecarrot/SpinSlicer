@@ -70,7 +70,7 @@ def test_preflight_accepts_finite_mesh_inside_vat() -> None:
 
     assert report.ok
     assert report.triangle_count == 1
-    assert report.estimated_layers == estimate_layer_count(-10, 10, 60 / 64)
+    assert report.estimated_layers == estimate_layer_count(-10, 10, 60 / 128)
 
 
 def test_preflight_rejects_unreasonable_render_dimensions() -> None:

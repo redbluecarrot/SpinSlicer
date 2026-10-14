@@ -9,8 +9,8 @@ from slicing_engine import (
     ResinSettings,
     SliceParams,
     SlicingEngine,
-    _exported_detector_row,
     _dose_response_and_rmse,
+    _exported_detector_row,
 )
 
 

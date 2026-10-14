@@ -105,11 +105,17 @@ class CALSlicerMainWindow(QMainWindow):
         language_row.addStretch(1)
         language_row.addWidget(self.language_label)
         language_row.addWidget(self.language_combo)
-        self.settings_tab.layout().insertLayout(0, language_row)
+        settings_layout = self.settings_tab.layout()
+        if not isinstance(settings_layout, QVBoxLayout):
+            raise RuntimeError("Settings panel must provide a root layout.")
+        settings_layout.insertLayout(0, language_row)
 
         self.view_tabs = QTabWidget()
         self.view_tabs.setDocumentMode(True)
-        self.view_tabs.tabBar().setDrawBase(False)
+        tab_bar = self.view_tabs.tabBar()
+        if tab_bar is None:
+            raise RuntimeError("Main tab widget did not create its tab bar.")
+        tab_bar.setDrawBase(False)
         self.view_tabs.setObjectName("mainTabs")
         self.slicer_tab = SlicerTab(
             job_controller=self._job_controller,
