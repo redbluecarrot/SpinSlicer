@@ -92,14 +92,14 @@ class SlicerTab(QWidget):
         root.setSpacing(10)
 
         toolbar = QHBoxLayout()
-        self.load_btn = QPushButton("📂 Загрузить STL")
-        self.load_btn.setToolTip("Открыть STL-файл модели")
+        self.load_btn = QPushButton(tr("Загрузить STL"))
+        self.load_btn.setToolTip(tr("Открыть STL-файл модели"))
         self.load_btn.clicked.connect(self._on_load_clicked)
         toolbar.addWidget(self.load_btn)
 
-        self.generate_btn = QPushButton("▶ Сгенерировать проекции")
+        self.generate_btn = QPushButton(tr("Сгенерировать проекции"))
         self.generate_btn.setObjectName("generateButton")
-        self.generate_btn.setToolTip("Запустить расчёт проекций в фоновом потоке")
+        self.generate_btn.setToolTip(tr("Запустить расчёт проекций в фоновом потоке"))
         self.generate_btn.clicked.connect(self._on_generate_clicked)
         toolbar.addWidget(self.generate_btn)
         toolbar.addStretch(1)
@@ -108,23 +108,22 @@ class SlicerTab(QWidget):
         # Настройки принтера находятся на отдельной вкладке, поэтому слайсер
         # оставляет вьюпорту всю ширину окна.
         self._viewport = Viewport3D()
-        self._transform_toolbar = TransformToolbar()
-        root.addWidget(self._transform_toolbar)
+        
+        
         root.addWidget(self._viewport, 1)
 
     def _wire_signals(self) -> None:
         self._process_panel.diameterChanged.connect(self._on_diameter_changed)
-        self._transform_toolbar.modeChanged.connect(self._on_transform_mode_changed)
-        self._transform_toolbar.uniform_scale.toggled.connect(self._viewport.set_uniform_scale)
-        self._transform_toolbar.scale_controls.scalePercentChanged.connect(
-            self._on_scale_percent_changed
-        )
-        self._transform_toolbar.scale_controls.sizeChanged.connect(
-            self._on_scale_size_changed
-        )
+        
+        tp = self._process_panel.transform_panel
+        tp.positionChanged.connect(self._on_position_changed)
+        tp.rotationChanged.connect(self._on_rotation_changed)
+        tp.scaleSizeChanged.connect(self._on_scale_size_changed)
+        tp.centerRequested.connect(self._on_center)
+        tp.autoFitRequested.connect(self._on_autofit)
+        tp.resetRequested.connect(self._on_reset_transform)
+        
         self._viewport.transformChanged.connect(self._on_viewport_transform_changed)
-        self._transform_toolbar.centerRequested.connect(self._on_center)
-        self._transform_toolbar.autoFitRequested.connect(self._on_autofit)
 
     # =======================================================================
     # Колба (не зависит от модели)
@@ -133,7 +132,10 @@ class SlicerTab(QWidget):
         self._vat_timer.start(120)
 
     def _apply_vat_diameter(self) -> None:
-        self._viewport.update_vat(self._process_panel.vat_diameter_mm())
+        self._viewport.update_vat(
+            self._process_panel.vat_diameter_mm(),
+            self._process_panel.container_mode_value()
+        )
 
     # =======================================================================
     # Загрузка STL
@@ -162,12 +164,12 @@ class SlicerTab(QWidget):
         self._model_node = node
 
         self._viewport.set_model(node.original_mesh)
-        self._viewport.update_vat(diameter)
+        self._viewport.update_vat(diameter, self._process_panel.container_mode_value())
         self._viewport.update_model_transform(node.matrix())
         self._viewport.reset_camera()
-        self._transform_toolbar.sync_from_model(node)
+        self._process_panel.transform_panel.sync_from_model(self._model_node)
 
-        self._transform_toolbar.set_enabled_state(True)
+        self._process_panel.transform_panel.setEnabled(True)
 
         self.progress.emit(1.0, "Модель загружена.")
         self.logMessage.emit(
@@ -180,47 +182,57 @@ class SlicerTab(QWidget):
         self.logMessage.emit("ОШИБКА загрузки: " + msg.splitlines()[0])
         QMessageBox.critical(self, tr("Ошибка"), msg)
 
+
     # =======================================================================
     # Трансформации объекта
     # =======================================================================
     def _on_transform_mode_changed(self, mode: str) -> None:
         self._viewport.set_transform_mode(mode)
 
-    def _on_viewport_transform_changed(self, matrix: np.ndarray) -> None:
+    def _on_viewport_transform_changed(self, matrix) -> None:
         node = self._model_node
-        if node is None:
-            return
-        node.set_matrix(matrix, uniform=self._transform_toolbar.is_uniform())
+        if node is None: return
+        node.set_matrix(matrix, uniform=False)
+        self._process_panel.transform_panel.sync_from_model(node)
         self._sync_and_redraw()
 
-    def _on_scale_percent_changed(self, axis: int, value: float) -> None:
+    def _on_position_changed(self, axis: int, value: float) -> None:
         node = self._model_node
-        if node is None or axis not in (0, 1, 2):
-            return
-        scale = np.asarray(node.transform.scale, dtype=np.float64).copy()
-        target_scale = max(float(value) / 100.0, 1e-6)
-        if self._transform_toolbar.is_uniform():
-            current_axis_scale = max(float(scale[axis]), 1e-9)
-            scale *= target_scale / current_axis_scale
-        else:
-            scale[axis] = target_scale
-        node.transform.scale = scale
+        if node is None: return
+        pos = list(node.transform.translation)
+        pos[axis] = value
+        node.transform.translation = pos
+        self._process_panel.transform_panel.sync_from_model(node)
+        self._sync_and_redraw()
+
+    def _on_rotation_changed(self, axis: int, value: float) -> None:
+        node = self._model_node
+        if node is None: return
+        rot = list(node.transform.rotation_deg)
+        rot[axis] = value
+        node.transform.rotation_deg = rot
+        self._process_panel.transform_panel.sync_from_model(node)
         self._sync_and_redraw()
 
     def _on_scale_size_changed(self, axis: int, value: float) -> None:
+        import numpy as np
         node = self._model_node
-        if node is None or axis not in (0, 1, 2):
-            return
-        current_size = np.asarray(node.current_size_mm(), dtype=np.float64)
+        if node is None: return
         base_extents = np.asarray(node.base_extents, dtype=np.float64)
         scale = np.asarray(node.transform.scale, dtype=np.float64).copy()
         target_size = max(float(value), 1e-6)
-        if self._transform_toolbar.is_uniform():
-            current_axis_size = max(float(current_size[axis]), 1e-9)
-            scale *= target_size / current_axis_size
-        else:
-            scale[axis] = target_size / max(float(base_extents[axis]), 1e-9)
+        scale[axis] = target_size / max(float(base_extents[axis]), 1e-9)
         node.transform.scale = np.maximum(scale, 1e-6)
+        self._process_panel.transform_panel.sync_from_model(node)
+        self._sync_and_redraw()
+
+    def _on_reset_transform(self) -> None:
+        node = self._model_node
+        if node is None: return
+        node.transform.translation = (0.0, 0.0, 0.0)
+        node.transform.rotation_deg = (0.0, 0.0, 0.0)
+        node.transform.scale = (1.0, 1.0, 1.0)
+        self._process_panel.transform_panel.sync_from_model(node)
         self._sync_and_redraw()
 
     def _on_center(self) -> None:
@@ -248,7 +260,7 @@ class SlicerTab(QWidget):
         if node is None:
             return
         self._viewport.update_model_transform(node.matrix())
-        self._transform_toolbar.sync_from_model(node)
+        self._process_panel.transform_panel.sync_from_model(self._model_node)
 
     # =======================================================================
     # Генерация проекций
@@ -257,7 +269,7 @@ class SlicerTab(QWidget):
         if self._gen_worker is not None and self._gen_worker.isRunning():
             self._gen_worker.request_cancel()
             self.generate_btn.setEnabled(False)
-            self.generate_btn.setText("Остановка...")
+            self.generate_btn.setText(tr("Остановка..."))
             return
 
         if self._model_node is None:
@@ -288,6 +300,14 @@ class SlicerTab(QWidget):
             projection_backend=self._process_panel.projection_backend_name(),
             optimizer_iterations=self._process_panel.optimizer_iterations_value(),
             preserve_internal_voids=self._process_panel.preserve_internal_voids.isChecked(),
+            container_mode=self._process_panel.container_mode_value(),
+            cuvette_outer_mm=diameter,
+            cuvette_inner_mm=diameter - 2 * self._process_panel.glass_thickness_mm(),
+            n_air=1.0,
+            n_glass=self._process_panel.n_glass_value(),
+            n_liquid=self._process_panel.n_liquid_value(),
+            n_resin=self._process_panel.n_resin_value(),
+            alpha=self._process_panel.alpha_absorption_value()
         )
         vam_conda, vam_environment = self._process_panel.vam_runtime_config()
         params.vam_conda_executable = vam_conda
@@ -305,9 +325,9 @@ class SlicerTab(QWidget):
         report_text = format_preflight_report(preflight)
         self.logMessage.emit("Preflight отчёт:\n" + report_text)
         if not preflight.ok:
-            self.progress.emit(0.0, "Проверка модели не пройдена.")
-            self.logMessage.emit("ОШИБКА проверки модели: " + "; ".join(preflight.errors))
-            QMessageBox.critical(self, "Model is not ready for slicing", report_text)
+            self.progress.emit(0.0, tr("Проверка модели не пройдена."))
+            self.logMessage.emit(f"{tr('ОШИБКА проверки модели: ')}{'; '.join(preflight.errors)}")
+            QMessageBox.critical(self, tr("Модель не готова к слайсингу"), report_text)
             return
         if preflight.warnings:
             self.logMessage.emit("Предупреждения preflight: " + "; ".join(preflight.warnings))
@@ -330,7 +350,7 @@ class SlicerTab(QWidget):
         self._gen_worker.cancelled.connect(self._on_generation_cancelled)
         self._gen_worker.finished.connect(self._on_generation_thread_finished)
 
-        self.generate_btn.setText("⏹ Cancel generation")
+        self.generate_btn.setText(tr("⏹ Отменить генерацию"))
         self.load_btn.setEnabled(False)
         self.logMessage.emit("Запуск генерации проекций...")
         self._gen_worker.start()
@@ -343,12 +363,12 @@ class SlicerTab(QWidget):
         self.progress.emit(1.0, "Готово!")
         self.logMessage.emit(f"Сохранено {num_frames} кадров в: {out_dir}")
         self.outputGenerated.emit(out_dir)
-        QMessageBox.information(self, tr("Успех"), f"Saved {num_frames} frames to\n{out_dir}")
+        QMessageBox.information(self, tr("Успех"), f"{tr('Сохранено')} {num_frames} {tr('кадров в:')}\n{out_dir}")
 
     def _on_generation_failed(self, msg: str) -> None:
         self.progress.emit(0.0, "Ошибка генерации.")
         self.logMessage.emit("ОШИБКА генерации: " + msg.splitlines()[0])
-        QMessageBox.critical(self, "Projection generation failed", msg)
+        QMessageBox.critical(self, tr("Ошибка генерации проекций"), msg)
 
     def _on_generation_cancelled(self) -> None:
         self.progress.emit(0.0, "Отменено пользователем.")
@@ -356,7 +376,7 @@ class SlicerTab(QWidget):
 
     def _on_generation_thread_finished(self) -> None:
         self.generate_btn.setEnabled(True)
-        self.generate_btn.setText("▶ Generate projections")
+        self.generate_btn.setText(tr("Сгенерировать проекции"))
         self.load_btn.setEnabled(True)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (имя метода задано Qt)

@@ -127,9 +127,9 @@ def validate_slice_parameters(
     if not 0.0 <= threshold <= 100.0:
         raise ValidationError("threshold must be between 0 and 100.")
 
-    if projection_backend not in {"internal", "auto", "vamtoolbox"}:
+    if projection_backend not in {"internal", "auto", "vamtoolbox", "physical"}:
         raise ValidationError(
-            "projection_backend must be one of: internal, auto, vamtoolbox."
+            "projection_backend must be one of: internal, auto, vamtoolbox, physical."
         )
     iterations = _integer(optimizer_iterations, "optimizer_iterations")
     if not 1 <= iterations <= 100:

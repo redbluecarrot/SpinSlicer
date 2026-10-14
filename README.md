@@ -17,9 +17,9 @@ not drive a real projector, resin vat, or rotation stage.
 
 ## Features
 
-Stable v0.1.10 includes **Slicer**, **Projector (Video)** and **Settings**.
+Stable v0.2.1 includes **Slicer**, **Projector (Video)** and **Settings**.
 The experimental simulator is maintained separately and is not included in
-this release. See [release notes](docs/releases/v0.1.10.md).
+this release. See [release notes](docs/releases/v0.2.1.md).
 
 - Load and transform STL models in physical millimetres.
 - Keep printer and process parameters on a dedicated Settings tab.
@@ -166,7 +166,7 @@ git push origin vX.Y.Z
 ```
 
 The `Build release artifacts` workflow publishes assets to the [GitHub Releases
-page](https://github.com/yunahinata/SpinSlicer/releases):
+page](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - `SpinSlicer-windows-x64.zip` — contains `SpinSlicer.exe` for 64-bit Windows;
 - `SpinSlicer-Setup-<version>.exe` — per-user Windows installer with Start Menu

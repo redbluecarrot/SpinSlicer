@@ -23,6 +23,15 @@ from PyQt6.QtWidgets import (
 )
 
 
+
+class NoScrollSlider(QSlider):
+    def wheelEvent(self, e):
+        e.ignore()
+
+class NoScrollSpinBox(QDoubleSpinBox):
+    def wheelEvent(self, e):
+        e.ignore()
+
 class LabeledSlider(QWidget):
     """Подпись + слайдер + числовое поле, синхронизированные друг с другом."""
 
@@ -55,7 +64,7 @@ class LabeledSlider(QWidget):
         row = QHBoxLayout()
         row.setSpacing(8)
 
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = NoScrollSlider(Qt.Orientation.Horizontal)
         self.slider.setMinimum(int(round(minimum * self._scale)))
         self.slider.setMaximum(int(round(maximum * self._scale)))
         self.slider.setValue(int(round(value * self._scale)))

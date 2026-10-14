@@ -56,6 +56,7 @@ from vam_backend import (
     find_conda_executable,
     is_vamtoolbox_available,
 )
+from theme import AXIS_X, AXIS_Y, AXIS_Z
 from widgets import LabeledSlider
 
 
@@ -67,6 +68,102 @@ def _scroll_wrap(inner: QWidget) -> QScrollArea:
     return scroll
 
 
+
+class NoScrollComboBox(QComboBox):
+    def wheelEvent(self, e):
+        e.ignore()
+
+
+class ObjectTransformPanel(QGroupBox):
+    positionChanged = pyqtSignal(int, float)
+    rotationChanged = pyqtSignal(int, float)
+    scaleSizeChanged = pyqtSignal(int, float)
+    centerRequested = pyqtSignal()
+    autoFitRequested = pyqtSignal()
+    resetRequested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__("Трансформация модели", parent)
+        layout = QGridLayout(self)
+        layout.setContentsMargins(12, 16, 12, 12)
+        layout.setHorizontalSpacing(8)
+        
+        # Headers
+        layout.addWidget(QLabel(""), 0, 0)
+        lbl_x = QLabel("X"); lbl_x.setStyleSheet("color: #FF4444; font-weight: bold;"); layout.addWidget(lbl_x, 0, 1)
+        lbl_y = QLabel("Y"); lbl_y.setStyleSheet("color: #44FF44; font-weight: bold;"); layout.addWidget(lbl_y, 0, 2)
+        lbl_z = QLabel("Z"); lbl_z.setStyleSheet("color: #4444FF; font-weight: bold;"); layout.addWidget(lbl_z, 0, 3)
+
+        # Position
+        layout.addWidget(QLabel("Позиция, мм"), 1, 0)
+        self.pos_x = QDoubleSpinBox(); self.pos_x.setRange(-1000, 1000); layout.addWidget(self.pos_x, 1, 1)
+        self.pos_y = QDoubleSpinBox(); self.pos_y.setRange(-1000, 1000); layout.addWidget(self.pos_y, 1, 2)
+        self.pos_z = QDoubleSpinBox(); self.pos_z.setRange(-1000, 1000); layout.addWidget(self.pos_z, 1, 3)
+
+        # Rotation
+        layout.addWidget(QLabel("Вращение, °"), 2, 0)
+        self.rot_x = QDoubleSpinBox(); self.rot_x.setRange(-360, 360); layout.addWidget(self.rot_x, 2, 1)
+        self.rot_y = QDoubleSpinBox(); self.rot_y.setRange(-360, 360); layout.addWidget(self.rot_y, 2, 2)
+        self.rot_z = QDoubleSpinBox(); self.rot_z.setRange(-360, 360); layout.addWidget(self.rot_z, 2, 3)
+
+        # Size
+        layout.addWidget(QLabel("Размер, мм"), 3, 0)
+        self.size_x = QDoubleSpinBox(); self.size_x.setRange(0.01, 1000); layout.addWidget(self.size_x, 3, 1)
+        self.size_y = QDoubleSpinBox(); self.size_y.setRange(0.01, 1000); layout.addWidget(self.size_y, 3, 2)
+        self.size_z = QDoubleSpinBox(); self.size_z.setRange(0.01, 1000); layout.addWidget(self.size_z, 3, 3)
+
+        # Action Buttons
+        btn_row = QHBoxLayout()
+        self.center_btn = QPushButton("Центр")
+        self.autofit_btn = QPushButton("Авто-фит")
+        self.reset_btn = QPushButton("Сброс")
+        btn_row.addWidget(self.center_btn)
+        btn_row.addWidget(self.autofit_btn)
+        btn_row.addWidget(self.reset_btn)
+        layout.addLayout(btn_row, 4, 0, 1, 4)
+
+        self._wire_signals()
+        self.setEnabled(False)
+
+    def _wire_signals(self):
+        self.pos_x.valueChanged.connect(lambda v: self.positionChanged.emit(0, v))
+        self.pos_y.valueChanged.connect(lambda v: self.positionChanged.emit(1, v))
+        self.pos_z.valueChanged.connect(lambda v: self.positionChanged.emit(2, v))
+        
+        self.rot_x.valueChanged.connect(lambda v: self.rotationChanged.emit(0, v))
+        self.rot_y.valueChanged.connect(lambda v: self.rotationChanged.emit(1, v))
+        self.rot_z.valueChanged.connect(lambda v: self.rotationChanged.emit(2, v))
+        
+        self.size_x.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(0, v))
+        self.size_y.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(1, v))
+        self.size_z.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(2, v))
+
+        self.center_btn.clicked.connect(self.centerRequested.emit)
+        self.autofit_btn.clicked.connect(self.autoFitRequested.emit)
+        self.reset_btn.clicked.connect(self.resetRequested.emit)
+
+    def sync_from_model(self, node):
+            self.blockSignals(True)
+            t = node.transform.translation
+            r = node.transform.rotation_deg
+            s = node.current_size_mm()
+            
+            self.pos_x.setValue(t[0])
+            self.pos_y.setValue(t[1])
+            self.pos_z.setValue(t[2])
+            
+            self.rot_x.setValue(r[0])
+            self.rot_y.setValue(r[1])
+            self.rot_z.setValue(r[2])
+            
+            self.size_x.setValue(s[0])
+            self.size_y.setValue(s[1])
+            self.size_z.setValue(s[2])
+            
+            self.setEnabled(True)
+            self.blockSignals(False)
+    
+    
 class ProcessSettingsPanel(QWidget):
     """Настройки принтера и процесса печати для отдельной вкладки."""
 
@@ -103,11 +200,34 @@ class ProcessSettingsPanel(QWidget):
         title.setObjectName("panelTitle")
         layout.addWidget(title)
 
+        self.transform_panel = ObjectTransformPanel(self)
+        layout.addWidget(self.transform_panel)
+
         # --- Колба / принтер -----------------------------------------------
         vat_box = QGroupBox("Печатная колба")
         vat_layout = QVBoxLayout(vat_box)
-        self.diameter = LabeledSlider("Диаметр колбы, мм", 20.0, 200.0, DEFAULT_DIAMETER_MM, decimals=1)
+        self.container_mode = NoScrollComboBox()
+        self.container_mode.addItem("Колба (без кюветы и жидкости)", 0)
+        self.container_mode.addItem("Виала (в иммерсионной ванне)", 2)
+        vat_layout.addWidget(QLabel("Оптический режим:"))
+        vat_layout.addWidget(self.container_mode)
+        
+        self.diameter = LabeledSlider("Диаметр колбы (или внутр. сторона), мм", 20.0, 200.0, DEFAULT_DIAMETER_MM, decimals=1)
         vat_layout.addWidget(self.diameter)
+        self.container_mode.currentIndexChanged.connect(lambda: self.diameterChanged.emit(self.diameter.value()))
+        
+        self.glass_thickness = LabeledSlider("Толщина стекла кюветы, мм", 1.0, 10.0, 2.0, decimals=1)
+        vat_layout.addWidget(self.glass_thickness)
+        self.n_glass = LabeledSlider("Показатель преломления (Стекло)", 1.0, 2.0, 1.51, decimals=2)
+        vat_layout.addWidget(self.n_glass)
+        self.n_liquid = LabeledSlider("Показатель преломления (Жидкость)", 1.0, 2.0, 1.45, decimals=2)
+        vat_layout.addWidget(self.n_liquid)
+        self.n_resin = LabeledSlider("Показатель преломления (Смола)", 1.0, 2.0, 1.50, decimals=2)
+        vat_layout.addWidget(self.n_resin)
+        self.alpha_absorption = LabeledSlider("Затухание (Бугер-Ламберт) 1/мм", 0.0, 0.10, 0.0, decimals=3)
+        self.alpha_absorption.setToolTip("Коэффициент оптического затухания света смолой (для CAL обычно 0.000 - 0.030 мм⁻¹)")
+        vat_layout.addWidget(self.alpha_absorption)
+
         layout.addWidget(vat_box)
 
         # --- Смола -----------------------------------------------------------
@@ -138,7 +258,7 @@ class ProcessSettingsPanel(QWidget):
         self.fill_holes.setChecked(True)
         grid_layout.addWidget(self.fill_holes)
         self.preserve_internal_voids = QCheckBox(
-            "Preserve internal voids (bores / threads)"
+            "Сохранять внутренние полости (отверстия / резьба)"
         )
         # Threaded STL models need their bore and thread relief to survive
         # rasterization; keep the safe behavior enabled for every model.
@@ -147,84 +267,47 @@ class ProcessSettingsPanel(QWidget):
         layout.addWidget(grid_box)
 
         # --- Projection engine --------------------------------------------
-        backend_box = QGroupBox("Projection engine")
+        backend_box = QGroupBox("Движок проекций (Собственный C++ SIRT)")
         backend_layout = QVBoxLayout(backend_box)
-        self.projection_backend = QComboBox()
-        self.projection_backend.addItem("SpinSlicer internal Radon (recommended)", "internal")
-        self.projection_backend.addItem("VAMToolbox CAL (optional)", "vamtoolbox")
-        self.projection_backend.addItem(
-            "Auto: VAMToolbox CAL → SpinSlicer fallback (experimental)", "auto"
-        )
-        backend_layout.addWidget(self.projection_backend)
+        
         self.optimizer_iterations = LabeledSlider(
-            "VAM optimizer iterations", 1, 100, 8, decimals=0, step=1,
+            "Итерации оптимизатора", 1, 100, 8, decimals=0, step=1,
         )
         backend_layout.addWidget(self.optimizer_iterations)
         backend_hint = QLabel(
-            "SpinSlicer internal Radon is the default engine. VAMToolbox is "
-            "available only when explicitly selected."
+            "Встроенный сверхбыстрый физический движок (SIRT + C++ OpenMP). "
+            "Учитывает преломление света по закону Снеллиуса и поглощение по Бугеру-Ламберту."
         )
         backend_hint.setObjectName("hintLabel")
         backend_hint.setWordWrap(True)
         backend_layout.addWidget(backend_hint)
         layout.addWidget(backend_box)
 
-        # --- Optional VAMToolbox runtime ----------------------------------
-        vam_box = QGroupBox("VAMToolbox — альтернативный движок")
-        vam_layout = QVBoxLayout(vam_box)
-        vam_description = QLabel(
-            "SpinSlicer Radon — встроенный быстрый и воспроизводимый движок "
-            "для локальной подготовки кадров. VAMToolbox CAL — внешний "
-            "оптимизатор дозы, который может лучше подавлять переэкспонирование "
-            "и артефакты, но работает медленнее и требует отдельного Windows "
-            "окружения Conda. VAMToolbox не входит в SpinSlicer и ставится "
-            "только по запросу."
-        )
-        vam_description.setObjectName("hintLabel")
-        vam_description.setWordWrap(True)
-        vam_layout.addWidget(vam_description)
-
-        self.vam_status = QLabel()
-        self.vam_status.setObjectName("hintLabel")
-        self.vam_status.setWordWrap(True)
-        vam_layout.addWidget(self.vam_status)
-
-        self.vam_install_btn = QPushButton("Скачать и установить VAMToolbox")
-        self.vam_install_btn.setToolTip(
-            "Создать отдельное окружение Conda и установить VAMToolbox CAL"
-        )
-        self.vam_install_btn.clicked.connect(self._start_vam_install)
-        vam_layout.addWidget(self.vam_install_btn)
-
-        vam_docs = QLabel(
-            '<a href="https://vamtoolbox.readthedocs.io/en/latest/_docs/gettingstarted.html">'
-            "Инструкция VAMToolbox и ограничения платформы</a>"
-        )
-        vam_docs.setOpenExternalLinks(True)
-        vam_docs.setObjectName("hintLabel")
-        vam_layout.addWidget(vam_docs)
-        layout.addWidget(vam_box)
-
         layout.addStretch(1)
-        content.setMaximumWidth(720)
+        content.setMaximumWidth(560)
         scroll = _scroll_wrap(content)
         scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         root.addWidget(scroll)
 
         self.diameter.valueChanged.connect(self.diameterChanged.emit)
         self.diameter.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.glass_thickness.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.n_glass.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.n_liquid.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.n_resin.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.alpha_absorption.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.exposure.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.intensity.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.threshold.valueChanged.connect(lambda _v: self.settingsChanged.emit())
         self.fill_holes.toggled.connect(lambda _v: self.settingsChanged.emit())
         self.preserve_internal_voids.toggled.connect(lambda _v: self.settingsChanged.emit())
-        self.projection_backend.currentIndexChanged.connect(lambda _v: self.settingsChanged.emit())
         self.optimizer_iterations.valueChanged.connect(lambda _v: self.settingsChanged.emit())
-
-        self._refresh_vam_status()
 
     def vat_diameter_mm(self) -> float:
         return self.diameter.value()
 
     def projection_backend_name(self) -> str:
-        return str(self.projection_backend.currentData())
+        return "physical"
 
     def optimizer_iterations_value(self) -> int:
         return self.optimizer_iterations.value_int()
@@ -237,6 +320,25 @@ class ProcessSettingsPanel(QWidget):
         if self._vam_ready and self._vam_conda_executable:
             return self._vam_conda_executable, self._vam_environment_name
         return "", ""
+
+    def container_mode_value(self) -> int:
+        return self.container_mode.currentData()
+
+    def glass_thickness_mm(self) -> float:
+        return self.glass_thickness.value()
+
+    def n_glass_value(self) -> float:
+        return self.n_glass.value()
+
+    def n_liquid_value(self) -> float:
+        return self.n_liquid.value()
+
+    def n_resin_value(self) -> float:
+        return self.n_resin.value()
+        
+    def alpha_absorption_value(self) -> float:
+        return self.alpha_absorption.value()
+
 
     def shutdown(self) -> None:
         """Stop an in-progress optional dependency installation."""
@@ -276,7 +378,7 @@ class ProcessSettingsPanel(QWidget):
         else:
             self.vam_status.setText(
                 "Conda не найдена. Установите Miniconda или Anaconda, "
-                "перезапустите SpinSlicer и повторите установку."
+                "перезапустите приложение и повторите установку."
             )
             self.vam_install_btn.setEnabled(False)
 
@@ -410,7 +512,7 @@ class ScaleControls(QFrame):
         layout.addWidget(QLabel(""), 0, 0)
         self.axis_labels: list[QLabel] = []
         for column, (axis_name, color) in enumerate(
-            (("X", "#ef6a63"), ("Y", "#62c370"), ("Z", "#5d91ef")),
+            (("X", AXIS_X), ("Y", AXIS_Y), ("Z", AXIS_Z)),
             start=1,
         ):
             label = QLabel(axis_name)
@@ -590,6 +692,9 @@ class ObjectPanel(QWidget):
         title = QLabel("Объект")
         title.setObjectName("panelTitle")
         layout.addWidget(title)
+
+        self.transform_panel = ObjectTransformPanel(self)
+        layout.addWidget(self.transform_panel)
 
         info_box = QGroupBox("Модель")
         info_layout = QVBoxLayout(info_box)

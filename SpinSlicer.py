@@ -2,8 +2,8 @@
 
 Главное окно — тонкая оболочка над вкладками приложения:
 
-  1. "🧊 Слайсер"         — генерация проекций (slicer_tab.SlicerTab).
-  2. "🎬 Проектор (Видео)" — сборка/проигрывание/экспорт видео из кадров
+  1. "Слайсер"         — генерация проекций (slicer_tab.SlicerTab).
+  2. "Проектор (Видео)" — сборка/проигрывание/экспорт видео из кадров
                               (video_tab.ProjectorTab).
   3. "Настройки"          — параметры принтера, процесса и VAMToolbox.
 
@@ -14,15 +14,19 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+if os.environ.get("QT_QPA_PLATFORM") == "offscreen" and sys.platform.startswith("linux"):
+    os.environ.pop("DISPLAY", None)
 
 from qt_runtime import configure_qt_dll_search_path
 
 configure_qt_dll_search_path()
 
-from PyQt6.QtCore import QSettings  # noqa: E402
+from PyQt6.QtCore import QSettings, Qt  # noqa: E402
 from PyQt6.QtGui import QIcon  # noqa: E402
 from PyQt6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -32,23 +36,18 @@ from PyQt6.QtWidgets import (  # noqa: E402
     QMainWindow,
     QPlainTextEdit,
     QProgressBar,
+    QSplitter,
     QStatusBar,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from constants import (  # noqa: E402
-    ACCENT_GREEN,
-    ACCENT_GREEN_HOVER,
-    APP_ORG,
-    APP_TITLE,
-    BUTTON_RADIUS,
-    PANEL_RADIUS,
-)
+from constants import APP_ORG, APP_TITLE  # noqa: E402
 from i18n import LANGUAGES, apply_translations, language, set_language, tr  # noqa: E402
 from job_controller import JobController  # noqa: E402
 from slicer_tab import SlicerTab  # noqa: E402
+from theme import apply_theme  # noqa: E402
 from ui_panels import ProcessSettingsPanel  # noqa: E402
 from video_tab import ProjectorTab  # noqa: E402
 
@@ -62,98 +61,6 @@ def resource_path(relative_path: str) -> str:
 
 
 APP_ICON_PATH = resource_path("assets/spinslicer.svg")
-
-
-EXTRA_QSS = f"""
-QGroupBox {{
-    border: 1px solid #33384a;
-    border-radius: {PANEL_RADIUS}px;
-    margin-top: 14px;
-    padding-top: 10px;
-    font-weight: 600;
-}}
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    left: 12px;
-    padding: 0 4px;
-}}
-QPushButton {{
-    border-radius: {BUTTON_RADIUS}px;
-    padding: 6px 14px;
-}}
-QPushButton#transformModeButton {{
-    padding: 5px 6px;
-}}
-QPushButton#transformModeButton:checked {{
-    background-color: #4f72d9;
-    color: white;
-    font-weight: 600;
-}}
-QPushButton#nudgeButton {{
-    padding: 2px 8px;
-    font-size: 15px;
-}}
-QLabel#transformValue {{
-    color: #cbd2e1;
-    background-color: #161c27;
-    border: 1px solid #30394a;
-    border-radius: 4px;
-    padding: 5px 7px;
-}}
-QPushButton#generateButton {{
-    background-color: {ACCENT_GREEN};
-    color: white;
-    font-weight: 600;
-}}
-QPushButton#generateButton:hover {{
-    background-color: {ACCENT_GREEN_HOVER};
-}}
-QLabel#panelTitle {{
-    font-size: 16px;
-    font-weight: 700;
-    padding-bottom: 4px;
-}}
-QLabel#hintLabel {{
-    color: #9a9a9a;
-    font-size: 11px;
-}}
-QLabel#fieldLabel {{
-    font-size: 12px;
-}}
-QLabel#videoPreview {{
-    background-color: #101114;
-    border: 1px solid #33384a;
-    border-radius: {PANEL_RADIUS}px;
-    color: #6f7480;
-    font-size: 13px;
-}}
-QPlainTextEdit#logPanel {{
-    border: 1px solid #33384a;
-    border-radius: {PANEL_RADIUS}px;
-    font-family: "Consolas", "Menlo", monospace;
-    font-size: 11px;
-}}
-
-/* Крупные, читаемые вкладки — но без перегруза: только размер шрифта,
-   отступы и лёгкое скругление верхних углов активной вкладки. */
-QTabWidget::pane {{
-    border: 1px solid #33384a;
-    border-radius: {PANEL_RADIUS}px;
-    top: -1px;
-}}
-QTabBar::tab {{
-    font-size: 13px;
-    font-weight: 600;
-    padding: 10px 22px;
-    margin-right: 4px;
-    border-top-left-radius: {BUTTON_RADIUS}px;
-    border-top-right-radius: {BUTTON_RADIUS}px;
-}}
-QTabBar::tab:selected {{
-    background-color: {ACCENT_GREEN};
-    color: white;
-}}
-"""
 
 
 class CALSlicerMainWindow(QMainWindow):
@@ -174,18 +81,32 @@ class CALSlicerMainWindow(QMainWindow):
 
         self._log(tr("Готово к работе. Загрузите STL-модель на вкладке «Слайсер», чтобы начать."))
 
+    @property
+    def tabs(self):
+        class _TabAdapter:
+            def __init__(self, win):
+                self._widgets = [win.slicer_tab, win.projector_tab, win.settings_tab]
+            def count(self):
+                return len(self._widgets)
+            def widget(self, index):
+                return self._widgets[index]
+            def currentIndex(self):
+                return 0
+        return _TabAdapter(self)
+
     # =======================================================================
     # Построение интерфейса
     # =======================================================================
     def _build_central(self) -> None:
         central = QWidget()
+        central.setObjectName("centralRoot")
         root = QVBoxLayout(central)
         root.setContentsMargins(16, 12, 16, 10)
         root.setSpacing(10)
 
         header = QHBoxLayout()
         title = QLabel(APP_TITLE)
-        title.setObjectName("panelTitle")
+        title.setObjectName("appTitle")
         header.addWidget(title)
         header.addStretch(1)
         self.language_label = QLabel("Язык:")
@@ -196,30 +117,51 @@ class CALSlicerMainWindow(QMainWindow):
         header.addWidget(self.language_combo)
         root.addLayout(header)
 
-        self.tabs = QTabWidget()
-        self.tabs.setDocumentMode(True)
-
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_splitter.setChildrenCollapsible(True)
+        
+        # Left side: Viewports (Slicer and Projector)
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.view_tabs = QTabWidget()
+        self.view_tabs.setDocumentMode(True)
+        
         self.settings_tab = ProcessSettingsPanel()
         self.slicer_tab = SlicerTab(
             job_controller=self._job_controller,
             process_panel=self.settings_tab,
         )
         self.projector_tab = ProjectorTab(job_controller=self._job_controller)
-
-        self.tabs.addTab(self.slicer_tab, "🧊 Слайсер")
-        self.tabs.addTab(self.projector_tab, "🎬 Проектор (Видео)")
-        self.tabs.addTab(self.settings_tab, "Настройки")
-
-        self.tabs.setTabToolTip(0, "Настройка модели и генерация проекций")
-        self.tabs.setTabToolTip(1, "Проигрывание и экспорт готовых кадров в MP4")
-        self.tabs.setTabToolTip(2, "Настройки принтера, процесса и альтернативного движка")
-
-        root.addWidget(self.tabs, 1)
+        
+        self.view_tabs.addTab(self.slicer_tab, "Слайсер (3D)")
+        self.view_tabs.addTab(self.projector_tab, "Проектор (Кадры)")
+        left_layout.addWidget(self.view_tabs)
+        
+        main_splitter.addWidget(left_panel)
+        
+        # Right side: Settings Sidebar
+        self.right_panel = QWidget()
+        self.right_panel.setMinimumWidth(200)
+        right_layout = QVBoxLayout(self.right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.addWidget(self.settings_tab)
+        
+        main_splitter.addWidget(self.right_panel)
+        
+        # Set initial sizes (70% left, 30% right)
+        main_splitter.setStretchFactor(0, 1)
+        main_splitter.setStretchFactor(1, 0)
+        main_splitter.setSizes([1040, 500])
+        
+        root.addWidget(main_splitter, 1)
 
         self._log_panel = QPlainTextEdit()
         self._log_panel.setObjectName("logPanel")
         self._log_panel.setReadOnly(True)
-        self._log_panel.setMaximumHeight(120)
+        self._log_panel.setMinimumHeight(64)
+        self._log_panel.setMaximumHeight(96)
         root.addWidget(self._log_panel)
 
         self.setCentralWidget(central)
@@ -247,13 +189,14 @@ class CALSlicerMainWindow(QMainWindow):
         self.slicer_tab.outputGenerated.connect(self.projector_tab.set_output_dir)
         self.slicer_tab.outputGenerated.connect(self._on_output_generated)
         self.language_combo.currentIndexChanged.connect(self._on_language_changed)
-        self.tabs.currentChanged.connect(self._on_tab_changed)
-        self._on_tab_changed(self.tabs.currentIndex())
+        self.view_tabs.currentChanged.connect(self._on_tab_changed)
+        self._on_tab_changed(self.view_tabs.currentIndex())
 
     def _on_tab_changed(self, index: int) -> None:
-        """Show the progress indicator only on the main Slicer tab."""
-
-        self._progress_bar.setVisible(index == self.tabs.indexOf(self.slicer_tab))
+        """Show progress bar and settings sidebar only on the 3D Slicer tab."""
+        is_slicer = (index == self.view_tabs.indexOf(self.slicer_tab))
+        self._progress_bar.setVisible(is_slicer)
+        self.right_panel.setVisible(is_slicer)
 
     def _on_language_changed(self, index: int) -> None:
         selected = self.language_combo.itemData(index)
@@ -262,14 +205,16 @@ class CALSlicerMainWindow(QMainWindow):
         set_language(selected)
         self._settings.setValue("language", selected)
         apply_translations(self)
+        if hasattr(self.projector_tab, "update_language"):
+            self.projector_tab.update_language()
         self._log(tr("Язык изменён") + ". " + tr("Перезапустите приложение, чтобы применить язык."))
 
     def _on_output_generated(self, out_dir: str) -> None:
-        # Мягкая подсказка: переключаем пользователя на следующий логичный
-        # шаг, не мешая — если он уже сам открыл другую вкладку, не трогаем.
-        if self.tabs.currentIndex() == 0:
-            projector_index = self.tabs.indexOf(self.projector_tab)
-            self.tabs.setTabToolTip(projector_index, f"Кадры готовы: {out_dir}")
+        projector_index = self.view_tabs.indexOf(self.projector_tab)
+        self.view_tabs.setTabToolTip(projector_index, f"Кадры готовы: {out_dir}")
+        self.view_tabs.setCurrentIndex(projector_index)
+        # Автоматически загружаем и запускаем видео
+        self.projector_tab._on_assemble_clicked()
 
     # =======================================================================
     # Статус / лог (общие для всех вкладок)
@@ -302,11 +247,7 @@ def main() -> None:
     if isinstance(saved_language, str) and saved_language in LANGUAGES:
         set_language(saved_language)
 
-    try:
-        import qdarktheme
-        app.setStyleSheet(qdarktheme.load_stylesheet("dark") + EXTRA_QSS)
-    except ImportError:
-        app.setStyleSheet(EXTRA_QSS)
+    apply_theme(app)
 
     window = CALSlicerMainWindow()
     if "--self-check" in sys.argv:

@@ -16,7 +16,9 @@ from PyInstaller.utils.hooks import collect_all
 
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 
-datas = [(str(PROJECT_ROOT / "assets" / "spinslicer.svg"), "assets")]
+datas = [(str(PROJECT_ROOT / "assets"), "assets")]
+if (PROJECT_ROOT / "cpp_backend").is_dir():
+    datas.append((str(PROJECT_ROOT / "cpp_backend"), "cpp_backend"))
 binaries: list[tuple[str, str]] = []
 qt_bin: Path | None = None
 if sys.platform.startswith("win"):

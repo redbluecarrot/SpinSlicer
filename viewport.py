@@ -357,7 +357,8 @@ class Viewport3D(QWidget):
         self._affine_enabled = False
         self._transform_mode = "move"
         self._uniform_scale = True
-        self._current_diameter = 0.0
+        self._current_diameter = 60.0
+        self._camera_framed = False
         self._model_bounds: np.ndarray | None = None
         self._matrix_animation: QVariantAnimation | None = None
         self._camera_animation: QVariantAnimation | None = None
@@ -369,7 +370,7 @@ class Viewport3D(QWidget):
 
         self.plotter.interactor.installEventFilter(self)
         self._install_navigation_style()
-        self._create_orientation_cube(plotter)
+        # self._create_orientation_cube(plotter)
 
         self._reset_camera_view()
 
@@ -758,17 +759,8 @@ class Viewport3D(QWidget):
             # Tinkercad-style navigation: left drag orbits, right drag pans,
             # and the middle button dollies. Modified buttons keep the same
             # intent instead of unexpectedly rolling or changing interaction.
-            self.plotter.enable_custom_trackball_style(
-                left="rotate",
-                shift_left="rotate",
-                control_left="rotate",
-                middle="dolly",
-                shift_middle="dolly",
-                control_middle="dolly",
-                right="pan",
-                shift_right="pan",
-                control_right="pan",
-            )
+            # Use terrain style to strictly lock the Z-axis (prevents rolling/crooked camera)
+            self.plotter.enable_terrain_style(mouse_wheel_zooms=True)
             style = getattr(getattr(self.plotter, "iren", None), "style", None)
             if style is None:
                 return
@@ -957,11 +949,11 @@ class Viewport3D(QWidget):
     def _camera_reset_bounds(self) -> tuple[float, float, float, float, float, float]:
         """Return bounds for framing the vat/model, excluding the large grid."""
 
-        diameter = max(float(self._current_diameter), 20.0)
+        diameter = max(float(self._current_diameter), 60.0)
         height = diameter * VAT_HEIGHT_RATIO
-        radius = diameter / 2.0
-        minimum = np.array([-radius, -radius, -height / 2.0], dtype=np.float64)
-        maximum = np.array([radius, radius, height / 2.0], dtype=np.float64)
+        radius = (diameter * 2.2) / 2.0  # Frame the full workspace with breathing room
+        minimum = np.array([-radius, -radius, -height * 0.75], dtype=np.float64)
+        maximum = np.array([radius, radius, height * 0.75], dtype=np.float64)
 
         if self._model_actor is not None and self._model_bounds is not None:
             matrix = self._model_actor.user_matrix
@@ -974,7 +966,7 @@ class Viewport3D(QWidget):
             minimum = np.minimum(minimum, model_min)
             maximum = np.maximum(maximum, model_max)
 
-        margin = max(diameter * 0.08, 1.0)
+        margin = max(diameter * 0.25, 5.0)
         minimum -= margin
         maximum += margin
         return (
@@ -997,6 +989,7 @@ class Viewport3D(QWidget):
                 pass
             self._focus_camera_on_vat()
             self._lock_camera_roll()
+            self.plotter.camera.Zoom(0.72)  # Natural comfortable distance
             target_pose = self._capture_camera_pose()
         finally:
             if current_pose is not None:
@@ -1013,54 +1006,93 @@ class Viewport3D(QWidget):
         self._reset_camera_view(animate=True)
 
     # --- колба (фиксированный размер, не зависит от модели) --------------------
-    def update_vat(self, diameter_mm: float) -> None:
+    def update_vat(self, diameter_mm: float, container_mode: int = 0) -> None:
         self._current_diameter = diameter_mm
         radius = diameter_mm / 2.0
         height = diameter_mm * VAT_HEIGHT_RATIO
 
-        cylinder = pv.Cylinder(
-            center=(0.0, 0.0, 0.0), direction=(0.0, 0.0, 1.0),
-            radius=radius, height=height, resolution=VAT_RESOLUTION, capping=True,
-        )
+        # Safely remove all old vat actors
+        for attr in ['_vat_actor', '_vat_inner_actor', '_vat_walls_actor', '_vat_liquid_actor', '_rays_actor']:
+            actor = getattr(self, attr, None)
+            if actor is not None:
+                self.plotter.remove_actor(actor, render=False)
+                setattr(self, attr, None)
 
-        if self._vat_actor is not None:
-            self.plotter.remove_actor(self._vat_actor, render=False)
+        if container_mode == 0:
+            # Standard Cylinder
+            vat_geom = pv.Cylinder(
+                center=(0.0, 0.0, 0.0), direction=(0.0, 0.0, 1.0),
+                radius=radius, height=height, resolution=100, capping=False,
+            )
+            self._vat_actor = self.plotter.add_mesh(
+                vat_geom, color="#add8e6", opacity=0.25, smooth_shading=True,
+                specular=0.8, specular_power=40, name="vat_glass", pickable=False, render=False,
+            )
+        else:
+            # Cuvette with Vial inside
+            # 1. Inner Vial (Flask)
+            vial_geom = pv.Cylinder(
+                center=(0.0, 0.0, 0.0), direction=(0.0, 0.0, 1.0),
+                radius=radius, height=height, resolution=100, capping=False,
+            )
+            self._vat_actor = self.plotter.add_mesh(
+                vial_geom, color="#add8e6", opacity=0.35, smooth_shading=True,
+                specular=0.9, specular_power=50, name="vat_vial", pickable=False, render=False,
+            )
+            
+            # 2. Outer Square Cuvette
+            # "по размеру как подложка сетчатая под колбой" -> diameter_mm * 1.5
+            # "сверху не имела грани" -> construct from 5 faces
+            # "чуть ниже колбы" -> height_cuvette = height * 0.9
+            grid_span = diameter_mm * 1.5
+            h_cuv = height * 0.85
+            
+            wall_t = 2.0
+            outer_w = grid_span
+            
+            # Build Cuvette out of 5 boxes to avoid boolean_difference failures (which cause lids)
+            bottom = pv.Cube(center=(0, 0, -height/2 + wall_t/2), x_length=outer_w, y_length=outer_w, z_length=wall_t)
+            left = pv.Cube(center=(-outer_w/2 + wall_t/2, 0, -height/2 + h_cuv/2), x_length=wall_t, y_length=outer_w, z_length=h_cuv)
+            right = pv.Cube(center=(outer_w/2 - wall_t/2, 0, -height/2 + h_cuv/2), x_length=wall_t, y_length=outer_w, z_length=h_cuv)
+            front = pv.Cube(center=(0, -outer_w/2 + wall_t/2, -height/2 + h_cuv/2), x_length=outer_w - 2*wall_t, y_length=wall_t, z_length=h_cuv)
+            back = pv.Cube(center=(0, outer_w/2 - wall_t/2, -height/2 + h_cuv/2), x_length=outer_w - 2*wall_t, y_length=wall_t, z_length=h_cuv)
+            
+            cuvette_geom = bottom.merge([left, right, front, back])
+            
+            self._vat_outer_actor = self.plotter.add_mesh(
+                cuvette_geom, color="#80c0ff", opacity=0.15, smooth_shading=True,
+                specular=1.0, specular_power=20, name="vat_cuvette", pickable=False, render=False,
+            )
+
         if self._bottom_plane_actor is not None:
             self.plotter.remove_actor(self._bottom_plane_actor, render=False)
 
-        bottom_z = -height / 2.0 + max(height * 1e-4, 1e-3)
-        # A compact square grid gives the same spatial cue as a CAD workplane
-        # without taking over the viewport. Camera framing above uses explicit
-        # vat/model bounds, so the plane never makes the model tiny.
-        grid_span = max(
-            diameter_mm * VIEWPORT_WORKPLANE_SPAN_RATIO,
-            VIEWPORT_WORKPLANE_MIN_SPAN_MM,
-        )
+        bottom_z = -height / 2.0
+        grid_span = diameter_mm * 1.5
         bottom_plane = pv.Plane(
             center=(0.0, 0.0, bottom_z),
             direction=(0.0, 0.0, 1.0),
             i_size=grid_span,
             j_size=grid_span,
-            i_resolution=VIEWPORT_WORKPLANE_RESOLUTION,
-            j_resolution=VIEWPORT_WORKPLANE_RESOLUTION,
+            i_resolution=30,
+            j_resolution=30,
         )
 
-        self._vat_actor = self.plotter.add_mesh(
-            cylinder, color=VAT_COLOR, opacity=0.15, smooth_shading=True,
-            specular=0.7, specular_power=20, name="vat", pickable=False, render=False,
-        )
         self._bottom_plane_actor = self.plotter.add_mesh(
             bottom_plane,
-            color="#334b70",
-            opacity=0.24,
+            color="#222222",
+            opacity=0.8,
             show_edges=True,
-            edge_color="#7190bd",
+            edge_color="#444444",
             line_width=1.0,
             name="vat-bottom",
             pickable=False,
             render=False,
         )
         self.plotter.render()
+        if not self._camera_framed or self._model_actor is None:
+            self._camera_framed = True
+            self._reset_camera_view(animate=False)
 
     # --- модель: геометрия добавляется один раз, дальше — только матрица -------
     def set_model(self, mesh: trimesh.Trimesh) -> None:
@@ -1070,9 +1102,9 @@ class Viewport3D(QWidget):
         pv_mesh = _trimesh_to_pyvista(mesh)
 
         display_mesh = pv_mesh
-        if pv_mesh.n_faces_strict > MAX_VIEWPORT_TRIANGLES:
+        if pv_mesh.n_faces > MAX_VIEWPORT_TRIANGLES:
             try:
-                ratio = 1.0 - (MAX_VIEWPORT_TRIANGLES / pv_mesh.n_faces_strict)
+                ratio = 1.0 - (MAX_VIEWPORT_TRIANGLES / pv_mesh.n_faces)
                 display_mesh = pv_mesh.decimate_pro(ratio, preserve_topology=True)
             except Exception:
                 display_mesh = pv_mesh

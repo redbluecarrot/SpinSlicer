@@ -5,11 +5,11 @@ constants.py
 Меняя цифры здесь, не нужно лазить по всему проекту.
 """
 
-APP_TITLE = "Spin Slicer"
+APP_TITLE = "SpinSlicer"
 APP_ORG = "SpinSlicer"
 
 # --- Дефолты слайсинга (перенесены из прототипа без изменений) -------------
-DEFAULT_GRID_RESOLUTION = 112
+DEFAULT_GRID_RESOLUTION = 256
 DEFAULT_OUTPUT_RESOLUTION = 720
 DEFAULT_NUM_FRAMES = 360
 DEFAULT_DIAMETER_MM = 60.0

@@ -16,6 +16,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QFileDialog,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -25,7 +26,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from i18n import tr
+from i18n import language, tr
 from job_controller import JobController
 from widgets import LabeledSlider
 from workers import VideoAssembleWorker, VideoExportWorker
@@ -34,26 +35,36 @@ BASE_FPS = 24.0
 
 
 class VideoPreviewWidget(QLabel):
-    """Отображает кадры видео без изменения геометрии родительского окна.
-
-    Стандартный QLabel.setPixmap(scaled_pixmap) меняет свой sizeHint на
-    каждом кадре, вызывая положительную обратную связь в QLayout:
-    окно начинает непрерывно растягиваться при проигрывании.
-    Отрисовка через paintEvent гарантирует стабильный layout.
-    """
+    """Отображает кадры видео без изменения геометрии родительского окна."""
 
     def __init__(self, text: str = "", parent: Optional[QWidget] = None) -> None:
         super().__init__(text, parent)
         self._pixmap: Optional[QPixmap] = None
+        self._intensity: float = 1.0
+        self._current_raw_frame: Optional[np.ndarray] = None
+
+    def set_intensity(self, val: float) -> None:
+        self._intensity = max(0.1, float(val))
+        if self._current_raw_frame is not None:
+            self._render_frame(self._current_raw_frame)
 
     def set_frame(self, frame: np.ndarray) -> None:
-        h, w = frame.shape[:2]
-        qimg = QImage(frame.tobytes(), w, h, w, QImage.Format.Format_Grayscale8)
+        self._current_raw_frame = frame
+        self._render_frame(frame)
+
+    def _render_frame(self, frame: np.ndarray) -> None:
+        if self._intensity != 1.0:
+            frame_adj = np.clip(frame.astype(np.float32) * self._intensity, 0, 255).astype(np.uint8)
+        else:
+            frame_adj = frame
+        h, w = frame_adj.shape[:2]
+        qimg = QImage(frame_adj.tobytes(), w, h, w, QImage.Format.Format_Grayscale8).copy()
         self._pixmap = QPixmap.fromImage(qimg)
         self.update()
 
     def clear_frame(self) -> None:
         self._pixmap = None
+        self._current_raw_frame = None
         self.update()
 
     def paintEvent(self, event) -> None:
@@ -105,12 +116,106 @@ class ProjectorTab(QWidget):
         self.dir_label.setObjectName("hintLabel")
         root.addWidget(self.dir_label)
 
+        # Content row: Video Preview on left, Tomo Dose Reconstruction card on right
+        content_row = QHBoxLayout()
+        content_row.setSpacing(14)
+
         self.preview = VideoPreviewWidget("Нажмите «Собрать и воспроизвести»,\nчтобы увидеть анимацию проекций.")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setObjectName("videoPreview")
-        self.preview.setMinimumHeight(420)
+        self.preview.setMinimumHeight(280)
         self.preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        root.addWidget(self.preview, 1)
+        content_row.addWidget(self.preview, 3)
+
+        # Side column on right: Dose Reconstruction + CyberPepe Meme
+        side_col = QVBoxLayout()
+        side_col.setSpacing(8)
+
+        # Dose Reconstruction Card
+        recon_box = QGroupBox("Реконструкция дозы")
+        recon_box.setObjectName("reconBox")
+        recon_box.setFixedWidth(265)
+        recon_layout = QVBoxLayout(recon_box)
+        recon_layout.setContentsMargins(10, 8, 10, 8)
+        recon_layout.setSpacing(4)
+
+        recon_title = QLabel("Средний срез (Mid-Slice)")
+        recon_title.setStyleSheet("font-weight: bold; color: #00A8FF;")
+        recon_layout.addWidget(recon_title)
+
+        self.recon_label = QLabel("Нет данных\n(Сгенерируйте срез)")
+        self.recon_label.setProperty("_spinslicer_skip_text_translation", True)
+        self.recon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.recon_label.setStyleSheet("background-color: #1A1A1A; border: 1px solid #333333; border-radius: 6px; color: #888888;")
+        self.recon_label.setFixedSize(160, 160)
+        recon_layout.addWidget(self.recon_label, 0, Qt.AlignmentFlag.AlignCenter)
+
+        self.recon_stats = QLabel("Потери дозы (L2): —\nДвижок: OpenCAL SIRT")
+        self.recon_stats.setWordWrap(True)
+        self.recon_stats.setMinimumHeight(32)
+        self.recon_stats.setStyleSheet("color: #CCCCCC; font-size: 11px; margin-top: 2px;")
+        recon_layout.addWidget(self.recon_stats)
+
+        side_col.addWidget(recon_box)
+
+        # CyberPepe CAL Lab Easter Egg Card
+        pepe_box = QGroupBox("Лаборатория Пепе 🐸")
+        pepe_box.setObjectName("pepeBox")
+        pepe_box.setFixedWidth(265)
+        pepe_layout = QVBoxLayout(pepe_box)
+        pepe_layout.setContentsMargins(10, 8, 10, 8)
+        pepe_layout.setSpacing(4)
+
+        pepe_img_label = QLabel()
+        pepe_img_label.setProperty("_spinslicer_skip_text_translation", True)
+        pepe_img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pepe_img_label.setFixedSize(160, 160)
+        pepe_img_label.setStyleSheet("border-radius: 8px; border: none; background-color: #0d0d0d;")
+        pepe_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "pepe_meme.jpg")
+        if os.path.exists(pepe_path):
+            pix = QPixmap(pepe_path)
+            if not pix.isNull():
+                pepe_img_label.setPixmap(pix.scaled(160, 160, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+        pepe_layout.addWidget(pepe_img_label, 0, Qt.AlignmentFlag.AlignCenter)
+
+        self._pepe_quotes_ru = [
+            "«Кайф, когда доза сошлась» 🐸⚡",
+            "«Нельзя просто так напечатать без OpenCAL» 🐸🧪",
+            "«Когда Бугер-Ламберт лёг как надо» 🐸🔬",
+            "«0% поддержек, 100% объёмная скорость» 🐸🚀",
+            "«Фотонное превосходство в действии» 🐸✨",
+            "«Томография за 30 секунд — это база» 🐸⏱",
+            "«Свет пронзает смолу, деталь растёт» 🐸💡",
+        ]
+        self._pepe_quotes_en = [
+            "“Feels good when dose converges” 🐸⚡",
+            "“One does not simply print without OpenCAL” 🐸🧪",
+            "“When Beer-Lambert hits just right” 🐸🔬",
+            "“0% supports, 100% volumetric speed” 🐸🚀",
+            "“Photon supremacy in full effect” 🐸✨",
+            "“30-second tomography is the standard” 🐸⏱",
+            "“Light penetrates resin, structure rises” 🐸💡",
+        ]
+        self._pepe_quote_idx = 0
+        self.pepe_caption = QLabel(self._current_quotes()[0])
+        self.pepe_caption.setProperty("_spinslicer_skip_text_translation", True)
+        self.pepe_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pepe_caption.setWordWrap(True)
+        self.pepe_caption.setMinimumHeight(34)
+        self.pepe_caption.setStyleSheet("color: #00FF88; font-weight: bold; font-size: 10px; margin-top: 2px; margin-bottom: 2px;")
+        pepe_layout.addWidget(self.pepe_caption)
+
+        quote_btn = QPushButton("🎲 Другая цитата")
+        quote_btn.setObjectName("secondaryButton")
+        quote_btn.setMinimumHeight(28)
+        quote_btn.clicked.connect(self._cycle_pepe_quote)
+        pepe_layout.addWidget(quote_btn)
+
+        side_col.addWidget(pepe_box)
+        side_col.addStretch(1)
+
+        content_row.addLayout(side_col, 1)
+        root.addLayout(content_row, 1)
 
         buttons = QHBoxLayout()
         self.assemble_btn = QPushButton("▶ Собрать и воспроизвести")
@@ -131,11 +236,63 @@ class ProjectorTab(QWidget):
         buttons.addWidget(self.save_btn)
         root.addLayout(buttons)
 
+        sliders_row = QHBoxLayout()
         self.speed_slider = LabeledSlider(
             "Скорость воспроизведения", 0.1, 4.0, 1.0, decimals=2, suffix="×",
         )
         self.speed_slider.valueChanged.connect(self._on_speed_changed)
-        root.addWidget(self.speed_slider)
+        sliders_row.addWidget(self.speed_slider)
+
+        self.live_intensity_slider = LabeledSlider(
+            "Яркость проекции (Live Intensity)", 0.2, 5.0, 1.0, decimals=2, suffix="×",
+        )
+        self.live_intensity_slider.valueChanged.connect(self._on_live_intensity_changed)
+        sliders_row.addWidget(self.live_intensity_slider)
+
+        root.addLayout(sliders_row)
+
+    def _on_live_intensity_changed(self, val: float) -> None:
+        self.preview.set_intensity(val)
+
+    def _current_quotes(self) -> list[str]:
+        if language() == "ru":
+            return self._pepe_quotes_ru
+        return self._pepe_quotes_en
+
+    def _cycle_pepe_quote(self) -> None:
+        quotes = self._current_quotes()
+        self._pepe_quote_idx = (self._pepe_quote_idx + 1) % len(quotes)
+        self.pepe_caption.setText(quotes[self._pepe_quote_idx])
+
+    def update_language(self) -> None:
+        quotes = self._current_quotes()
+        self._pepe_quote_idx = self._pepe_quote_idx % len(quotes)
+        self.pepe_caption.setText(quotes[self._pepe_quote_idx])
+        if self._output_dir and os.path.exists(os.path.join(self._output_dir, "reconstruction_preview.png")):
+            self._load_dose_preview(self._output_dir)
+        else:
+            self.recon_label.setText(tr("Нет данных\n(Сгенерируйте срез)"))
+            self.recon_stats.setText(f"{tr('Потери дозы (L2):')} —\n{tr('Движок: OpenCAL SIRT')}")
+
+    def _load_dose_preview(self, path: str) -> None:
+        if not path or not os.path.isdir(path):
+            return
+        preview_path = os.path.join(path, "reconstruction_preview.png")
+        if os.path.exists(preview_path):
+            pix = QPixmap(preview_path)
+            if not pix.isNull():
+                scaled_pix = pix.scaled(160, 160, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                self.recon_label.setPixmap(scaled_pix)
+
+        stats_path = os.path.join(path, "dose_stats.txt")
+        if os.path.exists(stats_path):
+            try:
+                with open(stats_path, "r") as f:
+                    content = f.read()
+                loss_val = content.split("loss=")[1].split("\n")[0] if "loss=" in content else "OK"
+                self.recon_stats.setText(f"{tr('Потери дозы (L2 Loss):')} {loss_val}\n{tr('Оптимизация: OpenCAL SIRT + Нелинейный отклик')}")
+            except Exception:
+                pass
 
     # --- общая папка вывода (устанавливается из вкладки "Слайсер") -------------
     def set_output_dir(self, path: str) -> None:
@@ -148,6 +305,7 @@ class ProjectorTab(QWidget):
             self.preview.clear_frame()
         self._output_dir = path
         self.dir_label.setText(f"{tr('Папка кадров: ')}{path}")
+        self._load_dose_preview(path)
 
     # --- сборка и проигрывание ---------------------------------------------------
     def _on_assemble_clicked(self) -> None:
@@ -177,16 +335,16 @@ class ProjectorTab(QWidget):
         self._frame_index = 0
         self.play_pause_btn.setEnabled(True)
         self.save_btn.setEnabled(True)
-        self.play_pause_btn.setText("⏸ Pause")
-        self.progress.emit(1.0, "Video assembled.")
-        self.logMessage.emit(f"Assembled {len(frames)} frames for playback.")
+        self.play_pause_btn.setText(tr("⏸ Пауза"))
+        self.progress.emit(1.0, tr("Видео собрано."))
+        self.logMessage.emit(f"{tr('Собрано')} {len(frames)} {tr('кадров для воспроизведения.')}")
         if frames:
             self.preview.set_frame(frames[0])
         self._start_playback()
 
     def _on_assemble_failed(self, msg: str) -> None:
-        self.progress.emit(0.0, "Video assembly failed.")
-        QMessageBox.critical(self, "Error", msg)
+        self.progress.emit(0.0, tr("Сборка видео не удалась."))
+        QMessageBox.critical(self, tr("Ошибка"), msg)
 
     def _start_playback(self) -> None:
         if not self._frames:
@@ -199,10 +357,10 @@ class ProjectorTab(QWidget):
             return
         if self._timer.isActive():
             self._timer.stop()
-            self.play_pause_btn.setText("▶ Play")
+            self.play_pause_btn.setText(tr("▶ Воспроизведение"))
         else:
             self._start_playback()
-            self.play_pause_btn.setText("⏸ Pause")
+            self.play_pause_btn.setText(tr("⏸ Пауза"))
 
     def _on_speed_changed(self, _v: float) -> None:
         if self._timer.isActive():
