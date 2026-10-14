@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">SpinSlicer</title>
+  <desc id="desc">A rotating projection slice inside a circular vat</desc>
+  <rect width="256" height="256" rx="52" fill="#121319"/>
+  <circle cx="128" cy="128" r="91" fill="#232733" stroke="#2fa572" stroke-width="10"/>
+  <circle cx="128" cy="128" r="68" fill="none" stroke="#3d8bfd" stroke-width="8" opacity=".9"/>
+  <path d="M128 43a85 85 0 0 1 73.6 42.5L128 128Z" fill="#2fa572" opacity=".95"/>
+  <path d="M201.6 170.5A85 85 0 0 1 128 213v-85Z" fill="#3d8bfd" opacity=".88"/>
+  <circle cx="128" cy="128" r="16" fill="#f4f7fb"/>
+  <circle cx="128" cy="128" r="7" fill="#121319"/>
+</svg>

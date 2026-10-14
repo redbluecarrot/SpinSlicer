@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools==75.8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spinslicer"
+version = "0.2.1"
+description = "Local projection and frame-preview tool for volumetric printing"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "PyQt6==6.11.0",
+    "pyqtdarktheme==0.1.7",
+    "pyvista==0.48.4",
+    "pyvistaqt==0.13.0",
+    "numpy==2.5.2",
+    "scipy==1.18.1",
+    "Pillow==12.3.0",
+    "trimesh[easy]==5.1.0",
+    "scikit-image==0.26.0",
+    "opencv-python-headless==5.0.0.93",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["build", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = [
+    "SpinSlicer.py",
+    "constants.py",
+    "frame_io.py",
+    "i18n.py",
+    "job_controller.py",
+    "model_node.py",
+    "profiles.py",
+    "qt_runtime.py",
+    "release_check.py",
+    "nut_dialog.py",
+    "slicer_tab.py",
+    "slicing_engine.py",
+    "ui_panels.py",
+    "validation.py",
+    "threaded_nut.py",
+    "vam_backend.py",
+    "video_tab.py",
+    "viewport.py",
+    "widgets.py",
+    "workers.py",
+]
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_return_any = false
+no_implicit_optional = true

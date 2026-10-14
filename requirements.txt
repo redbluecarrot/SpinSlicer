@@ -1,0 +1,12 @@
+# Runtime pins used by the CI build.  Update deliberately and test the full
+# numerical pipeline when changing one of these versions.
+PyQt6==6.11.0
+pyqtdarktheme==0.1.7
+pyvista==0.48.4
+pyvistaqt==0.13.0
+numpy==2.5.2
+scipy==1.18.1
+Pillow==12.3.0
+trimesh[easy]==5.1.0
+scikit-image==0.26.0
+opencv-python-headless==5.0.0.93
