@@ -17,14 +17,18 @@ not drive a real projector, resin vat, or rotation stage.
 
 ## Features
 
-Stable v0.2.2 includes **Slicer**, **Projector (Video)** and **Settings**.
+Stable v0.2.3 includes **Slicer**, **Projector (Video)** and **Settings**.
 The experimental simulator is maintained separately and is not included in
-this release. See [release notes](docs/releases/v0.2.2.md).
+this release. See [release notes](docs/releases/v0.2.3.md).
 
 - Load and transform STL models in physical millimetres.
-- Keep printer and process parameters on a dedicated Settings tab.
-- Edit the model in a full-width 3D viewport with a visible vat bottom plane
-  and an interactive Fusion-style view cube.
+- Adjust vat geometry, exposure, projection quality, and frame count from the
+  quick settings sidebar beside the 3D workspace.
+- Edit the model in a 3D viewport with a visible vat bottom plane and an
+  interactive Fusion-style view cube.
+- Use proportional or per-axis scaling from the model transform controls.
+- Configure optical calibration and projection engine iterations on the
+  dedicated Settings tab.
 - Generate projection frames with the deterministic SpinSlicer internal Radon
   backend, which is the default engine.
 - Optionally use the external VAMToolbox CAL optimizer when it is installed;
