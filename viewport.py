@@ -340,6 +340,11 @@ class Viewport3D(QWidget):
             plotter.enable_anti_aliasing("msaa")
         except Exception:
             pass
+        try:
+            if hasattr(plotter.renderer, "disable_depth_peeling"):
+                plotter.renderer.disable_depth_peeling()
+        except Exception:
+            pass
 
         self._vat_actor: Any = None
         self._bottom_plane_actor: Any = None
