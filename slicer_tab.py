@@ -199,7 +199,7 @@ class SlicerTab(QWidget):
     def _on_position_changed(self, axis: int, value: float) -> None:
         node = self._model_node
         if node is None: return
-        pos = list(node.transform.translation)
+        pos = np.asarray(node.transform.translation, dtype=np.float64).copy()
         pos[axis] = value
         node.transform.translation = pos
         self._process_panel.transform_panel.sync_from_model(node)
@@ -208,7 +208,7 @@ class SlicerTab(QWidget):
     def _on_rotation_changed(self, axis: int, value: float) -> None:
         node = self._model_node
         if node is None: return
-        rot = list(node.transform.rotation_deg)
+        rot = np.asarray(node.transform.rotation_deg, dtype=np.float64).copy()
         rot[axis] = value
         node.transform.rotation_deg = rot
         self._process_panel.transform_panel.sync_from_model(node)
@@ -228,9 +228,7 @@ class SlicerTab(QWidget):
     def _on_reset_transform(self) -> None:
         node = self._model_node
         if node is None: return
-        node.transform.translation = (0.0, 0.0, 0.0)
-        node.transform.rotation_deg = (0.0, 0.0, 0.0)
-        node.transform.scale = (1.0, 1.0, 1.0)
+        node.transform.reset()
         self._process_panel.transform_panel.sync_from_model(node)
         self._sync_and_redraw()
 

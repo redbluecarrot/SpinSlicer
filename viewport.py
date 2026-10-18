@@ -141,7 +141,7 @@ def _camera_up_vector(direction: np.ndarray) -> np.ndarray:
     length = float(np.linalg.norm(view_direction))
     if length <= 1e-9:
         return np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    view_direction = view_direction / length
+    view_direction = np.asarray(view_direction / length, dtype=np.float64)
 
     world_up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
     up = world_up - np.dot(world_up, view_direction) * view_direction
@@ -178,8 +178,8 @@ def _slerp_unit_vectors(
     target_length = float(np.linalg.norm(target_vector))
     if start_length <= 1e-9 or target_length <= 1e-9:
         raise ValueError("Cannot interpolate a zero-length vector.")
-    start_vector = start_vector / start_length
-    target_vector = target_vector / target_length
+    start_vector = np.asarray(start_vector / start_length, dtype=np.float64)
+    target_vector = np.asarray(target_vector / target_length, dtype=np.float64)
 
     fraction = float(np.clip(progress, 0.0, 1.0))
     dot = float(np.clip(np.dot(start_vector, target_vector), -1.0, 1.0))
@@ -333,9 +333,9 @@ class Viewport3D(QWidget):
         plotter = cast(Any, self.plotter)
         plotter.set_background(VIEWPORT_BG_BOTTOM, top=VIEWPORT_BG_TOP)
         if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
-            self.plotter.render = lambda *args, **kwargs: None
+            setattr(self.plotter, "render", lambda *args, **kwargs: None)
             if hasattr(self.plotter, "_render"):
-                self.plotter._render = lambda *args, **kwargs: None
+                setattr(self.plotter, "_render", lambda *args, **kwargs: None)
         else:
             try:
                 plotter.enable_anti_aliasing("msaa")

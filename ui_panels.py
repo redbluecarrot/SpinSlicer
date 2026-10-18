@@ -187,6 +187,8 @@ class ProcessSettingsPanel(QWidget):
         )
         ready_value = self._settings.value("vam/ready", False)
         self._vam_ready = str(ready_value).lower() in {"1", "true", "yes"}
+        self.vam_status = QLabel()
+        self.vam_install_btn = QPushButton()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)

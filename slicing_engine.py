@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple, cast
 
 import numpy as np
 import trimesh
@@ -361,7 +361,7 @@ class SlicingEngine:
                     arr_u8 = (arr * 255).astype(np.uint8)
                     kernel = np.ones((3, 3), np.uint8)
                     import cv2
-                    arr_u8 = cv2.morphologyEx(arr_u8, cv2.MORPH_CLOSE, kernel)
+                    arr_u8 = np.asarray(cv2.morphologyEx(arr_u8, cv2.MORPH_CLOSE, kernel), dtype=np.uint8)
 
                     if not preserve_internal_voids:
                         arr = binary_fill_holes(arr_u8 > 127)
@@ -607,7 +607,7 @@ class SlicingEngine:
                 source_sha256=source_hash,
                 source_name=source_name,
                 units=str(context.get("units", "mm")),
-                transform_matrix=transform,
+                transform_matrix=cast(list[list[float]], transform),
                 slice_parameters={
                     "diameter_mm": params.diameter_mm,
                     "grid_res": params.grid_res,

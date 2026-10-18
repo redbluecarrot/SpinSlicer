@@ -14,7 +14,7 @@ References:
   - VAMToolbox: https://github.com/computed-axial-lithography/VAMToolbox
 """
 
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import numpy as np
 import scipy.sparse as sp
@@ -68,7 +68,7 @@ def _precompute_rays(
 #  Sparse system matrix construction
 # ---------------------------------------------------------------------------
 
-_matrix_cache = {}
+_matrix_cache: dict[tuple[Any, ...], Any] = {}
 
 def build_system_matrix(
     angles_rad: np.ndarray,
