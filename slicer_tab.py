@@ -32,7 +32,7 @@ from i18n import tr
 from job_controller import JobController
 from model_node import ModelNode
 from slicing_engine import ResinSettings, SliceParams
-from ui_panels import ProcessSettingsPanel, TransformToolbar
+from ui_panels import ProcessSettingsPanel
 from validation import format_preflight_report, preflight_mesh
 from viewport import Viewport3D
 from workers import GenerationWorker, LoadMeshWorker
@@ -108,13 +108,13 @@ class SlicerTab(QWidget):
         # Настройки принтера находятся на отдельной вкладке, поэтому слайсер
         # оставляет вьюпорту всю ширину окна.
         self._viewport = Viewport3D()
-        
-        
+
+
         root.addWidget(self._viewport, 1)
 
     def _wire_signals(self) -> None:
         self._process_panel.diameterChanged.connect(self._on_diameter_changed)
-        
+
         tp = self._process_panel.transform_panel
         tp.positionChanged.connect(self._on_position_changed)
         tp.rotationChanged.connect(self._on_rotation_changed)
@@ -122,7 +122,7 @@ class SlicerTab(QWidget):
         tp.centerRequested.connect(self._on_center)
         tp.autoFitRequested.connect(self._on_autofit)
         tp.resetRequested.connect(self._on_reset_transform)
-        
+
         self._viewport.transformChanged.connect(self._on_viewport_transform_changed)
 
     # =======================================================================
@@ -199,7 +199,7 @@ class SlicerTab(QWidget):
     def _on_position_changed(self, axis: int, value: float) -> None:
         node = self._model_node
         if node is None: return
-        pos = list(node.transform.translation)
+        pos = np.asarray(node.transform.translation, dtype=np.float64).copy()
         pos[axis] = value
         node.transform.translation = pos
         self._process_panel.transform_panel.sync_from_model(node)
@@ -208,14 +208,13 @@ class SlicerTab(QWidget):
     def _on_rotation_changed(self, axis: int, value: float) -> None:
         node = self._model_node
         if node is None: return
-        rot = list(node.transform.rotation_deg)
+        rot = np.asarray(node.transform.rotation_deg, dtype=np.float64).copy()
         rot[axis] = value
         node.transform.rotation_deg = rot
         self._process_panel.transform_panel.sync_from_model(node)
         self._sync_and_redraw()
 
     def _on_scale_size_changed(self, axis: int, value: float) -> None:
-        import numpy as np
         node = self._model_node
         if node is None: return
         base_extents = np.asarray(node.base_extents, dtype=np.float64)
@@ -229,9 +228,7 @@ class SlicerTab(QWidget):
     def _on_reset_transform(self) -> None:
         node = self._model_node
         if node is None: return
-        node.transform.translation = (0.0, 0.0, 0.0)
-        node.transform.rotation_deg = (0.0, 0.0, 0.0)
-        node.transform.scale = (1.0, 1.0, 1.0)
+        node.transform.reset()
         self._process_panel.transform_panel.sync_from_model(node)
         self._sync_and_redraw()
 

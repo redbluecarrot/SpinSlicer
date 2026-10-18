@@ -49,6 +49,7 @@ from constants import (
 )
 from i18n import tr
 from model_node import ModelNode
+from theme import AXIS_X, AXIS_Y, AXIS_Z
 from vam_backend import (
     DEFAULT_VAM_ENV_NAME,
     build_vam_install_command,
@@ -56,7 +57,6 @@ from vam_backend import (
     find_conda_executable,
     is_vamtoolbox_available,
 )
-from theme import AXIS_X, AXIS_Y, AXIS_Z
 from widgets import LabeledSlider
 
 
@@ -87,7 +87,7 @@ class ObjectTransformPanel(QGroupBox):
         layout = QGridLayout(self)
         layout.setContentsMargins(12, 16, 12, 12)
         layout.setHorizontalSpacing(8)
-        
+
         # Headers
         layout.addWidget(QLabel(""), 0, 0)
         lbl_x = QLabel("X"); lbl_x.setStyleSheet("color: #FF4444; font-weight: bold;"); layout.addWidget(lbl_x, 0, 1)
@@ -129,11 +129,11 @@ class ObjectTransformPanel(QGroupBox):
         self.pos_x.valueChanged.connect(lambda v: self.positionChanged.emit(0, v))
         self.pos_y.valueChanged.connect(lambda v: self.positionChanged.emit(1, v))
         self.pos_z.valueChanged.connect(lambda v: self.positionChanged.emit(2, v))
-        
+
         self.rot_x.valueChanged.connect(lambda v: self.rotationChanged.emit(0, v))
         self.rot_y.valueChanged.connect(lambda v: self.rotationChanged.emit(1, v))
         self.rot_z.valueChanged.connect(lambda v: self.rotationChanged.emit(2, v))
-        
+
         self.size_x.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(0, v))
         self.size_y.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(1, v))
         self.size_z.valueChanged.connect(lambda v: self.scaleSizeChanged.emit(2, v))
@@ -147,23 +147,23 @@ class ObjectTransformPanel(QGroupBox):
             t = node.transform.translation
             r = node.transform.rotation_deg
             s = node.current_size_mm()
-            
+
             self.pos_x.setValue(t[0])
             self.pos_y.setValue(t[1])
             self.pos_z.setValue(t[2])
-            
+
             self.rot_x.setValue(r[0])
             self.rot_y.setValue(r[1])
             self.rot_z.setValue(r[2])
-            
+
             self.size_x.setValue(s[0])
             self.size_y.setValue(s[1])
             self.size_z.setValue(s[2])
-            
+
             self.setEnabled(True)
             self.blockSignals(False)
-    
-    
+
+
 class ProcessSettingsPanel(QWidget):
     """Настройки принтера и процесса печати для отдельной вкладки."""
 
@@ -187,6 +187,8 @@ class ProcessSettingsPanel(QWidget):
         )
         ready_value = self._settings.value("vam/ready", False)
         self._vam_ready = str(ready_value).lower() in {"1", "true", "yes"}
+        self.vam_status = QLabel()
+        self.vam_install_btn = QPushButton()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -211,11 +213,11 @@ class ProcessSettingsPanel(QWidget):
         self.container_mode.addItem("Виала (в иммерсионной ванне)", 2)
         vat_layout.addWidget(QLabel("Оптический режим:"))
         vat_layout.addWidget(self.container_mode)
-        
+
         self.diameter = LabeledSlider("Диаметр колбы (или внутр. сторона), мм", 20.0, 200.0, DEFAULT_DIAMETER_MM, decimals=1)
         vat_layout.addWidget(self.diameter)
         self.container_mode.currentIndexChanged.connect(lambda: self.diameterChanged.emit(self.diameter.value()))
-        
+
         self.glass_thickness = LabeledSlider("Толщина стекла кюветы, мм", 1.0, 10.0, 2.0, decimals=1)
         vat_layout.addWidget(self.glass_thickness)
         self.n_glass = LabeledSlider("Показатель преломления (Стекло)", 1.0, 2.0, 1.51, decimals=2)
@@ -269,7 +271,7 @@ class ProcessSettingsPanel(QWidget):
         # --- Projection engine --------------------------------------------
         backend_box = QGroupBox("Движок проекций (Собственный C++ SIRT)")
         backend_layout = QVBoxLayout(backend_box)
-        
+
         self.optimizer_iterations = LabeledSlider(
             "Итерации оптимизатора", 1, 100, 8, decimals=0, step=1,
         )
@@ -335,7 +337,7 @@ class ProcessSettingsPanel(QWidget):
 
     def n_resin_value(self) -> float:
         return self.n_resin.value()
-        
+
     def alpha_absorption_value(self) -> float:
         return self.alpha_absorption.value()
 

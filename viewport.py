@@ -22,6 +22,7 @@ viewport.py
 from __future__ import annotations
 
 import math
+import os
 from typing import Any, Optional, cast
 
 import numpy as np
@@ -36,9 +37,7 @@ from pyvistaqt import QtInteractor
 from constants import (
     MAX_VIEWPORT_TRIANGLES,
     MODEL_COLOR,
-    VAT_COLOR,
     VAT_HEIGHT_RATIO,
-    VAT_RESOLUTION,
     VIEWPORT_BG_BOTTOM,
     VIEWPORT_BG_TOP,
     VIEWPORT_ORIENTATION_AXIS_CONE_RADIUS,
@@ -51,9 +50,6 @@ from constants import (
     VIEWPORT_ORIENTATION_DRAG_SENSITIVITY,
     VIEWPORT_ORIENTATION_VIEWPORT,
     VIEWPORT_ORIENTATION_WIDGET_SIZE,
-    VIEWPORT_WORKPLANE_MIN_SPAN_MM,
-    VIEWPORT_WORKPLANE_RESOLUTION,
-    VIEWPORT_WORKPLANE_SPAN_RATIO,
 )
 
 CameraPose = tuple[np.ndarray, np.ndarray, np.ndarray, float]
@@ -145,7 +141,7 @@ def _camera_up_vector(direction: np.ndarray) -> np.ndarray:
     length = float(np.linalg.norm(view_direction))
     if length <= 1e-9:
         return np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    view_direction = view_direction / length
+    view_direction = np.asarray(view_direction / length, dtype=np.float64)
 
     world_up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
     up = world_up - np.dot(world_up, view_direction) * view_direction
@@ -182,8 +178,8 @@ def _slerp_unit_vectors(
     target_length = float(np.linalg.norm(target_vector))
     if start_length <= 1e-9 or target_length <= 1e-9:
         raise ValueError("Cannot interpolate a zero-length vector.")
-    start_vector = start_vector / start_length
-    target_vector = target_vector / target_length
+    start_vector = np.asarray(start_vector / start_length, dtype=np.float64)
+    target_vector = np.asarray(target_vector / target_length, dtype=np.float64)
 
     fraction = float(np.clip(progress, 0.0, 1.0))
     dot = float(np.clip(np.dot(start_vector, target_vector), -1.0, 1.0))
@@ -336,10 +332,15 @@ class Viewport3D(QWidget):
 
         plotter = cast(Any, self.plotter)
         plotter.set_background(VIEWPORT_BG_BOTTOM, top=VIEWPORT_BG_TOP)
-        try:
-            plotter.enable_anti_aliasing("msaa")
-        except Exception:
-            pass
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            setattr(self.plotter, "render", lambda *args, **kwargs: None)
+            if hasattr(self.plotter, "_render"):
+                setattr(self.plotter, "_render", lambda *args, **kwargs: None)
+        else:
+            try:
+                plotter.enable_anti_aliasing("msaa")
+            except Exception:
+                pass
         try:
             if hasattr(plotter.renderer, "disable_depth_peeling"):
                 plotter.renderer.disable_depth_peeling()
@@ -1044,26 +1045,26 @@ class Viewport3D(QWidget):
                 vial_geom, color="#add8e6", opacity=0.35, smooth_shading=True,
                 specular=0.9, specular_power=50, name="vat_vial", pickable=False, render=False,
             )
-            
+
             # 2. Outer Square Cuvette
             # "по размеру как подложка сетчатая под колбой" -> diameter_mm * 1.5
             # "сверху не имела грани" -> construct from 5 faces
             # "чуть ниже колбы" -> height_cuvette = height * 0.9
             grid_span = diameter_mm * 1.5
             h_cuv = height * 0.85
-            
+
             wall_t = 2.0
             outer_w = grid_span
-            
+
             # Build Cuvette out of 5 boxes to avoid boolean_difference failures (which cause lids)
             bottom = pv.Cube(center=(0, 0, -height/2 + wall_t/2), x_length=outer_w, y_length=outer_w, z_length=wall_t)
             left = pv.Cube(center=(-outer_w/2 + wall_t/2, 0, -height/2 + h_cuv/2), x_length=wall_t, y_length=outer_w, z_length=h_cuv)
             right = pv.Cube(center=(outer_w/2 - wall_t/2, 0, -height/2 + h_cuv/2), x_length=wall_t, y_length=outer_w, z_length=h_cuv)
             front = pv.Cube(center=(0, -outer_w/2 + wall_t/2, -height/2 + h_cuv/2), x_length=outer_w - 2*wall_t, y_length=wall_t, z_length=h_cuv)
             back = pv.Cube(center=(0, outer_w/2 - wall_t/2, -height/2 + h_cuv/2), x_length=outer_w - 2*wall_t, y_length=wall_t, z_length=h_cuv)
-            
+
             cuvette_geom = bottom.merge([left, right, front, back])
-            
+
             self._vat_outer_actor = self.plotter.add_mesh(
                 cuvette_geom, color="#80c0ff", opacity=0.15, smooth_shading=True,
                 specular=1.0, specular_power=20, name="vat_cuvette", pickable=False, render=False,

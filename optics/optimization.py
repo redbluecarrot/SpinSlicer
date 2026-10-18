@@ -14,13 +14,13 @@ References:
   - VAMToolbox: https://github.com/computed-axial-lithography/VAMToolbox
 """
 
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
+
 import numpy as np
 import scipy.sparse as sp
 from scipy.fft import fft, ifft
 
 from .ray_tracing import trace_cuvette, trace_immersion_vial
-
 
 # ---------------------------------------------------------------------------
 #  Ray tracing
@@ -68,7 +68,7 @@ def _precompute_rays(
 #  Sparse system matrix construction
 # ---------------------------------------------------------------------------
 
-_matrix_cache = {}
+_matrix_cache: dict[tuple[Any, ...], Any] = {}
 
 def build_system_matrix(
     angles_rad: np.ndarray,
@@ -240,7 +240,7 @@ def _load_cpp_backend():
     global _sirt_lib, _lib_loaded, _dll_directory_handle
     if _lib_loaded:
         return _sirt_lib
-    
+
     _lib_loaded = True
     try:
         candidate_dirs = []
@@ -271,7 +271,7 @@ def _load_cpp_backend():
 
         if not lib_path:
             return None
-        
+
         lib = ctypes.CDLL(lib_path)
         lib.forward_project.argtypes = [
             ctypes.c_int, ctypes.c_int, ctypes.c_int,
@@ -354,14 +354,14 @@ def optimize_projections_sirt_volume(
         report_cb(0.34, "OpenCAL: C++ прямое проецирование и Ram-Lak фильтрация...")
 
     lib = _load_cpp_backend()
-    
+
     if lib is not None:
         num_rays = A.shape[0]
         num_pixels = A.shape[1]
         P0 = np.zeros((num_rays, nz), dtype=np.float32)
         A_csr = A.tocsr()
         AT_csr = AT.tocsr()
-        
+
         lib.forward_project(
             num_rays, num_pixels, nz,
             V_target.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
@@ -382,13 +382,13 @@ def optimize_projections_sirt_volume(
     # Calculate SIRT normalization factors (matrix norm based learning rate)
     ones_pixels = np.ones(A.shape[1], dtype=np.float32)
     ones_rays = np.ones(A.shape[0], dtype=np.float32)
-    
+
     row_sums = A.dot(ones_pixels)
     col_sums = AT.dot(ones_rays)
-    
+
     R_norm = np.zeros_like(row_sums)
     R_norm[row_sums > 0] = 1.0 / row_sums[row_sums > 0]
-    
+
     C_norm = np.zeros_like(col_sums)
     C_norm[col_sums > 0] = 1.0 / col_sums[col_sums > 0]
 
@@ -400,11 +400,11 @@ def optimize_projections_sirt_volume(
     if lib is not None:
         if report_cb:
             report_cb(0.36, "OpenCAL: C++ SIRT оптимизация (AVX/OpenMP)...")
-            
+
         b_flat = b.transpose(1, 0, 2).reshape(num_frames * num_s, nz).astype(np.float32)
         b_opt = np.zeros_like(b_flat)
         ray_hits_bool = ray_hits_any.astype(np.bool_)
-        
+
         lib.sirt_loop(
             num_rays, num_pixels, nz, max(1, iterations), d_h,
             b_flat.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
