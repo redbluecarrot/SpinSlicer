@@ -32,7 +32,7 @@ from i18n import tr
 from job_controller import JobController
 from model_node import ModelNode
 from slicing_engine import ResinSettings, SliceParams
-from ui_panels import ProcessSettingsPanel, TransformToolbar
+from ui_panels import ProcessSettingsPanel
 from validation import format_preflight_report, preflight_mesh
 from viewport import Viewport3D
 from workers import GenerationWorker, LoadMeshWorker
@@ -108,13 +108,13 @@ class SlicerTab(QWidget):
         # Настройки принтера находятся на отдельной вкладке, поэтому слайсер
         # оставляет вьюпорту всю ширину окна.
         self._viewport = Viewport3D()
-        
-        
+
+
         root.addWidget(self._viewport, 1)
 
     def _wire_signals(self) -> None:
         self._process_panel.diameterChanged.connect(self._on_diameter_changed)
-        
+
         tp = self._process_panel.transform_panel
         tp.positionChanged.connect(self._on_position_changed)
         tp.rotationChanged.connect(self._on_rotation_changed)
@@ -122,7 +122,7 @@ class SlicerTab(QWidget):
         tp.centerRequested.connect(self._on_center)
         tp.autoFitRequested.connect(self._on_autofit)
         tp.resetRequested.connect(self._on_reset_transform)
-        
+
         self._viewport.transformChanged.connect(self._on_viewport_transform_changed)
 
     # =======================================================================
@@ -215,7 +215,6 @@ class SlicerTab(QWidget):
         self._sync_and_redraw()
 
     def _on_scale_size_changed(self, axis: int, value: float) -> None:
-        import numpy as np
         node = self._model_node
         if node is None: return
         base_extents = np.asarray(node.base_extents, dtype=np.float64)

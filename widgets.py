@@ -23,7 +23,6 @@ from PyQt6.QtWidgets import (
 )
 
 
-
 class NoScrollSlider(QSlider):
     def wheelEvent(self, e):
         e.ignore()

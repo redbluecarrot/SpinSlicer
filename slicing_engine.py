@@ -30,7 +30,7 @@ from typing import Any, Callable, Optional, Tuple
 import numpy as np
 import trimesh
 from PIL import Image, ImageDraw
-from scipy.ndimage import binary_closing, binary_fill_holes
+from scipy.ndimage import binary_fill_holes
 from skimage.transform import radon
 from skimage.transform import resize as sk_resize
 
@@ -62,7 +62,6 @@ from validation import (
     validate_slice_parameters,
     validate_stl_path,
 )
-from optics.optimization import optimize_projections_sirt
 from vam_backend import (
     DEFAULT_VAM_ENV_NAME,
     VAMToolboxUnavailable,
@@ -363,7 +362,7 @@ class SlicingEngine:
                     kernel = np.ones((3, 3), np.uint8)
                     import cv2
                     arr_u8 = cv2.morphologyEx(arr_u8, cv2.MORPH_CLOSE, kernel)
-                    
+
                     if not preserve_internal_voids:
                         arr = binary_fill_holes(arr_u8 > 127)
                     else:
@@ -392,6 +391,7 @@ class SlicingEngine:
         if backend == "physical":
             report(0.30, "Физическая оптика OpenCAL: трассировка лучей и оптимизация...")
             import importlib
+
             import optics.optimization
             importlib.reload(optics.optimization)
             from optics.optimization import optimize_projections_sirt_volume

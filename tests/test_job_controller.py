@@ -40,3 +40,6 @@ def test_shutdown_requests_and_waits_for_every_worker(qt_app) -> None:
     assert not second.isRunning()
     assert first.cancel_requested.is_set()
     assert second.cancel_requested.is_set()
+    first.wait()
+    second.wait()
+    qt_app.processEvents()

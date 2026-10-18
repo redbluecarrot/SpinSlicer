@@ -131,7 +131,7 @@ _EN: dict[str, str] = {
         "Restart the application to apply the selected language.",
     "Язык изменён": "Language changed",
     "Parametric threaded nut": "Parametric threaded nut",
-    
+
     # Missing strings from UI panels
     "VAMToolbox — альтернативный движок": "VAMToolbox — alternative engine",
     "Движок проекций": "Projection engine",

@@ -130,42 +130,42 @@ class CALSlicerMainWindow(QMainWindow):
 
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_splitter.setChildrenCollapsible(True)
-        
+
         # Left side: Viewports (Slicer and Projector)
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.view_tabs = QTabWidget()
         self.view_tabs.setDocumentMode(True)
-        
+
         self.settings_tab = ProcessSettingsPanel()
         self.slicer_tab = SlicerTab(
             job_controller=self._job_controller,
             process_panel=self.settings_tab,
         )
         self.projector_tab = ProjectorTab(job_controller=self._job_controller)
-        
+
         self.view_tabs.addTab(self.slicer_tab, "Слайсер (3D)")
         self.view_tabs.addTab(self.projector_tab, "Проектор (Кадры)")
         left_layout.addWidget(self.view_tabs)
-        
+
         main_splitter.addWidget(left_panel)
-        
+
         # Right side: Settings Sidebar
         self.right_panel = QWidget()
         self.right_panel.setMinimumWidth(200)
         right_layout = QVBoxLayout(self.right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.addWidget(self.settings_tab)
-        
+
         main_splitter.addWidget(self.right_panel)
-        
+
         # Set initial sizes (70% left, 30% right)
         main_splitter.setStretchFactor(0, 1)
         main_splitter.setStretchFactor(1, 0)
         main_splitter.setSizes([1040, 500])
-        
+
         root.addWidget(main_splitter, 1)
 
         self._log_panel = QPlainTextEdit()
