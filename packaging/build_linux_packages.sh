@@ -12,6 +12,7 @@ if [[ ! -f "$BINARY" ]]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 
 # Debian accepts '-' in versions, while RPM does not. Release tags are
 # normally v1.2.3; manual workflow runs fall back to the project version.
@@ -137,7 +138,7 @@ depend = glib2
 EOF
 
 ARCH_PKG="$OUTPUT_DIR/SpinSlicer-${RPM_VERSION}-1-x86_64.pkg.tar.zst"
-(cd "$ARCH_ROOT" && tar -cf - .PKGINFO usr | zstd -c -T0 > "$ARCH_PKG")
+tar -C "$ARCH_ROOT" -cf - .PKGINFO usr | zstd -c -T0 > "$ARCH_PKG"
 
 echo "Created packages in $OUTPUT_DIR"
 ls -lh "$OUTPUT_DIR"/SpinSlicer-*.deb "$OUTPUT_DIR"/SpinSlicer-*.rpm "$OUTPUT_DIR"/SpinSlicer-*.pkg.tar.zst
