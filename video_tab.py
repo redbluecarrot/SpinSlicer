@@ -150,7 +150,8 @@ class ProjectorTab(QWidget):
         self.recon_label.setFixedSize(160, 160)
         recon_layout.addWidget(self.recon_label, 0, Qt.AlignmentFlag.AlignCenter)
 
-        self.recon_stats = QLabel("Потери дозы (L2): —\nДвижок: OpenCAL SIRT")
+        self.recon_stats = QLabel("RMSE относительной дозы: —")
+        self.recon_stats.setToolTip("Ошибка формы дозы после подбора общего масштаба. Не прогноз отверждения смолы.")
         self.recon_stats.setWordWrap(True)
         self.recon_stats.setMinimumHeight(32)
         self.recon_stats.setStyleSheet("color: #CCCCCC; font-size: 11px; margin-top: 2px;")
@@ -272,7 +273,7 @@ class ProjectorTab(QWidget):
             self._load_dose_preview(self._output_dir)
         else:
             self.recon_label.setText(tr("Нет данных\n(Сгенерируйте срез)"))
-            self.recon_stats.setText(f"{tr('Потери дозы (L2):')} —\n{tr('Движок: OpenCAL SIRT')}")
+            self.recon_stats.setText(tr("RMSE относительной дозы: —"))
 
     def _load_dose_preview(self, path: str) -> None:
         if not path or not os.path.isdir(path):
@@ -287,12 +288,17 @@ class ProjectorTab(QWidget):
         stats_path = os.path.join(path, "dose_stats.txt")
         if os.path.exists(stats_path):
             try:
-                with open(stats_path, "r") as f:
+                with open(stats_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                loss_val = content.split("loss=")[1].split("\n")[0] if "loss=" in content else "OK"
-                self.recon_stats.setText(f"{tr('Потери дозы (L2 Loss):')} {loss_val}\n{tr('Оптимизация: OpenCAL SIRT + Нелинейный отклик')}")
-            except Exception:
-                pass
+                statistics = dict(line.split("=", 1) for line in content.splitlines() if "=" in line)
+                if "rmse" in statistics:
+                    value = float(statistics["rmse"])
+                    self.recon_stats.setText(f"{tr('RMSE относительной дозы:')} {value:.4f}")
+                else:
+                    value = float(statistics["loss"])
+                    self.recon_stats.setText(f"{tr('Потери дозы (L2 Loss):')} {value:.4f}")
+            except (OSError, ValueError, KeyError):
+                self.recon_stats.setText(tr("Не удалось прочитать статистику реконструкции."))
 
     # --- общая папка вывода (устанавливается из вкладки "Слайсер") -------------
     def set_output_dir(self, path: str) -> None:

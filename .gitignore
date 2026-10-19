@@ -234,3 +234,10 @@ __marimo__/
 archive_scratch_scripts.tar.gz
 *.tar.gz
 
+cpp_backend/*.dll
+cpp_backend/*.so
+cpp_backend/*.dylib
+cpp_backend/*.obj
+cpp_backend/*.o
+cpp_backend/*.lib
+cpp_backend/*.exp

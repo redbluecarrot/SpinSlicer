@@ -1,518 +1,344 @@
+"""Sparse relative-dose planning with Snell rays and nonnegative SIRT.
+
+A maps a voxel field [x, y] to ray integrals in mm; A.T is its exact
+discrete adjoint. Entries are exact pixel-crossing lengths (Siddon, 1985),
+with analytically integrated Beer-Lambert attenuation. Each angle is built
+independently; dense volumes are processed in Z batches. No material gelation
+curve is assumed: the target is a relative optical dose, not cured geometry.
 """
-OpenCAL / Tomo Physical-Optics Projection Optimiser for SpinSlicer.
+from __future__ import annotations
 
-Implements the canonical OpenCAL (Computed Axial Lithography) algorithm:
-  - Vectorised Snell ray tracing with refractive index matching (air, glass, liquid, resin)
-  - Continuous ray-beam voxel mapping for artifact-free projector matrices
-  - Ram-Lak (ramp) Fourier frequency filtering to invert the 1/r backprojection blur
-  - Sigmoid-thresholded photopolymer gelation response gradient descent
-  - High-performance batch SpMM (Sparse Matrix-Matrix Multiplication) across all 3D slices simultaneously
-
-References:
-  - Kelly et al., Science 363(6431), 1075-1079 (2019)
-  - OpenCAL / Tomo software: https://opencal-org.readthedocs.io/
-  - VAMToolbox: https://github.com/computed-axial-lithography/VAMToolbox
-"""
-
-from typing import Any, Callable, Optional, Tuple
+import ctypes
+import os
+import sys
+from typing import Any, Callable, Optional
 
 import numpy as np
 import scipy.sparse as sp
 from scipy.fft import fft, ifft
 
-from .ray_tracing import trace_cuvette, trace_immersion_vial
+from constants import MAX_ESTIMATED_MEMORY_BYTES
 
-# ---------------------------------------------------------------------------
-#  Ray tracing
-# ---------------------------------------------------------------------------
+from .ray_tracing import intersect_circle, trace_cuvette, trace_immersion_vial
 
-def _precompute_rays(
-    angles_rad: np.ndarray,
-    s_positions: np.ndarray,
-    L_out: float,
-    L_in: float,
-    n_air: float,
-    n_glass: float,
-    n_liquid: float,
-    n_resin: float,
-    container_mode: int,
-) -> list:
-    """Trace ray paths for every angle in the sequence."""
-    cache = []
-    for theta in angles_rad:
-        if container_mode == 1:
-            p_resin, v_resin, valid = trace_cuvette(
-                s_positions, theta, L_out, L_in, n_air, n_glass, n_resin
-            )
-        elif container_mode == 2:
-            p_resin, v_resin, valid = trace_immersion_vial(
-                s_positions, theta, L_out, L_in, n_air, n_glass, n_liquid, n_resin
-            )
-        else:
-            # Mode 0: ideal parallel rays (no container refraction)
-            N = len(s_positions)
-            p_resin = np.column_stack([s_positions, np.full(N, L_out / 2.0)])
-            v_resin = np.tile(np.array([0.0, -1.0]), (N, 1))
-            valid = np.ones(N, dtype=bool)
-            c, s = np.cos(-theta), np.sin(-theta)
-            rot = np.array([[c, -s], [s, c]])
-            p_resin = p_resin @ rot.T
-            v_resin = v_resin @ rot.T
-
-        valid_idx = np.where(valid)[0]
-        cache.append((valid_idx, p_resin, v_resin))
-    return cache
-
-
-# ---------------------------------------------------------------------------
-#  Sparse system matrix construction
-# ---------------------------------------------------------------------------
-
-_matrix_cache: dict[tuple[Any, ...], Any] = {}
-
-def build_system_matrix(
-    angles_rad: np.ndarray,
-    num_s: int,
-    grid_res: int,
-    grid_span_mm: float,
-    L_out: float,
-    L_in: float,
-    n_air: float = 1.0,
-    n_glass: float = 1.51,
-    n_liquid: float = 1.45,
-    n_resin: float = 1.50,
-    alpha: float = 0.0,
-    container_mode: int = 0,
-    report_cb: Optional[Callable[[float, str], None]] = None,
-    cancelled_cb: Optional[Callable[[], bool]] = None,
-) -> Tuple[sp.csr_matrix, sp.csr_matrix]:
-    """Build the physical optics projector matrix A and adjoint backprojector A^T."""
-    cache_key = (
-        hash(angles_rad.tobytes()), num_s, grid_res, round(grid_span_mm, 4),
-        round(L_out, 4), round(L_in, 4), round(n_air, 4), round(n_glass, 4),
-        round(n_liquid, 4), round(n_resin, 4), round(alpha, 4), container_mode
-    )
-    if cache_key in _matrix_cache:
-        return _matrix_cache[cache_key]
-
-    s_positions = np.linspace(-L_out / 2.0, L_out / 2.0, num_s)
-    dx = grid_span_mm / grid_res
-    R = grid_span_mm / 2.0
-    t_samples = np.arange(-R, R, dx)
-    N_t = len(t_samples)
-
-    batches = []
-    num_angles = len(angles_rad)
-    report_interval = max(1, num_angles // 10)
-
-    for i, theta in enumerate(angles_rad):
-        if cancelled_cb and cancelled_cb():
-            from slicing_engine import SliceCancelled
-            raise SliceCancelled()
-
-        if container_mode == 1:
-            p_resin, v_resin, valid = trace_cuvette(s_positions, theta, L_out, L_in, n_air, n_glass, n_resin)
-        elif container_mode == 2:
-            p_resin, v_resin, valid = trace_immersion_vial(s_positions, theta, L_out, L_in, n_air, n_glass, n_liquid, n_resin)
-        else:
-            N = len(s_positions)
-            p_resin = np.column_stack([s_positions, np.full(N, L_out / 2.0)])
-            v_resin = np.tile(np.array([0.0, -1.0]), (N, 1))
-            valid = np.ones(N, dtype=bool)
-            c, s = np.cos(-theta), np.sin(-theta)
-            rot = np.array([[c, -s], [s, c]])
-            p_resin = p_resin @ rot.T
-            v_resin = v_resin @ rot.T
-
-        valid_idx = np.where(valid)[0]
-        if len(valid_idx) == 0:
-            batches.append(sp.csr_matrix((num_s, grid_res**2), dtype=np.float32))
-            continue
-
-        p = p_resin[valid_idx]
-        v = v_resin[valid_idx]
-
-        P_x = (p[:, 0:1] + v[:, 0:1] * t_samples).ravel()
-        P_y = (p[:, 1:2] + v[:, 1:2] * t_samples).ravel()
-
-        inside = (P_x**2 + P_y**2) < (R**2)
-        P_x = P_x[inside]
-        P_y = P_y[inside]
-
-        gx = (P_x - (-grid_span_mm / 2.0 + dx / 2.0)) / dx
-        gy = (P_y - (-grid_span_mm / 2.0 + dx / 2.0)) / dx
-
-        valid_pts = (gx >= 0) & (gx < grid_res - 1) & (gy >= 0) & (gy < grid_res - 1)
-        gx = gx[valid_pts]
-        gy = gy[valid_pts]
-
-        if len(gx) == 0:
-            batches.append(sp.csr_matrix((num_s, grid_res**2), dtype=np.float32))
-            continue
-
-        ray_idx = np.repeat(valid_idx, N_t)[inside][valid_pts]
-
-        x0 = np.floor(gx).astype(np.int32)
-        y0 = np.floor(gy).astype(np.int32)
-        wx = gx - x0
-        wy = gy - y0
-
-        w00 = ((1.0 - wx) * (1.0 - wy)).astype(np.float32) * dx
-        w10 = (wx * (1.0 - wy)).astype(np.float32) * dx
-        w01 = ((1.0 - wx) * wy).astype(np.float32) * dx
-        w11 = (wx * wy).astype(np.float32) * dx
-
-        if alpha > 0.0:
-            t_flat = np.tile(t_samples, len(valid_idx))[inside][valid_pts]
-            p_flat_x = np.repeat(p[:, 0], N_t)[inside][valid_pts]
-            p_flat_y = np.repeat(p[:, 1], N_t)[inside][valid_pts]
-            v_flat_x = np.repeat(v[:, 0], N_t)[inside][valid_pts]
-            v_flat_y = np.repeat(v[:, 1], N_t)[inside][valid_pts]
-            p_dot_v = p_flat_x * v_flat_x + p_flat_y * v_flat_y
-            p_sq = p_flat_x**2 + p_flat_y**2
-            D = p_dot_v**2 - (p_sq - R**2)
-            valid_D = D > 0
-            dist = np.zeros(len(gx), dtype=np.float32)
-            t_entry = -p_dot_v[valid_D] - np.sqrt(D[valid_D])
-            dist[valid_D] = np.maximum(t_flat[valid_D] - t_entry, 0.0)
-            atten = np.exp(-alpha * dist).astype(np.float32)
-            w00 *= atten
-            w10 *= atten
-            w01 *= atten
-            w11 *= atten
-
-        c00 = y0 * grid_res + x0
-        c10 = y0 * grid_res + (x0 + 1)
-        c01 = (y0 + 1) * grid_res + x0
-        c11 = (y0 + 1) * grid_res + (x0 + 1)
-
-        r_cat = np.concatenate([ray_idx, ray_idx, ray_idx, ray_idx])
-        c_cat = np.concatenate([c00, c10, c01, c11])
-        v_cat = np.concatenate([w00, w10, w01, w11])
-
-        chunk = sp.csr_matrix((v_cat, (r_cat, c_cat)), shape=(num_s, grid_res**2), dtype=np.float32)
-        chunk.sum_duplicates()
-        batches.append(chunk)
-
-        if report_cb and (i % report_interval == 0 or i == num_angles - 1):
-            report_cb(0.30 + 0.04 * (i / num_angles), f"Построение матрицы лучей {i + 1}/{num_angles}...")
-
-    A = sp.vstack(batches, format="csr")
-    del batches
-    AT = A.T.tocsr()
-    res = (A, AT)
-
-    _matrix_cache.clear()
-    _matrix_cache[cache_key] = res
-    return res
-
-
-def filter_sinograms_3d(b_3d: np.ndarray, filter_name: str = "ram-lak") -> np.ndarray:
-    """Apply Ram-Lak ramp filter along the detector dimension to invert 1/r backprojection blur."""
-    pX, pY, pZ = b_3d.shape
-    padded = max(64, int(2 ** np.ceil(np.log2(2 * pX))))
-    pad_w = ((0, padded - pX), (0, 0), (0, 0))
-
-    # Kak & Slaney spatial-domain Ram-Lak kernel
-    n = np.concatenate((
-        np.arange(1, padded / 2 + 1, 2, dtype=int),
-        np.arange(padded / 2 - 1, 0, -2, dtype=int),
-    ))
-    f = np.zeros(padded)
-    f[0] = 0.25
-    f[1::2] = -1.0 / (np.pi * n) ** 2
-    fourier_filter = (2.0 * np.real(fft(f)))[:, None, None]
-
-    img = np.pad(b_3d, pad_w, mode="constant", constant_values=0)
-    filt_img = fft(img, axis=0) * fourier_filter
-    return np.real(ifft(filt_img, axis=0)[:pX, :, :])
-
-
-import ctypes
-import os
-import sys
-
+_matrix_cache: dict[tuple[Any, ...], tuple[sp.csr_matrix, sp.csr_matrix]] = {}
 _sirt_lib = None
 _lib_loaded = False
 _dll_directory_handle = None
+# Bounds transient dense working buffers, independently of total layer count.
+DENSE_WORKSPACE_BYTES = 32 * 1024**2
+
+
+def _check_cancelled(callback):
+    if callback and callback():
+        from slicing_engine import SliceCancelled
+        raise SliceCancelled()
+
+
+def _validate_geometry(angles, num_s, grid_res, span, outer, inner, indices, alpha, mode):
+    angles = np.asarray(angles, dtype=np.float64)
+    if angles.ndim != 1 or not angles.size or not np.isfinite(angles).all():
+        raise ValueError("Angles must be a non-empty finite 1-D array.")
+    if isinstance(num_s, bool) or int(num_s) != num_s or num_s < 1:
+        raise ValueError("num_s must be a positive integer.")
+    if isinstance(grid_res, bool) or int(grid_res) != grid_res or grid_res < 2:
+        raise ValueError("grid_res must be an integer >= 2.")
+    if not np.isfinite([span, outer, inner, alpha, *indices]).all():
+        raise ValueError("Optical parameters must be finite.")
+    if not 0 < inner <= outer or span < inner:
+        raise ValueError("Require 0 < L_in <= L_out and grid_span_mm >= L_in.")
+    if alpha < 0 or any(index <= 0 for index in indices):
+        raise ValueError("Absorption must be nonnegative and refractive indices positive.")
+    if mode not in (0, 1, 2):
+        raise ValueError("container_mode must be 0 (air vial), 1 (square), or 2 (immersion vial).")
+    return angles
+
+
+def _box_interval(origins, directions, half):
+    nonparallel = np.abs(directions) > 1e-14
+    first = np.divide(-half - origins, directions, out=np.full_like(origins, -np.inf), where=nonparallel)
+    second = np.divide(half - origins, directions, out=np.full_like(origins, np.inf), where=nonparallel)
+    entry = np.minimum(first, second).max(axis=1)
+    exit_ = np.maximum(first, second).min(axis=1)
+    valid = np.all(nonparallel | (np.abs(origins) <= half + 1e-10), axis=1)
+    return entry, exit_, valid
+
+
+def _angle_matrix(origins, directions, valid, num_s, grid_res, span, inner, alpha, mode):
+    """Split complete resin chords at every grid crossing, without sampling."""
+    if mode == 1:
+        entry, exit_, intersects = _box_interval(origins, directions, inner / 2)
+    else:
+        entry, exit_, intersects = intersect_circle(origins, directions, inner / 2)
+    entry = np.maximum(entry, 0)
+    selected = np.flatnonzero(valid & intersects & (exit_ > entry))
+    shape = (num_s, grid_res**2)
+    if not selected.size:
+        return sp.csr_matrix(shape, dtype=np.float32)
+    p, v = origins[selected], directions[selected]
+    entry, exit_ = entry[selected], exit_[selected]
+    edges = np.linspace(-span / 2, span / 2, grid_res + 1)
+    crossings = []
+    for axis in (0, 1):
+        velocity = v[:, axis, None]
+        crossings.append(np.divide(
+            edges[None, :] - p[:, axis, None], velocity,
+            out=np.full((len(selected), len(edges)), np.inf),
+            where=np.abs(velocity) > 1e-14,
+        ))
+    distances = np.concatenate([entry[:, None], *crossings, exit_[:, None]], axis=1)
+    np.clip(distances, entry[:, None], exit_[:, None], out=distances)
+    distances.sort(axis=1)
+    lengths = np.diff(distances, axis=1)
+    keep = lengths > span * np.finfo(float).eps * 32
+    rows = np.broadcast_to(selected[:, None], lengths.shape)[keep]
+    starts = distances[:, :-1][keep]
+    lengths = lengths[keep]
+    midpoints = starts + lengths / 2
+    # Volume storage is [x, y, z], so flat pixel index is x*N + y.
+    local_rays = np.broadcast_to(np.arange(len(selected))[:, None], keep.shape)[keep]
+    points = p[local_rays] + v[local_rays] * midpoints[:, None]
+    cells = np.floor((points + span / 2) * grid_res / span).astype(np.int32)
+    np.clip(cells, 0, grid_res - 1, out=cells)
+    weights = lengths
+    if alpha > 0:
+        depth = np.maximum(starts - entry[local_rays], 0)
+        weights = np.exp(-alpha * depth) * (-np.expm1(-alpha * lengths)) / alpha
+    chunk = sp.csr_matrix(
+        (weights.astype(np.float32), (rows, cells[:, 0] * grid_res + cells[:, 1])),
+        shape=shape, dtype=np.float32,
+    )
+    chunk.sum_duplicates()
+    chunk.eliminate_zeros()
+    return chunk
+
+
+def build_system_matrix(
+    angles_rad: np.ndarray, num_s: int, grid_res: int, grid_span_mm: float,
+    L_out: float, L_in: float, n_air: float = 1.0, n_glass: float = 1.51,
+    n_liquid: float = 1.45, n_resin: float = 1.50, alpha: float = 0.0,
+    container_mode: int = 0, report_cb: Optional[Callable[[float, str], None]] = None,
+    cancelled_cb: Optional[Callable[[], bool]] = None,
+    memory_budget_bytes: int = MAX_ESTIMATED_MEMORY_BYTES,
+) -> tuple[sp.csr_matrix, sp.csr_matrix]:
+    """Return ray integrals A and exact adjoint A.T (both float32 CSR)."""
+    angles = _validate_geometry(
+        angles_rad, num_s, grid_res, grid_span_mm, L_out, L_in,
+        (n_air, n_glass, n_liquid, n_resin), alpha, container_mode,
+    )
+    _check_cancelled(cancelled_cb)
+    key = (angles.tobytes(), int(num_s), int(grid_res), float(grid_span_mm),
+           float(L_out), float(L_in), float(n_air), float(n_glass),
+           float(n_liquid), float(n_resin), float(alpha), container_mode)
+    if key in _matrix_cache:
+        return _matrix_cache[key]
+    # Two grids of crossings per ray; 3 CSR payloads covers assembly/transpose.
+    upper_bytes = len(angles) * num_s * (2 * grid_res + 1) * 24
+    if upper_bytes > memory_budget_bytes:
+        raise ValueError("Optical matrix exceeds the memory budget; reduce grid or angle count.")
+    _matrix_cache.clear()
+    # Detector pixel centres, not bin edges.
+    positions = (np.arange(num_s) + 0.5) * L_out / num_s - L_out / 2
+    batches = []
+    for index, theta in enumerate(angles):
+        _check_cancelled(cancelled_cb)
+        if container_mode == 1:
+            p, v, valid = trace_cuvette(positions, theta, L_out, L_in, n_air, n_glass, n_resin)
+        else:
+            surrounding_index = n_liquid if container_mode == 2 else n_air
+            p, v, valid = trace_immersion_vial(
+                positions, theta, L_out, L_in, n_air, n_glass, surrounding_index, n_resin,
+            )
+        batches.append(_angle_matrix(p, v, valid, num_s, grid_res, grid_span_mm, L_in, alpha, container_mode))
+        if report_cb and (index % max(1, len(angles) // 10) == 0 or index == len(angles) - 1):
+            report_cb(0.30 + 0.04 * (index + 1) / len(angles),
+                      f"Построение матрицы лучей {index + 1}/{len(angles)}...")
+    matrix = sp.vstack(batches, format="csr")
+    del batches
+    transpose = matrix.T.tocsr()
+    result = matrix, transpose
+    _matrix_cache[key] = result
+    return result
+
+
+def filter_sinograms_3d(b_3d: np.ndarray, filter_name: str = "ram-lak") -> np.ndarray:
+    """Ram-Lak warm start only; curved-ray inversion is done by SIRT."""
+    if filter_name != "ram-lak":
+        raise ValueError("Only the ram-lak filter is supported.")
+    detector_count = b_3d.shape[0]
+    padded = max(64, int(2 ** np.ceil(np.log2(2 * detector_count))))
+    n = np.concatenate((np.arange(1, padded // 2 + 1, 2), np.arange(padded // 2 - 1, 0, -2)))
+    kernel = np.zeros(padded)
+    kernel[0] = 0.25
+    kernel[1::2] = -1.0 / (np.pi * n)**2
+    ramp = (2 * np.real(fft(kernel))).astype(np.float32)[:, None, None]
+    image = np.pad(b_3d, ((0, padded - detector_count), (0, 0), (0, 0)))
+    return np.real(ifft(fft(image, axis=0) * ramp, axis=0)[:detector_count]).copy()
+
 
 def _load_cpp_backend():
     global _sirt_lib, _lib_loaded, _dll_directory_handle
     if _lib_loaded:
         return _sirt_lib
-
     _lib_loaded = True
-    try:
-        candidate_dirs = []
-        bundle_root = getattr(sys, "_MEIPASS", None)
-        if bundle_root and os.path.isdir(str(bundle_root)):
-            candidate_dirs.append(os.path.join(str(bundle_root), "cpp_backend"))
-            candidate_dirs.append(str(bundle_root))
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    bundle = getattr(sys, "_MEIPASS", None)
+    directories = [os.path.join(base, "cpp_backend"), base]
+    if bundle:
+        directories[:0] = [os.path.join(str(bundle), "cpp_backend"), str(bundle)]
+    float_pointer = ctypes.POINTER(ctypes.c_float)
+    integer_pointer = ctypes.POINTER(ctypes.c_int32)
+    for directory in directories:
+        for name in ("sirtsolver.dll", "sirtsolver.so", "libsirt.so", "sirtsolver.dylib"):
+            path = os.path.join(directory, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+                    _dll_directory_handle = os.add_dll_directory(directory)
+                library = ctypes.CDLL(path)
+                # New symbol prevents silently using the old nonlinear solver.
+                library.sirt_linear_step.argtypes = [
+                    ctypes.c_int, ctypes.c_int, ctypes.c_int, float_pointer, float_pointer,
+                    integer_pointer, integer_pointer, float_pointer,
+                    integer_pointer, integer_pointer, float_pointer,
+                    float_pointer, float_pointer, ctypes.POINTER(ctypes.c_bool), float_pointer,
+                ]
+                library.sirt_linear_step.restype = None
+                library.forward_project.argtypes = [
+                    ctypes.c_int, ctypes.c_int, ctypes.c_int, float_pointer,
+                    integer_pointer, integer_pointer, float_pointer, float_pointer,
+                ]
+                library.forward_project.restype = None
+                _sirt_lib = library
+                return library
+            except (OSError, AttributeError):
+                continue
+    return None
 
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        candidate_dirs.append(os.path.join(base_dir, "cpp_backend"))
-        candidate_dirs.append(base_dir)
 
-        lib_names = ["sirtsolver.dll", "sirtsolver.so", "libsirt.so", "sirtsolver.dylib"]
-        lib_path = None
-        for cdir in candidate_dirs:
-            for name in lib_names:
-                full_path = os.path.join(cdir, name)
-                if os.path.isfile(full_path):
-                    lib_path = full_path
-                    if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
-                        try:
-                            _dll_directory_handle = os.add_dll_directory(cdir)
-                        except Exception:
-                            pass
-                    break
-            if lib_path:
-                break
-
-        if not lib_path:
-            return None
-
-        lib = ctypes.CDLL(lib_path)
-        lib.forward_project.argtypes = [
-            ctypes.c_int, ctypes.c_int, ctypes.c_int,
-            ctypes.POINTER(ctypes.c_float),
-            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_float),
-            ctypes.POINTER(ctypes.c_float)
-        ]
-        lib.sirt_loop.argtypes = [
-            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_float,
-            ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
-            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_float),
-            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_float),
-            ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
-            ctypes.POINTER(ctypes.c_bool),
-            ctypes.POINTER(ctypes.c_float)
-        ]
-        _sirt_lib = lib
-        return _sirt_lib
-    except Exception as e:
-        print(f"Warning: Failed to load C++ backend: {e}")
-        return None
-
-# ---------------------------------------------------------------------------
-#  High-speed Volume OpenCAL / Tomo Optimiser
-# ---------------------------------------------------------------------------
-
-def optimize_projections_sirt_volume(
-    target_vol: np.ndarray,
-    angles_rad: np.ndarray,
-    L_out: float,
-    L_in: float,
-    n_air: float = 1.0,
-    n_glass: float = 1.51,
-    n_liquid: float = 1.45,
-    n_resin: float = 1.50,
-    alpha: float = 0.0,
-    grid_res: int = 128,
-    grid_span_mm: float = 50.0,
-    iterations: int = 8,
-    container_mode: int = 0,
-    report_cb: Optional[Callable[[float, str], None]] = None,
-    cancelled_cb: Optional[Callable[[], bool]] = None,
-) -> np.ndarray:
-    """Optimise projection sequence using the canonical OpenCAL / Tomo algorithm."""
-    nz = target_vol.shape[2]
-    num_frames = len(angles_rad)
-    num_s = grid_res
-
-    if report_cb:
-        report_cb(0.31, "OpenCAL: построение оптической лучевой матрицы (Ray-Driven)...")
-
-    if cancelled_cb and cancelled_cb():
-        from slicing_engine import SliceCancelled
-        raise SliceCancelled()
-
-    A, AT = build_system_matrix(
-        angles_rad,
-        num_s=num_s,
-        grid_res=grid_res,
-        grid_span_mm=grid_span_mm,
-        L_out=L_out,
-        L_in=L_in,
-        n_air=n_air,
-        n_glass=n_glass,
-        n_liquid=n_liquid,
-        n_resin=n_resin,
-        alpha=alpha,
-        container_mode=container_mode,
-        report_cb=report_cb,
-        cancelled_cb=cancelled_cb,
+def _csr_pointers(matrix):
+    return (
+        matrix.indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+        matrix.indices.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+        matrix.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
     )
 
-    if cancelled_cb and cancelled_cb():
-        from slicing_engine import SliceCancelled
-        raise SliceCancelled()
 
-    V_target = target_vol.reshape(grid_res * grid_res, nz).astype(np.float32)
+def _pointer(array):
+    return array.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
+
+def _project(matrix, values, library):
+    if library is None:
+        return matrix @ values
+    result = np.empty((matrix.shape[0], values.shape[1]), dtype=np.float32)
+    library.forward_project(matrix.shape[0], matrix.shape[1], values.shape[1],
+                            _pointer(values), *_csr_pointers(matrix), _pointer(result))
+    return result
+
+
+def _python_sirt_step(a, at, values, target, ray_norm, voxel_norm, hits, workspace):
+    np.subtract(target, at @ values, out=workspace)
+    workspace *= voxel_norm[:, None]
+    update = a @ workspace
+    update *= ray_norm[:, None]
+    values += update
+    np.maximum(values, 0, out=values)
+    values[~hits] = 0
+
+
+def optimize_projections_sirt_volume(
+    target_vol: np.ndarray, angles_rad: np.ndarray, L_out: float, L_in: float,
+    n_air: float = 1.0, n_glass: float = 1.51, n_liquid: float = 1.45,
+    n_resin: float = 1.50, alpha: float = 0.0, grid_res: int = 128,
+    grid_span_mm: float = 50.0, iterations: int = 8, container_mode: int = 0,
+    report_cb: Optional[Callable[[float, str], None]] = None,
+    cancelled_cb: Optional[Callable[[], bool]] = None,
+    batch_layers: Optional[int] = None, num_s: Optional[int] = None,
+) -> np.ndarray:
+    """Fit nonnegative relative-dose projections; output is [z, detector, angle].
+
+    With B=A.T, each iteration is x <- max(0, x + C B.T R (target-B x)),
+    where R/C are reciprocal row/column sums of B. No per-iteration max
+    normalization or uncalibrated sigmoid changes the objective.
+    """
+    target = np.asarray(target_vol)
+    if target.ndim != 3 or target.shape[:2] != (grid_res, grid_res) or not target.shape[2]:
+        raise ValueError("Target must have shape (grid_res, grid_res, nonzero layers).")
+    if not np.isfinite(target).all() or np.any(target < 0) or np.any(target > 1):
+        raise ValueError("Relative target dose must be finite and in [0, 1].")
+    if isinstance(iterations, bool) or int(iterations) != iterations or iterations < 1:
+        raise ValueError("iterations must be a positive integer.")
+    detector_count = grid_res if num_s is None else num_s
+    a, at = build_system_matrix(
+        angles_rad, detector_count, grid_res, grid_span_mm, L_out, L_in,
+        n_air, n_glass, n_liquid, n_resin, alpha, container_mode, report_cb, cancelled_cb,
+    )
+    library = _load_cpp_backend()
+    if a.indices.dtype != np.int32 or a.indptr.dtype != np.int32:
+        library = None
     if report_cb:
-        report_cb(0.34, "OpenCAL: C++ прямое проецирование и Ram-Lak фильтрация...")
-
-    lib = _load_cpp_backend()
-
-    if lib is not None:
-        num_rays = A.shape[0]
-        num_pixels = A.shape[1]
-        P0 = np.zeros((num_rays, nz), dtype=np.float32)
-        A_csr = A.tocsr()
-        AT_csr = AT.tocsr()
-
-        lib.forward_project(
-            num_rays, num_pixels, nz,
-            V_target.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            A_csr.indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-            A_csr.indices.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-            A_csr.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            P0.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-        )
-    else:
-        # 1. Forward project target volume: (num_frames * num_s, nz)
-        P0 = A.dot(V_target)
-
-    # 2. Reshape to (num_s, num_frames, nz) and apply Ram-Lak frequency filter
-    P0_3d = P0.reshape(num_frames, num_s, nz).transpose(1, 0, 2)
-    b = filter_sinograms_3d(P0_3d, filter_name="ram-lak")
-    b = np.maximum(b, 0.0)
-
-    # Calculate SIRT normalization factors (matrix norm based learning rate)
-    ones_pixels = np.ones(A.shape[1], dtype=np.float32)
-    ones_rays = np.ones(A.shape[0], dtype=np.float32)
-
-    row_sums = A.dot(ones_pixels)
-    col_sums = AT.dot(ones_rays)
-
-    R_norm = np.zeros_like(row_sums)
-    R_norm[row_sums > 0] = 1.0 / row_sums[row_sums > 0]
-
-    C_norm = np.zeros_like(col_sums)
-    C_norm[col_sums > 0] = 1.0 / col_sums[col_sums > 0]
-
-    V_any = (V_target.sum(axis=1) > 0).astype(np.float32)   # (grid_res^2,)
-    ray_hits_any = A.dot(V_any) > 1e-5                        # (num_rays,)
-
-    # 3. OpenCAL iterative gradient descent with photopolymer sigmoid response
-    d_h = 0.65  # Gelation threshold dose constraint
-    if lib is not None:
-        if report_cb:
-            report_cb(0.36, "OpenCAL: C++ SIRT оптимизация (AVX/OpenMP)...")
-
-        b_flat = b.transpose(1, 0, 2).reshape(num_frames * num_s, nz).astype(np.float32)
-        b_opt = np.zeros_like(b_flat)
-        ray_hits_bool = ray_hits_any.astype(np.bool_)
-
-        lib.sirt_loop(
-            num_rays, num_pixels, nz, max(1, iterations), d_h,
-            b_flat.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            V_target.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            A_csr.indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-            A_csr.indices.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-            A_csr.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            AT_csr.indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-            AT_csr.indices.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-            AT_csr.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            R_norm.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            C_norm.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-            ray_hits_bool.ctypes.data_as(ctypes.POINTER(ctypes.c_bool)),
-            b_opt.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-        )
-    else:
-        if report_cb:
-            report_cb(0.36, "OpenCAL: Python SIRT оптимизация (global normalization)...")
-
-        b_opt = b.transpose(1, 0, 2).reshape(num_frames * num_s, nz)
-
-        for it in range(max(1, iterations)):
-            if cancelled_cb and cancelled_cb():
-                from slicing_engine import SliceCancelled
-                raise SliceCancelled()
-
-            # Reconstruct delivered dose in resin vat: (pixels, nz)
-            dose = AT.dot(b_opt)
-
-            # Proper GLOBAL normalization (preserves relative contrast between layers!)
-            dose_max = float(np.max(dose))
-            if dose_max <= 0.0:
-                dose_max = 1.0
-            dose_norm = dose / dose_max
-
-            # Sigmoid threshold response modeling resin photopolymerization
-            dose_arg = np.clip(-15.0 * (dose_norm - d_h), -80.0, 80.0)
-            dose_thresh = 1.0 / (1.0 + np.exp(dose_arg))
-
-            # Error computation with sigmoid derivative (Non-linear Gradient Descent)
-            sigmoid_deriv = 15.0 * dose_thresh * (1.0 - dose_thresh)
-            sigmoid_deriv = np.clip(sigmoid_deriv, 0.05, None)  # Prevent dead gradients
-            error = (V_target - dose_thresh) * sigmoid_deriv
-
-            # Proper SIRT update rule based on matrix norms
-            delta_b = A.dot(C_norm[:, None] * error)
-            b_opt = b_opt + R_norm[:, None] * delta_b
-
-            # Apply non-negativity constraint
-            np.maximum(b_opt, 0.0, out=b_opt)
-
-            # Zero-dose suppression: ray_hits_any is 1-D → broadcasts over nz
-            b_opt[~ray_hits_any, :] = 0.0
-
+        report_cb(0.35, "SIRT: C++ OpenMP" if library is not None else "SIRT: SciPy (Python)")
+    row_sums = np.asarray(a.sum(axis=1)).ravel()
+    col_sums = np.asarray(at.sum(axis=1)).ravel()
+    ray_norm = np.divide(1, row_sums, out=np.zeros_like(row_sums), where=row_sums > 0)
+    voxel_norm = np.divide(1, col_sums, out=np.zeros_like(col_sums), where=col_sums > 0)
+    nz = target.shape[2]
+    # FFT warm start and both sparse products fit inside this working budget.
+    bytes_per_layer = 4 * (10 * a.shape[0] + 4 * a.shape[1])
+    block_size = max(1, DENSE_WORKSPACE_BYTES // bytes_per_layer)
+    if batch_layers is not None:
+        if isinstance(batch_layers, bool) or int(batch_layers) != batch_layers or batch_layers < 1:
+            raise ValueError("batch_layers must be a positive integer.")
+        block_size = min(block_size, int(batch_layers))
+    sinograms = np.empty((nz, detector_count, len(angles_rad)), dtype=np.float32)
+    for start in range(0, nz, block_size):
+        _check_cancelled(cancelled_cb)
+        stop = min(nz, start + block_size)
+        target_block = np.ascontiguousarray(target[:, :, start:stop].reshape(grid_res**2, stop-start), dtype=np.float32)
+        projected = _project(a, target_block, library)
+        hits = projected > 0
+        filtered = filter_sinograms_3d(projected.reshape(len(angles_rad), detector_count, -1).transpose(1, 0, 2))
+        values = np.ascontiguousarray(filtered.transpose(1, 0, 2).reshape(a.shape[0], -1), dtype=np.float32)
+        del projected, filtered
+        np.maximum(values, 0, out=values)
+        values[~hits] = 0
+        workspace = _project(at, values, library)
+        # Least-squares scale of the initializer, independently for each layer.
+        numerator = np.einsum("ij,ij,i->j", workspace, target_block, voxel_norm, dtype=np.float64)
+        denominator = np.einsum("ij,ij,i->j", workspace, workspace, voxel_norm, dtype=np.float64)
+        scale = np.divide(numerator, denominator, out=np.zeros_like(numerator), where=denominator > 0)
+        values *= scale.astype(np.float32)[None, :]
+        for iteration in range(iterations):
+            _check_cancelled(cancelled_cb)
+            if library is None:
+                _python_sirt_step(a, at, values, target_block, ray_norm, voxel_norm, hits, workspace)
+            else:
+                library.sirt_linear_step(
+                    a.shape[0], a.shape[1], stop-start, _pointer(values), _pointer(target_block),
+                    *_csr_pointers(a), *_csr_pointers(at), _pointer(ray_norm), _pointer(voxel_norm),
+                    hits.ctypes.data_as(ctypes.POINTER(ctypes.c_bool)), _pointer(workspace),
+                )
             if report_cb:
-                frac = 0.36 + 0.42 * ((it + 1) / iterations)
-                report_cb(frac, f"OpenCAL итерация {it + 1}/{iterations} (резкость + подавление пересветов)...")
-
-    # Reshape b_opt back to (num_frames, num_s, nz)
-    b_opt_3d = b_opt.reshape(num_frames, num_s, nz).transpose(1, 0, 2)
-
-    # Shape: (nz, num_s, num_frames) = (nz, grid_res, num_frames)
-    sinograms = b_opt_3d.transpose(2, 0, 1).astype(np.float32)
-
-    # Clean normalisation using robust max (99.9th percentile) to avoid hot-pixel darkening
-    sino_max = float(np.percentile(sinograms, 99.9))
-    if sino_max > 0:
-        sinograms /= sino_max
-        np.clip(sinograms, 0.0, 1.0, out=sinograms)
-
+                progress = (start + (stop-start) * (iteration+1) / iterations) / nz
+                report_cb(0.36 + 0.42 * progress, f"SIRT {iteration+1}/{iterations}; Z {start+1}–{stop}/{nz}")
+        sinograms[start:stop] = values.reshape(len(angles_rad), detector_count, -1).transpose(2, 1, 0)
+    maximum = float(np.max(sinograms))
+    if maximum > 0:
+        sinograms /= maximum
     return sinograms
 
 
-# ---------------------------------------------------------------------------
-#  Single-slice backward-compatible wrapper
-# ---------------------------------------------------------------------------
-
 def optimize_projections_sirt(
-    V_target: np.ndarray,
-    angles_rad: np.ndarray,
-    L_out: float,
-    L_in: float,
-    n_air: float = 1.0,
-    n_glass: float = 1.51,
-    n_liquid: float = 1.45,
-    n_resin: float = 1.50,
-    alpha: float = 0.0,
-    num_s: int = 128,
-    grid_span_mm: float = 50.0,
-    iterations: int = 8,
-    container_mode: int = 0,
+    V_target: np.ndarray, angles_rad: np.ndarray, L_out: float, L_in: float,
+    n_air: float = 1.0, n_glass: float = 1.51, n_liquid: float = 1.45,
+    n_resin: float = 1.50, alpha: float = 0.0, num_s: int = 128,
+    grid_span_mm: float = 50.0, iterations: int = 8, container_mode: int = 0,
 ) -> np.ndarray:
-    """Single-slice compatibility wrapper."""
     grid_res = V_target.shape[0]
-    V_vol = V_target.reshape(grid_res, grid_res, 1)
-    sinograms = optimize_projections_sirt_volume(
-        V_vol,
-        angles_rad,
-        L_out=L_out,
-        L_in=L_in,
-        n_air=n_air,
-        n_glass=n_glass,
-        n_liquid=n_liquid,
-        n_resin=n_resin,
-        alpha=alpha,
-        grid_res=grid_res,
-        grid_span_mm=grid_span_mm,
-        iterations=iterations,
-        container_mode=container_mode,
+    result = optimize_projections_sirt_volume(
+        V_target[:, :, None], angles_rad, L_out, L_in, n_air, n_glass, n_liquid,
+        n_resin, alpha, grid_res, grid_span_mm, iterations, container_mode, num_s=num_s,
     )
-    return sinograms[0].T
+    return result[0].T

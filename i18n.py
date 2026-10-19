@@ -16,6 +16,13 @@ _language = "ru"
 # Russian UI strings so applying the English layer does not alter the Russian
 # fallback or the public API.
 _EN: dict[str, str] = {
+    "Отсечение яркости кадров, %": "Frame gray cutoff, %",
+    "Порог серого в PNG-кадрах; не критическая доза отверждения смолы.":
+        "Gray cutoff in PNG frames; not the resin's critical curing dose.",
+    "RMSE относительной дозы: —": "Relative dose RMSE: —",
+    "RMSE относительной дозы:": "Relative dose RMSE:",
+    "Ошибка формы дозы после подбора общего масштаба. Не прогноз отверждения смолы.":
+        "Dose shape error after fitting a common scale. Not a resin curing prediction.",
     "Настройки процесса": "Process settings",
     "Настройки принтера и процесса": "Printer and process settings",
     "Настройки": "Settings",

@@ -17,10 +17,10 @@ not drive a real projector, resin vat, or rotation stage.
 
 ## Features
 
-Stable v0.3.0 includes **Slicer (3D)**, **Projector (Video)**, and **Settings** sidebar.
-See [release notes](docs/releases/v0.3.0.md).
+Stable v0.3.1 includes **Slicer (3D)**, **Projector (Video)**, and **Settings** sidebar.
+See [release notes](docs/releases/v0.3.1.md).
 
-- **54× Memory & Speed Breakthrough:** Completely re-engineered system matrix algorithm runs full **256×256** voxel resolution in ~250 MB RAM (reduced from 13.5 GB) in under 3 seconds.
+- **Sparse, bounded-memory optics:** Full-resolution CSR ray matrices and Z-batched optimization retain the 256×256 grid and 360 angles. Measured conditions and resource use are recorded in the [numerical validation report](docs/validation/physical-optics-v0.3.1.md).
 - **Native OpenMP Parallel SIRT Engine:** Multi-threaded C++ backend (`sirtsolver.dll` / `sirtsolver.so`) runs on all standard CPUs without requiring expensive discrete GPUs.
 - **Ergonomic CAD Workspace:** Side-by-side layout with wide interactive 3D viewport on the left and quick-access parameters on the right.
 - **Clean 3D Viewport:** Streamlined trackball orbit, pan, and zoom without obstructing viewport cubes.
@@ -37,19 +37,19 @@ See [release notes](docs/releases/v0.3.0.md).
 Download pre-built binaries directly from [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Installer:** Download and run `SpinSlicer-Setup-0.3.0.exe`
+  - **Installer:** Download and run `SpinSlicer-Setup-0.3.1.exe`
   - **Portable:** Download `SpinSlicer-windows-x64.zip`, extract and run `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.3.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.3.1-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.3.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.3.1-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.3.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.3.1-1.x86_64.rpm
   ```
 - **Generic Linux Portable:**
   ```bash
@@ -93,23 +93,19 @@ VAMToolbox:
 
 1. voxelize the target geometry;
 2. generate or optimize a projection sequence over evenly spaced angles;
-3. normalize the dose response and export a frame sequence for playback.
+3. apply a common projection scale and export a frame sequence for playback.
 
-The internal SpinSlicer backend uses a robust mesh-section → rasterization →
-Radon path and has no additional installation requirements. The optional
-VAMToolbox backend adapts a voxel target to its `TargetGeometry` and
-parallel-ray `ProjectionGeometry`, then requests the CAL optimizer. It is not
-pinned in `requirements.txt` because the external project uses a separate
-conda-based installation and has its own distribution terms. The default UI
-mode is the internal SpinSlicer projector; `Auto` is retained only as an
-experimental compatibility mode.
+The default UI backend traces Snell-refracted rays through the vial or cuvette,
+integrates voxel crossings and Beer–Lambert attenuation, then fits nonnegative
+relative-dose projections with SIRT. The optional native library accelerates the
+same calculation with C++/OpenMP. The Python API also retains internal Radon
+and optional VAMToolbox compatibility paths.
 
-On Windows, open **Settings → VAMToolbox — alternate engine** to create the
-isolated `spinslicer-vam` Conda environment and verify the installation. This
-does not modify SpinSlicer's own `.venv`. If Conda is not detected, install
-Miniconda or Anaconda first, then restart the application. The official
-installation details and platform limitations are documented in the
-[VAMToolbox getting-started guide](https://vamtoolbox.readthedocs.io/en/latest/_docs/gettingstarted.html).
+The preview reconstructs the exported PNG gray values and reports the relative
+dose shape RMSE after fitting a common scale. This is not a calibrated curing
+prediction. Fresnel reflection, scattering, material cure response and absolute
+hardware dose require additional calibration. See the [model and reproducible
+checks](docs/validation/physical-optics-v0.3.1.md).
 
 ## Output format
 
@@ -121,6 +117,10 @@ output_frames/
     ├── frame_0000.png
     ├── frame_0001.png
     ├── slice_meta.json
+    ├── dose_stats.txt
+    ├── reconstruction_dose.npy
+    ├── reconstruction_target.npy
+    ├── reconstruction_preview.png
     └── manifest.json
 ```
 
@@ -141,7 +141,8 @@ player can consume a run. Legacy flat folders containing
 | `nut_dialog.py` | Legacy threaded-nut dialog kept for API compatibility. |
 | `threaded_nut.py` | Legacy parametric nut generator kept for API compatibility. |
 | `ui_panels.py` | Printer/process settings and compact model transform controls. |
-| `slicing_engine.py` | Mesh-section rasterization, Radon projection, and export. |
+| `slicing_engine.py` | Mesh-section rasterization, projection planning, and verified PNG export. |
+| `optics/` | Snell rays, exact voxel path integrals, and nonnegative relative-dose SIRT. |
 | `vam_backend.py` | Optional VAMToolbox CAL adapter and sinogram layout normalization. |
 | `video_tab.py` | Frame playback and MP4 export. |
 | `frame_io.py` | Validated frame-set storage, metadata, and manifests. |

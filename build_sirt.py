@@ -26,7 +26,7 @@ def build() -> bool:
                 "/nologo",
                 "/std:c++17",
                 "/O2",
-                "/openmp",
+                "/openmp:experimental",
                 "/EHsc",
                 "/LD",
                 str(src),

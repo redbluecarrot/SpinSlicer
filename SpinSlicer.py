@@ -138,6 +138,10 @@ class CALSlicerMainWindow(QMainWindow):
 
         self.view_tabs = QTabWidget()
         self.view_tabs.setDocumentMode(True)
+        self.view_tabs.setObjectName("mainTabs")
+        tab_bar = self.view_tabs.tabBar()
+        if tab_bar is not None:
+            tab_bar.setDrawBase(False)
 
         self.settings_tab = ProcessSettingsPanel()
         self.slicer_tab = SlicerTab(

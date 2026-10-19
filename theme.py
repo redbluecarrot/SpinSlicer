@@ -195,8 +195,7 @@ QWidget#transformToolbar {{ background: transparent; }}
 
 /* --- Вкладки ---------------------------------------------------------- */
 QTabWidget::pane {{
-    border: 1px solid {BORDER_SOFT}; border-radius: {RADIUS}px;
-    background-color: {SURFACE}; top: -1px;
+    border: none; background: transparent; top: 0px;
 }}
 QTabBar {{ background: transparent; }}
 QTabBar::tab {{

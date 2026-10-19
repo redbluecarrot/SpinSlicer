@@ -218,6 +218,7 @@ def estimate_slicing_memory(
     layers: int,
     num_frames: int,
     output_res: int | None = None,
+    projection_backend: str = "internal",
 ) -> int:
     """Estimate peak buffers used by forward slicing and PNG rendering."""
 
@@ -230,13 +231,18 @@ def estimate_slicing_memory(
     anti_alias = (grid * ANTI_ALIAS_FACTOR) ** 2
     output_buffers = 0
     if output_res is not None:
-        target_height = max(int(round(int(output_res) * nz / grid)), 1)
-        output_pixels = target_height * int(output_res) * frames
+        target_height = max(int(round(int(output_res) * nz / max(grid, int(output_res)))), 1)
+        output_pixels = target_height * int(output_res)
         # skimage.resize and the uint8 output coexist briefly during a frame
         # export, so count two output-sized buffers before adding headroom.
         output_buffers = output_pixels * (4 + 1)
-    # Include temporary Radon/resize buffers and a conservative headroom.
-    return int((slices + sinograms + anti_alias + output_buffers) * 1.5)
+    matrices = 0
+    if projection_backend == "physical":
+        # Exact grid traversal crosses at most 2*N+1 segments per ray.
+        # Three CSR payloads conservatively cover assembly and transposition.
+        matrices = frames * grid * (2 * grid + 1) * 24
+    workspace = 32 * 1024**2
+    return int((slices + sinograms + anti_alias + output_buffers + workspace) * 1.5 + matrices)
 
 
 def preflight_mesh(
@@ -302,14 +308,14 @@ def preflight_mesh(
     diameter = float(params.diameter_mm)
     grid = int(params.grid_res)
     frames = int(params.num_frames)
-    pitch = diameter / grid
+    pitch = diameter / max(grid, int(params.output_res))
     estimated_layers = estimate_layer_count(float(bounds[0, 2]), float(bounds[1, 2]), pitch)
     if estimated_layers > MAX_LAYERS:
         errors.append(
             f"Estimated layer count is {estimated_layers:,}; limit is {MAX_LAYERS:,}."
         )
 
-    target_height = max(int(round(params.output_res * estimated_layers / grid)), 1)
+    target_height = max(int(round(params.output_res * float(extents[2]) / diameter)), 1)
     if target_height > MAX_FRAME_DIMENSION or params.output_res > MAX_FRAME_DIMENSION:
         errors.append(
             f"Output frame dimensions would be {target_height}×{params.output_res} px; "
@@ -323,7 +329,8 @@ def preflight_mesh(
         )
 
     estimated_memory = estimate_slicing_memory(
-        grid, estimated_layers, frames, output_res=int(params.output_res)
+        grid, estimated_layers, frames, output_res=int(params.output_res),
+        projection_backend=getattr(params, "projection_backend", "internal"),
     )
     if estimated_memory > MAX_ESTIMATED_MEMORY_BYTES:
         errors.append(
@@ -333,18 +340,23 @@ def preflight_mesh(
 
     if vat_height_mm is not None:
         vat_height = _finite_number(vat_height_mm, "vat_height_mm")
-        radial = np.hypot(vertices[:, 0], vertices[:, 1])
+        physical = getattr(params, "projection_backend", "internal") == "physical"
+        resin_diameter = float(getattr(params, "cuvette_inner_mm", diameter)) if physical else diameter
+        if physical and getattr(params, "container_mode", 0) == 1:
+            radial = np.max(np.abs(vertices[:, :2]), axis=1)
+        else:
+            radial = np.hypot(vertices[:, 0], vertices[:, 1])
         max_radius = float(np.max(radial)) if len(radial) else 0.0
-        if max_radius > diameter / 2.0 + 1e-6:
+        if max_radius > resin_diameter / 2.0 + 1e-6:
             errors.append(
-                f"Model exceeds the vat radius ({max_radius:.2f} mm > {diameter / 2.0:.2f} mm)."
+                f"Model exceeds the resin radius/half-width ({max_radius:.2f} mm > {resin_diameter / 2.0:.2f} mm)."
             )
         z_abs = max(abs(float(bounds[0, 2])), abs(float(bounds[1, 2])))
         if z_abs > vat_height / 2.0 + 1e-6:
             errors.append(
                 f"Model exceeds the vat height ({z_abs * 2.0:.2f} mm > {vat_height:.2f} mm)."
             )
-        if max_radius > diameter / 2.0 * 0.95:
+        if max_radius > resin_diameter / 2.0 * 0.95:
             warnings.append("Model is very close to the vat wall.")
         if z_abs > vat_height / 2.0 * 0.95:
             warnings.append("Model is very close to the top or bottom of the vat.")

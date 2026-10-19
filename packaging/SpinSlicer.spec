@@ -17,9 +17,14 @@ from PyInstaller.utils.hooks import collect_all
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 
 datas = [(str(PROJECT_ROOT / "assets"), "assets")]
-if (PROJECT_ROOT / "cpp_backend").is_dir():
-    datas.append((str(PROJECT_ROOT / "cpp_backend"), "cpp_backend"))
 binaries: list[tuple[str, str]] = []
+native_name = "sirtsolver.dll" if sys.platform.startswith("win") else "sirtsolver.so"
+native_path = PROJECT_ROOT / "cpp_backend" / native_name
+if not native_path.is_file():
+    raise FileNotFoundError("Build the native backend with python build_sirt.py before packaging.")
+# BINARY collection makes PyInstaller resolve OpenMP runtime dependencies.
+# Copying the folder as DATA can silently omit vcomp140/libgomp on clean PCs.
+binaries.append((str(native_path), "cpp_backend"))
 qt_bin: Path | None = None
 if sys.platform.startswith("win"):
     pyqt_spec = find_spec("PyQt6")

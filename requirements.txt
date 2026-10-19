@@ -10,3 +10,4 @@ Pillow==12.3.0
 trimesh[easy]==5.1.0
 scikit-image==0.26.0
 opencv-python-headless==5.0.0.93
+matplotlib==3.11.1

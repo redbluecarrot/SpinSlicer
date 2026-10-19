@@ -7,9 +7,36 @@ from slicing_engine import ResinSettings, SliceParams
 from validation import (
     ValidationError,
     estimate_layer_count,
+    estimate_slicing_memory,
     preflight_mesh,
     validate_stl_path,
 )
+
+
+def test_physical_preflight_does_not_allow_model_in_glass_wall() -> None:
+    params = valid_params()
+    params.projection_backend = "physical"
+    params.cuvette_outer_mm, params.cuvette_inner_mm = 60., 56.
+    vertices = np.array([[29., 0., -1.], [29., 0.5, 1.], [28., -0.5, 0.]])
+    report = preflight_mesh(make_mesh(vertices), params, vat_height_mm=96.)
+    assert not report.ok
+    assert any("resin" in error for error in report.errors)
+
+
+def test_physical_memory_budget_counts_sparse_matrices() -> None:
+    basic = estimate_slicing_memory(256, 256, 360, output_res=720)
+    physical = estimate_slicing_memory(256, 256, 360, output_res=720, projection_backend="physical")
+    # The measured matrix pair alone is over 300 MiB at this resolution.
+    assert physical > basic + 300 * 1024**2
+
+
+def test_physical_params_reject_invalid_absorption_before_slicing() -> None:
+    params = valid_params()
+    params.projection_backend = "physical"
+    params.cuvette_outer_mm, params.cuvette_inner_mm = 60., 56.
+    params.alpha = -0.01
+    with pytest.raises(ValidationError, match="Absorption"):
+        params.validate()
 
 
 def make_mesh(vertices: np.ndarray, faces: np.ndarray | None = None) -> SimpleNamespace:
@@ -70,7 +97,7 @@ def test_preflight_accepts_finite_mesh_inside_vat() -> None:
 
     assert report.ok
     assert report.triangle_count == 1
-    assert report.estimated_layers == estimate_layer_count(-10, 10, 60 / 64)
+    assert report.estimated_layers == estimate_layer_count(-10, 10, 60 / 128)
 
 
 def test_preflight_rejects_unreasonable_render_dimensions() -> None:
