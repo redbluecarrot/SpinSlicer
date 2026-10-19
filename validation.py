@@ -31,6 +31,7 @@ from constants import (
     MIN_NUM_FRAMES,
     MIN_OUTPUT_RESOLUTION,
 )
+from optics.geometry import detector_span_mm
 
 
 class ValidationError(ValueError):
@@ -219,6 +220,7 @@ def estimate_slicing_memory(
     num_frames: int,
     output_res: int | None = None,
     projection_backend: str = "internal",
+    frame_height_px: int | None = None,
 ) -> int:
     """Estimate peak buffers used by forward slicing and PNG rendering."""
 
@@ -232,6 +234,8 @@ def estimate_slicing_memory(
     output_buffers = 0
     if output_res is not None:
         target_height = max(int(round(int(output_res) * nz / max(grid, int(output_res)))), 1)
+        if frame_height_px is not None:
+            target_height = max(1, int(frame_height_px))
         output_pixels = target_height * int(output_res)
         # skimage.resize and the uint8 output coexist briefly during a frame
         # export, so count two output-sized buffers before adding headroom.
@@ -308,14 +312,24 @@ def preflight_mesh(
     diameter = float(params.diameter_mm)
     grid = int(params.grid_res)
     frames = int(params.num_frames)
-    pitch = diameter / max(grid, int(params.output_res))
+    projection_span = diameter
+    if getattr(params, "projection_backend", "internal") == "physical":
+        try:
+            projection_span = detector_span_mm(
+                float(getattr(params, "cuvette_outer_mm", diameter)),
+                getattr(params, "container_mode", 0),
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+            return PreflightReport(False, errors, warnings, triangle_count, bounds_mm, 0, 0)
+    pitch = min(diameter / grid, projection_span / int(params.output_res))
     estimated_layers = estimate_layer_count(float(bounds[0, 2]), float(bounds[1, 2]), pitch)
     if estimated_layers > MAX_LAYERS:
         errors.append(
             f"Estimated layer count is {estimated_layers:,}; limit is {MAX_LAYERS:,}."
         )
 
-    target_height = max(int(round(params.output_res * float(extents[2]) / diameter)), 1)
+    target_height = max(int(round(params.output_res * float(extents[2]) / projection_span)), 1)
     if target_height > MAX_FRAME_DIMENSION or params.output_res > MAX_FRAME_DIMENSION:
         errors.append(
             f"Output frame dimensions would be {target_height}×{params.output_res} px; "
@@ -331,6 +345,7 @@ def preflight_mesh(
     estimated_memory = estimate_slicing_memory(
         grid, estimated_layers, frames, output_res=int(params.output_res),
         projection_backend=getattr(params, "projection_backend", "internal"),
+        frame_height_px=target_height,
     )
     if estimated_memory > MAX_ESTIMATED_MEMORY_BYTES:
         errors.append(

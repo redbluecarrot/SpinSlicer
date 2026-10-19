@@ -107,6 +107,11 @@ prediction. Fresnel reflection, scattering, material cure response and absolute
 hardware dose require additional calibration. See the [model and reproducible
 checks](docs/validation/physical-optics-v0.3.1.md).
 
+Square cuvettes use a fixed projection field equal to the outer diagonal at
+every angle. This span and the physical pixel pitch are recorded in the manifest;
+projector calibration must use that span. See the [square-field correction and
+corner-coverage checks](docs/validation/square-detector-field.md).
+
 ## Output format
 
 Each completed generation creates a unique run directory:

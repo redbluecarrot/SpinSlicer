@@ -39,6 +39,7 @@ from frame_io import (
     save_meta,
     sha256_file,
 )
+from optics.geometry import detector_span_mm
 from profiles import (
     MachineProfile,
     ProfileValidationError,
@@ -309,11 +310,15 @@ class SlicingEngine:
         fill_holes = params.fill_holes
         preserve_internal_voids = params.preserve_internal_voids
         resin = params.resin
+        projection_span = (
+            detector_span_mm(params.cuvette_outer_mm, params.container_mode)
+            if params.projection_backend == "physical" else diameter_mm
+        )
 
         z_min, z_max = mesh.bounds[0][2], mesh.bounds[1][2]
         # Decouple Z-resolution from X/Y grid_res to eliminate Z stair-stepping.
         # Slice at the projector's native vertical pixel pitch for maximum smoothness!
-        pitch = diameter_mm / max(output_res, grid_res)
+        pitch = min(diameter_mm / grid_res, projection_span / output_res)
         z_levels = np.arange(z_min + pitch / 2.0, z_max, pitch)
         nz = len(z_levels)
         if nz == 0:
@@ -485,7 +490,7 @@ class SlicingEngine:
 
         out_dir = FrameRepository.create_run_dir(params.output_dir)
         model_height_mm = z_max - z_min
-        target_h = max(int(round(output_res * model_height_mm / diameter_mm)), 1)
+        target_h = max(int(round(output_res * model_height_mm / projection_span)), 1)
         mid_z = nz // 2
         mid_frame_row = int(np.clip(round((nz - mid_z - 0.5) * target_h / nz - 0.5), 0, target_h - 1))
         exported_mid_sinograms = np.empty((grid_res, num_frames), dtype=np.float32)
@@ -602,6 +607,8 @@ class SlicingEngine:
                     "fill_holes": params.fill_holes,
                     "projection_backend": params.projection_backend,
                     "optimizer_iterations": params.optimizer_iterations,
+                    "raster_layers": nz,
+                    "voxel_pitch_z_mm": pitch,
                     "optics": {
                         "container_mode": params.container_mode,
                         "outer_mm": params.cuvette_outer_mm,
@@ -611,6 +618,10 @@ class SlicingEngine:
                         "n_liquid": params.n_liquid,
                         "n_resin": params.n_resin,
                         "alpha_per_mm": params.alpha,
+                        "voxel_grid_span_mm": diameter_mm,
+                        "detector_span_mm": projection_span,
+                        "detector_spacing_mm": projection_span / grid_res,
+                        "output_pixel_pitch_mm": projection_span / output_res,
                         "dose_model": "relative_linear",
                     },
                     "preserve_internal_voids": params.preserve_internal_voids,

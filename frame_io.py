@@ -447,7 +447,12 @@ class FrameRepository:
         grid_res = meta.grid_res if meta is not None else LEGACY_GRID_RES
         output_res = meta.output_res if meta is not None else height
         nz = max(int(round(height * grid_res / output_res)), 1)
-        if nz > MAX_LAYERS:
+        recorded_layers = manifest.slice_parameters.get("raster_layers") if manifest else None
+        if recorded_layers is not None:
+            if isinstance(recorded_layers, bool) or not isinstance(recorded_layers, int):
+                raise ValidationError("Manifest raster_layers must be an integer.")
+            nz = recorded_layers
+        if not 1 <= nz <= MAX_LAYERS:
             raise ValidationError(
                 f"Frame-set depth is {nz:,} layers; limit is {MAX_LAYERS:,}."
             )

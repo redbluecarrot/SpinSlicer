@@ -19,6 +19,7 @@ from scipy.fft import fft, ifft
 
 from constants import MAX_ESTIMATED_MEMORY_BYTES
 
+from .geometry import detector_span_mm
 from .ray_tracing import intersect_circle, trace_cuvette, trace_immersion_vial
 
 _matrix_cache: dict[tuple[Any, ...], tuple[sp.csr_matrix, sp.csr_matrix]] = {}
@@ -137,8 +138,10 @@ def build_system_matrix(
     if upper_bytes > memory_budget_bytes:
         raise ValueError("Optical matrix exceeds the memory budget; reduce grid or angle count.")
     _matrix_cache.clear()
-    # Detector pixel centres, not bin edges.
-    positions = (np.arange(num_s) + 0.5) * L_out / num_s - L_out / 2
+    # A rotating square needs its circumscribed diagonal as a constant field.
+    # Detector centres and physical pitch must agree with frame export.
+    detector_span = detector_span_mm(L_out, container_mode)
+    positions = (np.arange(num_s) + 0.5) * detector_span / num_s - detector_span / 2
     batches = []
     for index, theta in enumerate(angles):
         _check_cancelled(cancelled_cb)
