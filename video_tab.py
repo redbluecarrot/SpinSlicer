@@ -8,6 +8,7 @@ video_tab.py
 """
 from __future__ import annotations
 
+import glob
 import os
 from typing import List, Optional
 
@@ -29,7 +30,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from constants import DEFAULT_FRAME_RATE_HZ, DEFAULT_PROJECTOR_GAMMA
+from constants import (
+    BARE_PROJECTION_DIR,
+    DEFAULT_FRAME_RATE_HZ,
+    DEFAULT_PROJECTOR_GAMMA,
+    PROJECTOR_FRAMES_DIR,
+)
 from frame_io import FrameRepository
 from i18n import language, tr
 from job_controller import JobController
@@ -37,8 +43,6 @@ from widgets import LabeledSlider
 from workers import VideoAssembleWorker, VideoExportWorker
 
 BASE_FPS = DEFAULT_FRAME_RATE_HZ
-# Sub-folder written by the slicer with the projection without vial compensation.
-BARE_PROJECTION_DIR = "bare_projection"
 
 
 class VideoPreviewWidget(QLabel):
@@ -482,9 +486,31 @@ class ProjectorTab(QWidget):
             pass
         return (rate if rate > 0 else DEFAULT_FRAME_RATE_HZ), gamma
 
+    def _export_source(self) -> tuple[list[str], bool]:
+        """PNG files for the printer at their original resolution, and whether the
+        projector gamma still has to be applied to them (False: already encoded)."""
+        run_dir = self._run_dir()
+        if not run_dir:
+            return [], True
+        if self._bare_selected():
+            folder = os.path.join(run_dir, BARE_PROJECTION_DIR)
+            return sorted(glob.glob(os.path.join(folder, "frame_*.png"))), True
+        encoded = os.path.join(run_dir, PROJECTOR_FRAMES_DIR)
+        if os.path.isdir(encoded):
+            paths = sorted(glob.glob(os.path.join(encoded, "frame_*.png")))
+            if paths:
+                return paths, False
+        return list(FrameRepository.validate(run_dir).paths), True
+
+    @staticmethod
+    def _format_rpm(rpm: float) -> str:
+        """Rotation speed for the file name: 5, 4.17 (never 4.16667)."""
+        return f"{rpm:.2f}".rstrip("0").rstrip(".")
+
     def _on_save_clicked(self) -> None:
-        if not self._frames:
-            QMessageBox.warning(self, "Warning", "Assemble the video first.")
+        paths, gamma_pending = self._export_source()
+        if not paths:
+            QMessageBox.warning(self, "Warning", "No frames to export.")
             return
 
         if self._bare_selected():
@@ -497,19 +523,37 @@ class ProjectorTab(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 return
         fps, gamma = self._export_settings()
-        rpm = 60.0 * fps / len(self._frames)
+        # The count of frames on disk, not of the (possibly smaller) preview.
+        rpm = 60.0 * fps / len(paths)
         name = "projection_uncorrected" if self._bare_selected() else "projection"
         # OpenCAL reads the rotation speed from the file name: <name>_<rpm>rpm.mp4
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save video", f"{name}_{rpm:g}rpm.mp4", "MP4 (*.mp4)"
+            self, "Save video", f"{name}_{self._format_rpm(rpm)}rpm.mp4", "MP4 (*.mp4)"
         )
         if not path:
             return
 
+        # The PNG files and the preview are linear; gamma only reaches the MP4.
+        if abs(gamma - 1.0) > 1e-9:
+            self.logMessage.emit(
+                tr("Гамма проектора {gamma:g}: {where}.").format(
+                    gamma=gamma,
+                    where=tr("применена к кадрам при расчёте") if not gamma_pending
+                    else tr("применена к 8-битным кадрам при экспорте"),
+                )
+            )
+        else:
+            self.logMessage.emit(
+                tr("Гамма проектора 1.0 (линейный вывод). Если гамма проектора около 2.2 и он не "
+                   "откалиброван, доза будет нелинейной.")
+            )
+
         self.save_btn.setEnabled(False)
         self.progress.emit(0.0, "Экспорт в MP4...")
 
-        self._export_worker = VideoExportWorker(self._frames, fps, path, self, projector_gamma=gamma)
+        self._export_worker = VideoExportWorker(
+            paths, fps, path, self, projector_gamma=gamma if gamma_pending else 1.0
+        )
         self._job_controller.register(self._export_worker)
         self._export_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
         self._export_worker.finished_ok.connect(self._on_export_done)

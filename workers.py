@@ -16,7 +16,7 @@ import tempfile
 import threading
 import traceback
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import trimesh
@@ -241,12 +241,17 @@ class VideoExportWorker(QThread):
 
     def __init__(
         self,
-        frames: List[np.ndarray],
+        frames: Sequence[Union[np.ndarray, str]],
         fps: float,
         out_path: str,
         parent=None,
         projector_gamma: float = DEFAULT_PROJECTOR_GAMMA,
     ):
+        """``frames`` are grayscale arrays or paths of PNG files.
+
+        Paths are read one at a time at full resolution, which is how the file for
+        the printer is made; arrays (like the downscaled preview) are used as given.
+        """
         super().__init__(parent)
         self.frames = frames
         self.projector_gamma = projector_gamma
@@ -254,14 +259,26 @@ class VideoExportWorker(QThread):
         self.out_path = out_path
         self._cancel_event = threading.Event()
 
+    @staticmethod
+    def _load(item: Union[np.ndarray, str]) -> np.ndarray:
+        """One grayscale frame from an array or a PNG path."""
+        if isinstance(item, np.ndarray):
+            return item
+        import cv2
+
+        image = cv2.imread(str(item), cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            raise ValidationError(f"Не удалось прочитать кадр {Path(str(item)).name}.")
+        return image
+
     def _encode_frames(self, write, prepared) -> bool:
         """Feed every prepared frame to ``write``; False when cancelled."""
         total = len(self.frames)
         report_step = max(1, total // 30)
-        for i, frame in enumerate(self.frames):
+        for i, item in enumerate(self.frames):
             if self._cancel_event.is_set():
                 return False
-            write(prepared(frame))
+            write(prepared(self._load(item)))
             if i % report_step == 0:
                 self.progress.emit(i / total, f"Кодирование кадра {i}/{total}...")
         return True
@@ -273,8 +290,12 @@ class VideoExportWorker(QThread):
             "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{w}x{h}", "-r", repr(float(self.fps)),
             "-i", "-",
             # yuv420p needs even sides; pad with black (no light) instead of resampling.
-            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            # Full range: black stays 0 and white 255. In the default limited range the
+            # background would be 16/255 (about 6 % light) all the way round the vial and
+            # 36 gray levels would be lost; the pc flag tells decoders that the range is full.
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=in_range=full:out_range=full",
             "-c:v", "libx264", "-preset", "medium", "-crf", str(H264_CRF), "-pix_fmt", "yuv420p",
+            "-color_range", "pc",
             "-movflags", "+faststart", "-f", "mp4", path,
         ]
         flags = 0x08000000 if sys.platform == "win32" else 0  # no console flash in the GUI
@@ -327,26 +348,33 @@ class VideoExportWorker(QThread):
             if len(self.frames) > MAX_NUM_FRAMES:
                 raise ValidationError("Слишком много кадров для экспорта.")
 
+            first = self._load(self.frames[0])
+            first_h, first_w = first.shape[:2]
             total_pixels = 0
             total_memory = 0
-            for frame in self.frames:
-                if frame.ndim != 2:
-                    raise ValueError("Кадры для экспорта должны быть grayscale-массивами.")
+            for item in self.frames:
+                if isinstance(item, np.ndarray):
+                    frame = item
+                    if frame.ndim != 2:
+                        raise ValueError("Кадры для экспорта должны быть grayscale-массивами.")
+                    frame_h, frame_w = frame.shape[:2]
+                    total_memory += int(frame.nbytes)
+                else:
+                    frame_h, frame_w = first_h, first_w  # PNG files are streamed, not held
                 if (
-                    not frame.shape[0]
-                    or not frame.shape[1]
-                    or frame.shape[0] > MAX_FRAME_DIMENSION
-                    or frame.shape[1] > MAX_FRAME_DIMENSION
+                    not frame_h
+                    or not frame_w
+                    or frame_h > MAX_FRAME_DIMENSION
+                    or frame_w > MAX_FRAME_DIMENSION
                 ):
                     raise ValidationError("Размер кадра для экспорта выходит за лимит.")
-                total_pixels += int(frame.shape[0]) * int(frame.shape[1])
-                total_memory += int(frame.nbytes)
+                total_pixels += int(frame_h) * int(frame_w)
             if total_pixels > MAX_FRAME_TOTAL_PIXELS:
                 raise ValidationError("Суммарный размер кадров превышает лимит экспорта.")
             if total_memory > MAX_VIDEO_PREVIEW_BYTES:
                 raise ValidationError("Память для экспорта видео превышает установленный лимит.")
 
-            h, w = self.frames[0].shape[:2]
+            h, w = first_h, first_w
             # Gamma pre-compensation: a projector shows value v as (v/255)**gamma
             # of its peak light, so encode (v/255)**(1/gamma) to get linear dose.
             gamma = float(self.projector_gamma)

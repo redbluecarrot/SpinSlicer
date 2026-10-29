@@ -16,6 +16,7 @@ import numpy as np
 
 from constants import (
     ANTI_ALIAS_FACTOR,
+    DEFAULT_FRAME_RATE_HZ,
     MAX_DIAMETER_MM,
     MAX_ESTIMATED_MEMORY_BYTES,
     MAX_FRAME_DIMENSION,
@@ -83,7 +84,7 @@ def validate_slice_parameters(
     projection_backend: Any = "internal",
     optimizer_iterations: Any = 8,
     preserve_internal_voids: Any = True,
-    frame_rate_hz: Any = 24.0,
+    frame_rate_hz: Any = DEFAULT_FRAME_RATE_HZ,
     angle_offset_deg: Any = 90.0,
     angle_direction: Any = 1,
 ) -> None:
@@ -107,6 +108,10 @@ def validate_slice_parameters(
         raise ValidationError(
             f"output_res must be between {MIN_OUTPUT_RESOLUTION} and {MAX_OUTPUT_RESOLUTION}."
         )
+    if output % 2:
+        # H.264 (yuv420p) needs even sides; an odd width would be padded on one side,
+        # moving the frame centre half a pixel off the rotation axis.
+        raise ValidationError("output_res must be even.")
 
     frames = _integer(num_frames, "num_frames")
     if not MIN_NUM_FRAMES <= frames <= MAX_NUM_FRAMES:
@@ -269,7 +274,7 @@ def preflight_mesh(
             getattr(params, "projection_backend", "internal"),
             getattr(params, "optimizer_iterations", 8),
             getattr(params, "preserve_internal_voids", True),
-            getattr(params, "frame_rate_hz", 24.0),
+            getattr(params, "frame_rate_hz", DEFAULT_FRAME_RATE_HZ),
             getattr(params, "angle_offset_deg", 90.0),
             getattr(params, "angle_direction", 1),
         )

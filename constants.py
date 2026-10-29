@@ -108,3 +108,8 @@ VIEWPORT_BG_BOTTOM = "#121319"
 
 PANEL_RADIUS = 12
 BUTTON_RADIUS = 8
+
+# Sub-folders of a run: the projection without vial compensation, and the frames
+# already encoded for the projector gamma (written only when gamma is not 1).
+BARE_PROJECTION_DIR = "bare_projection"
+PROJECTOR_FRAMES_DIR = "projector_frames"
