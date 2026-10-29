@@ -42,7 +42,7 @@ def test_bare_projection_is_the_plain_straight_ray_projection() -> None:
 
 def test_engine_writes_bare_frames_next_to_the_compensated_ones(tmp_path) -> None:
     mesh = trimesh.creation.box(extents=(8.0, 8.0, 8.0))
-    _, run_dir = SlicingEngine.run(mesh, _params(tmp_path))
+    _, run_dir = SlicingEngine.run(mesh, _params(tmp_path, compute_mode="maximum"))
     run = Path(run_dir)
     bare = run / BARE_PROJECTION_DIR
     main_frames = sorted(run.glob("frame_*.png"))
@@ -63,7 +63,7 @@ def test_engine_writes_bare_frames_next_to_the_compensated_ones(tmp_path) -> Non
 
 def test_bare_projection_can_be_switched_off(tmp_path) -> None:
     mesh = trimesh.creation.box(extents=(8.0, 8.0, 8.0))
-    _, run_dir = SlicingEngine.run(mesh, _params(tmp_path, save_bare_projection=False))
+    _, run_dir = SlicingEngine.run(mesh, _params(tmp_path, compute_mode="maximum", save_bare_projection=False))
     assert not os.path.exists(os.path.join(run_dir, BARE_PROJECTION_DIR))
     manifest = load_manifest(run_dir)
     assert manifest is not None and manifest.slice_parameters["bare_projection_dir"] == ""
@@ -81,8 +81,8 @@ def test_projector_tab_offers_bare_mode_only_when_available(tmp_path, qapp) -> N
     from video_tab import ProjectorTab
 
     mesh = trimesh.creation.box(extents=(8.0, 8.0, 8.0))
-    _, with_bare = SlicingEngine.run(mesh, _params(tmp_path / "a"))
-    _, without = SlicingEngine.run(mesh, _params(tmp_path / "b", save_bare_projection=False))
+    _, with_bare = SlicingEngine.run(mesh, _params(tmp_path / "a", compute_mode="maximum"))
+    _, without = SlicingEngine.run(mesh, _params(tmp_path / "b", compute_mode="maximum", save_bare_projection=False))
 
     tab = ProjectorTab()
     tab.set_output_dir(with_bare)
@@ -98,7 +98,7 @@ def test_assemble_worker_loads_either_frame_set(tmp_path) -> None:
     from workers import VideoAssembleWorker
 
     mesh = trimesh.creation.box(extents=(8.0, 8.0, 8.0))
-    _, run_dir = SlicingEngine.run(mesh, _params(tmp_path))
+    _, run_dir = SlicingEngine.run(mesh, _params(tmp_path, compute_mode="maximum"))
 
     def load(subdir: str):
         loaded: list = []
