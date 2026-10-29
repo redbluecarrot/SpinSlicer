@@ -1,0 +1,23 @@
+#!/bin/sh
+# Strips AI co-author trailers so only the human author is credited on GitHub.
+# Installed via: git config core.hooksPath .githooks
+
+msg_file="$1"
+
+python - "$msg_file" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    lines = handle.read().splitlines()
+
+pattern = re.compile(r"^\s*co-authored-by:.*(claude|anthropic)", re.IGNORECASE)
+lines = [line for line in lines if not pattern.search(line)]
+
+while lines and not lines[-1].strip():
+    lines.pop()
+
+with open(path, "w", encoding="utf-8", newline="\n") as handle:
+    handle.write("\n".join(lines) + "\n")
+PY
