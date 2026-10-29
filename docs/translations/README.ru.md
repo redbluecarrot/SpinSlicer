@@ -24,8 +24,8 @@ SpinSlicer — локальный исследовательский прото�
 
 ## Возможности
 
-Стабильная версия v0.3.2 включает **Slicer (3D)**, **Projector (Video)** и боковую панель **Settings**.
-См. [заметки о выпуске](../releases/v0.3.2.md).
+Стабильная версия v0.4.0 включает **Slicer (3D)**, **Projector (Video)** и боковую панель **Settings**.
+См. [заметки о выпуске](../releases/v0.4.0.md).
 
 - **Разреженная оптика с ограниченной памятью:** полноразмерные CSR-матрицы лучей и пакетная по Z оптимизация сохраняют сетку 256×256 и 360 углов. Условия измерений и потребление ресурсов приведены в [отчёте о численной валидации](../validation/physical-optics-v0.3.1.md).
 - **Нативный параллельный SIRT на OpenMP:** многопоточный C++-бэкенд (`sirtsolver.dll` / `sirtsolver.so`) работает на любых обычных CPU без дорогих дискретных GPU.
@@ -44,19 +44,19 @@ SpinSlicer — локальный исследовательский прото�
 Скачайте готовые сборки со страницы [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Установщик:** скачайте и запустите `SpinSlicer-Setup-0.3.2.exe`
+  - **Установщик:** скачайте и запустите `SpinSlicer-Setup-0.4.0.exe`
   - **Портативная версия:** скачайте `SpinSlicer-windows-x64.zip`, распакуйте и запустите `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.3.2-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.4.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.3.2-amd64.deb
+  sudo apt install ./SpinSlicer-0.4.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.3.2-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.4.0-1.x86_64.rpm
   ```
 - **Портативная сборка для Linux:**
   ```bash

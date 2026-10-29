@@ -22,8 +22,8 @@ PyQt6 桌面界面、PyVista/VTK 视口、投影生成器和帧播放器。
 
 ## 功能
 
-稳定版 v0.3.2 包含 **Slicer (3D)**、**Projector (Video)** 和 **Settings** 侧边栏。
-详见[发布说明](../releases/v0.3.2.md)。
+稳定版 v0.4.0 包含 **Slicer (3D)**、**Projector (Video)** 和 **Settings** 侧边栏。
+详见[发布说明](../releases/v0.4.0.md)。
 
 - **稀疏、内存受限的光学计算：** 全分辨率 CSR 光线矩阵和按 Z 分批的优化保持 256×256 网格与 360 个角度。测量条件与资源占用记录在[数值验证报告](../validation/physical-optics-v0.3.1.md)中。
 - **原生 OpenMP 并行 SIRT 引擎：** 多线程 C++ 后端（`sirtsolver.dll` / `sirtsolver.so`）可在任何常规 CPU 上运行，无需昂贵的独立显卡。
@@ -42,19 +42,19 @@ PyQt6 桌面界面、PyVista/VTK 视口、投影生成器和帧播放器。
 可直接从 [Releases](https://github.com/redbluecarrot/SpinSlicer/releases) 下载预编译程序：
 
 - **Windows 10 / 11：**
-  - **安装程序：** 下载并运行 `SpinSlicer-Setup-0.3.2.exe`
+  - **安装程序：** 下载并运行 `SpinSlicer-Setup-0.4.0.exe`
   - **便携版：** 下载 `SpinSlicer-windows-x64.zip`，解压后运行 `SpinSlicer.exe`
 - **Arch Linux / Manjaro：**
   ```bash
-  sudo pacman -U SpinSlicer-0.3.2-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.4.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint：**
   ```bash
-  sudo apt install ./SpinSlicer-0.3.2-amd64.deb
+  sudo apt install ./SpinSlicer-0.4.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE：**
   ```bash
-  sudo dnf install ./SpinSlicer-0.3.2-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.4.0-1.x86_64.rpm
   ```
 - **通用 Linux 便携版：**
   ```bash

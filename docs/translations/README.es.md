@@ -25,8 +25,8 @@ controla un proyector real, una cubeta de resina ni una platina giratoria.
 
 ## Características
 
-La versión estable v0.3.2 incluye **Slicer (3D)**, **Projector (Video)** y la barra lateral **Settings**.
-Consulta las [notas de la versión](../releases/v0.3.2.md).
+La versión estable v0.4.0 incluye **Slicer (3D)**, **Projector (Video)** y la barra lateral **Settings**.
+Consulta las [notas de la versión](../releases/v0.4.0.md).
 
 - **Óptica dispersa con memoria acotada:** las matrices CSR de rayos a resolución completa y la optimización por lotes en Z conservan la malla de 256×256 y 360 ángulos. Las condiciones medidas y el uso de recursos se recogen en el [informe de validación numérica](../validation/physical-optics-v0.3.1.md).
 - **Motor SIRT paralelo nativo con OpenMP:** el backend multihilo en C++ (`sirtsolver.dll` / `sirtsolver.so`) funciona en cualquier CPU estándar sin necesidad de GPU dedicadas costosas.
@@ -45,19 +45,19 @@ Consulta las [notas de la versión](../releases/v0.3.2.md).
 Descarga los binarios desde [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Instalador:** descarga y ejecuta `SpinSlicer-Setup-0.3.2.exe`
+  - **Instalador:** descarga y ejecuta `SpinSlicer-Setup-0.4.0.exe`
   - **Portable:** descarga `SpinSlicer-windows-x64.zip`, extráelo y ejecuta `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.3.2-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.4.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.3.2-amd64.deb
+  sudo apt install ./SpinSlicer-0.4.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.3.2-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.4.0-1.x86_64.rpm
   ```
 - **Linux portable genérico:**
   ```bash
