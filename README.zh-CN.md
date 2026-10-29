@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="README.md"><img src="assets/lang-en.svg" alt="English" height="44"></a>
-  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="44"></a>
-  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="44"></a>
-  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="44"></a>
+  <a href="README.md"><img src="assets/lang-en.svg" alt="English" height="36"></a>
+  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
+  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
+  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
 SpinSlicer 是一个用于断层扫描式体积增材制造（VAM）的本地研究原型。它集成了
