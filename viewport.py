@@ -34,14 +34,13 @@ from PyQt6.QtCore import (
     QEasingCurve,
     QEvent,
     QRect,
-    QSize,
     Qt,
     QTimer,
     QVariantAnimation,
     pyqtSignal,
 )
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
-from PyQt6.QtWidgets import QToolButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 
 from constants import (
@@ -65,7 +64,6 @@ from constants import (
     VIEWPORT_ORIENTATION_VIEWPORT,
     VIEWPORT_ORIENTATION_WIDGET_SIZE,
 )
-from i18n import tr
 
 CameraPose = tuple[np.ndarray, np.ndarray, np.ndarray, float]
 
@@ -462,25 +460,8 @@ class Viewport3D(QWidget):
 
         self.plotter.interactor.installEventFilter(self)
         self._install_navigation_style()
-        self._create_orientation_cube(plotter)
-        self._camera_home_button = QToolButton(self.plotter.interactor)
-        self._camera_home_button.setObjectName("cameraHomeButton")
-        self._camera_home_button.setIcon(_home_camera_icon())
-        self._camera_home_button.setIconSize(QSize(18, 18))
-        self._camera_home_button.setFixedSize(32, 32)
-        self._camera_home_button.setToolTip(tr("Домашнее положение камеры"))
-        self._camera_home_button.setAccessibleName(tr("Домашнее положение камеры"))
-        self._camera_home_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._camera_home_button.clicked.connect(self.reset_camera)
-        self._position_camera_home_button()
-        self._camera_home_button.show()
 
         self._reset_camera_view()
-
-    def update_language(self) -> None:
-        label = tr("Домашнее положение камеры")
-        self._camera_home_button.setToolTip(label)
-        self._camera_home_button.setAccessibleName(label)
 
     def _create_orientation_cube(self, plotter: Any) -> None:
         """Create the draggable CAD ViewCube and its face-aligned axes."""

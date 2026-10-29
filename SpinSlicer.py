@@ -230,7 +230,6 @@ class CALSlicerMainWindow(QMainWindow):
         set_language(selected)
         self._settings.setValue("language", selected)
         apply_translations(self)
-        self.slicer_tab.update_language()
         if hasattr(self.projector_tab, "update_language"):
             self.projector_tab.update_language()
         self._log(tr("Язык изменён") + ". " + tr("Перезапустите приложение, чтобы применить язык."))

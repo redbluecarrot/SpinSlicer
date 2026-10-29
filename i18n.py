@@ -133,7 +133,6 @@ _EN: dict[str, str] = {
     "Выключено: рампа линейная (гамма 1.0), по ней можно измерить гамму проектора с нуля. Включено: рампа с гаммой из профиля станка, чтобы проверить, что калибровка даёт линейный свет.": "Off: the ramp is linear (gamma 1.0), so the projector gamma can be measured from scratch. On: the ramp carries the machine profile's gamma, to check that the calibration gives linear light.",
     "GPU недоступна, расчёт продолжен на процессоре: {error}": "The GPU is unavailable, the job continues on the processor: {error}",
     "Taichi не запустился ({error}); все ядра процессора": "Taichi did not start ({error}); all processor cores",
-    "Домашнее положение камеры": "Home camera view",
     "Тип проекции:": "Projection type:",
     "ffmpeg недоступен: MP4 пишется кодеком mp4v с потерей качества.":
         "ffmpeg is unavailable: the MP4 is written with the lossy mp4v codec.",
