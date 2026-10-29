@@ -328,15 +328,17 @@ def _operators(a, at, profile: Optional[ComputeProfile], library):
     if profile is None:
         return a, at, library, "C++ OpenMP" if library is not None else "SciPy (Python)"
     if profile.device == "gpu":
+        uploaded = None
         try:
             from .gpu_operator import GpuMatrix
 
-            return (
-                GpuMatrix(a), GpuMatrix(at) if at is not None else None, None,
-                f"GPU {profile.gpu_name}",
-            )
+            uploaded = GpuMatrix(a)
+            second = GpuMatrix(at) if at is not None else None
+            return uploaded, second, None, f"GPU {profile.gpu_name}"
         except Exception:  # no device memory, driver trouble: continue on the CPU
-            pass
+            # Free what was already uploaded here, in this thread; leaving it to the
+            # garbage collector could destroy it in another thread and abort.
+            _release(uploaded)
     if profile.lean_memory:
         library = None
     if library is not None:
@@ -399,21 +401,27 @@ def _python_sirt_step(a, at, values, target, ray_norm, voxel_norm, hits, workspa
     values[~hits] = 0
 
 
-# Dose window: voxels of the part should end up above WINDOW_LEVEL and the rest
-# below it. Units are the least-squares calibrated dose, where 1 is the target.
+# Defaults of the window stage, in units where 1 is the target dose.
 WINDOW_LEVEL = 0.8
 WINDOW_STEEPNESS = 10.0
 
 
-def _window_step(a, at, values, target, ray_norm, voxel_norm, hits, library):
-    """One projected SIRT step on a sigmoid dose threshold, not on the raw dose.
+def _window_step(
+    a, at, values, target, ray_norm, voxel_norm, hits, library,
+    level: float = WINDOW_LEVEL, steepness: float = WINDOW_STEEPNESS,
+):
+    """One projected SIRT step on a sigmoid dose threshold (a heuristic, see below).
 
-    Resin does not respond to dose linearly: it gels above a critical dose. The
-    least-squares fit leaves the dose of the part and its surroundings almost
-    equal, so this step pushes the part above WINDOW_LEVEL and the rest below.
+    Resin gels above a critical dose, so the least-squares fit, which leaves the
+    dose of the part and of its surroundings close together, is followed by steps
+    that push the part above ``level`` and the rest below it. The error is
+    ``target - sigmoid(steepness * (dose - level))``. The derivative of the sigmoid
+    is deliberately left out of the step (as in the native SIRT of v0.2), so this is
+    not the gradient of a loss function: it is a bounded, monotone correction with no
+    convergence guarantee, and ``level`` is not tied to any measured resin threshold.
     """
     dose = _project(at, values, library)
-    arg = np.clip(-WINDOW_STEEPNESS * (dose - WINDOW_LEVEL), -60.0, 60.0)
+    arg = np.clip(-steepness * (dose - level), -60.0, 60.0)
     error = target - 1.0 / (1.0 + np.exp(arg))
     error *= voxel_norm[:, None]
     update = _project(a, np.ascontiguousarray(error, dtype=np.float32), library)
@@ -433,19 +441,24 @@ def optimize_projections_sirt_volume(
     batch_layers: Optional[int] = None, num_s: Optional[int] = None,
     window_iterations: int = 0, profile: Optional[ComputeProfile] = None,
     sink: Optional[Callable[[int, int, np.ndarray], None]] = None,
+    window_level: float = WINDOW_LEVEL, window_steepness: float = WINDOW_STEEPNESS,
 ) -> np.ndarray:
     """Fit nonnegative relative-dose projections; output is [z, detector, angle].
 
-    ``window_iterations`` extra threshold steps follow the linear fit (see
-    ``_window_step``); 0 keeps the pure least-squares result.
+    The linear stage is nonnegative SIRT on the relative dose and is the part that
+    was validated for v0.3.1. ``window_iterations`` extra steps follow it and
+    change the objective: they use a sigmoid dose threshold (``_window_step``, a
+    heuristic without the sigmoid derivative, so not a gradient of any loss);
+    0 keeps the pure least-squares result.
 
     With ``sink`` every finished Z block is handed over as ``sink(start, stop,
     values)`` (values: angles*detector rows by layers, not normalised) instead of
     being collected, and an empty array is returned.
 
-    With B=A.T, each iteration is x <- max(0, x + C B.T R (target-B x)),
-    where R/C are reciprocal row/column sums of B. No per-iteration max
-    normalization or uncalibrated sigmoid changes the objective.
+    With B=A.T, each linear iteration is x <- max(0, x + C B.T R (target-B x)),
+    where R/C are reciprocal row/column sums of B; there is no per-iteration max
+    normalization. On a GPU profile the whole block (both stages) runs on the
+    device; on a CPU profile the native C++ kernel covers only the linear stage.
     """
     target = np.asarray(target_vol)
     if target.ndim != 3 or target.shape[:2] != (grid_res, grid_res) or not target.shape[2]:
@@ -467,6 +480,7 @@ def optimize_projections_sirt_volume(
     if a.indices.dtype != np.int32 or a.indptr.dtype != np.int32:
         library = None
     a_op, at_op, library, label = _operators(a, at, profile, library)
+    solver = None
     try:
         if report_cb:
             report_cb(0.35, f"SIRT: {label}")
@@ -485,6 +499,11 @@ def optimize_projections_sirt_volume(
         if isinstance(window_iterations, bool) or int(window_iterations) != window_iterations or window_iterations < 0:
             raise ValueError("window_iterations must be a non-negative integer.")
         total_steps = iterations + window_iterations
+        if profile is not None and profile.device == "gpu" and hasattr(a_op, "product_into") \
+                and hasattr(at_op, "product_into"):
+            from .gpu_operator import GpuSolver
+
+            solver = GpuSolver(a_op, at_op, ray_norm, voxel_norm)
         sinograms = None if sink is not None else np.empty(
             (nz, detector_count, len(angles_rad)), dtype=np.float32
         )
@@ -505,28 +524,58 @@ def optimize_projections_sirt_volume(
             denominator = np.einsum("ij,ij,i->j", workspace, workspace, voxel_norm, dtype=np.float64)
             scale = np.divide(numerator, denominator, out=np.zeros_like(numerator), where=denominator > 0)
             values *= scale.astype(np.float32)[None, :]
-            for iteration in range(iterations):
-                _check_cancelled(cancelled_cb)
-                if library is None:
-                    _python_sirt_step(a_op, at_op, values, target_block, ray_norm, voxel_norm, hits, workspace)
-                else:
-                    library.sirt_linear_step(
-                        a.shape[0], a.shape[1], stop-start, _pointer(values), _pointer(target_block),
-                        *_csr_pointers(a), *_csr_pointers(at), _pointer(ray_norm), _pointer(voxel_norm),
-                        hits.ctypes.data_as(ctypes.POINTER(ctypes.c_bool)), _pointer(workspace),
+            on_device = False
+            if solver is not None and solver.usable:
+                from .gpu_operator import GpuFailure
+
+                def on_step(kind: str, index: int, start=start, stop=stop) -> None:
+                    _check_cancelled(cancelled_cb)
+                    if not report_cb:
+                        return
+                    if kind == "ls":
+                        progress = (start + (stop-start) * (index+1) / total_steps) / nz
+                        report_cb(0.36 + 0.42 * progress, f"SIRT {index+1}/{iterations}; Z {start+1}–{stop}/{nz}")
+                    else:
+                        progress = (start + (stop-start) * (iterations+index+1) / total_steps) / nz
+                        report_cb(
+                            0.36 + 0.42 * progress,
+                            f"Dose window {index+1}/{window_iterations}; Z {start+1}–{stop}/{nz}",
+                        )
+
+                try:
+                    values = solver.run(
+                        values, target_block, hits, iterations, window_iterations,
+                        window_level, window_steepness, on_step,
                     )
-                if report_cb:
-                    progress = (start + (stop-start) * (iteration+1) / total_steps) / nz
-                    report_cb(0.36 + 0.42 * progress, f"SIRT {iteration+1}/{iterations}; Z {start+1}–{stop}/{nz}")
-            for step in range(window_iterations):
-                _check_cancelled(cancelled_cb)
-                _window_step(a_op, at_op, values, target_block, ray_norm, voxel_norm, hits, library)
-                if report_cb:
-                    progress = (start + (stop-start) * (iterations+step+1) / total_steps) / nz
-                    report_cb(
-                        0.36 + 0.42 * progress,
-                        f"Dose window {step+1}/{window_iterations}; Z {start+1}–{stop}/{nz}",
+                    on_device = True
+                except GpuFailure:
+                    solver.disabled = True  # redo this block, and the rest, on the CPU
+            if not on_device:
+                for iteration in range(iterations):
+                    _check_cancelled(cancelled_cb)
+                    if library is None:
+                        _python_sirt_step(a_op, at_op, values, target_block, ray_norm, voxel_norm, hits, workspace)
+                    else:
+                        library.sirt_linear_step(
+                            a.shape[0], a.shape[1], stop-start, _pointer(values), _pointer(target_block),
+                            *_csr_pointers(a), *_csr_pointers(at), _pointer(ray_norm), _pointer(voxel_norm),
+                            hits.ctypes.data_as(ctypes.POINTER(ctypes.c_bool)), _pointer(workspace),
+                        )
+                    if report_cb:
+                        progress = (start + (stop-start) * (iteration+1) / total_steps) / nz
+                        report_cb(0.36 + 0.42 * progress, f"SIRT {iteration+1}/{iterations}; Z {start+1}–{stop}/{nz}")
+                for step in range(window_iterations):
+                    _check_cancelled(cancelled_cb)
+                    _window_step(
+                        a_op, at_op, values, target_block, ray_norm, voxel_norm, hits, library,
+                        window_level, window_steepness,
                     )
+                    if report_cb:
+                        progress = (start + (stop-start) * (iterations+step+1) / total_steps) / nz
+                        report_cb(
+                            0.36 + 0.42 * progress,
+                            f"Dose window {step+1}/{window_iterations}; Z {start+1}–{stop}/{nz}",
+                        )
             if sink is not None:
                 sink(start, stop, values)
             else:
@@ -539,7 +588,7 @@ def optimize_projections_sirt_volume(
             sinograms /= maximum
         return sinograms
     finally:
-        _release(a_op, at_op)
+        _release(solver, a_op, at_op)
 
 
 def project_volume(

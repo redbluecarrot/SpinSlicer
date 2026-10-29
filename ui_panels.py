@@ -218,10 +218,10 @@ class ProcessSettingsPanel(QWidget):
         saved_index = self.compute_mode.findData(saved_mode)
         self.compute_mode.setCurrentIndex(saved_index if saved_index >= 0 else 0)
         self.compute_mode.setToolTip(
-            "Меняет только скорость и расход памяти, но не результат. "
-            "Экономный: меньше памяти и потоков. Максимальный: все ядра и, "
-            "если есть подходящая видеокарта и Taichi, вычисления на ней. "
-            "Авто выбирает по вашему устройству."
+            "Меняет скорость и расход памяти, но не кадры для печати. "
+            "Экономный: меньше памяти и один поток, без нескорректированной проекции. "
+            "Максимальный: все ядра и, если есть подходящая видеокарта и Taichi, "
+            "вычисления на ней. Авто выбирает по вашему устройству."
         )
         perf_layout.addWidget(self.compute_mode)
         self.compute_hint = QLabel(describe_hardware())
@@ -278,7 +278,7 @@ class ProcessSettingsPanel(QWidget):
         grid_box = QGroupBox("Разрешение и кадры")
         grid_layout = QVBoxLayout(grid_box)
         self.grid_res = LabeledSlider("Разрешение сетки (Voxel Grid)", 64, 256, DEFAULT_GRID_RESOLUTION, decimals=0, step=1)
-        self.output_res = LabeledSlider("Разрешение кадра, px", 128, 2048, DEFAULT_OUTPUT_RESOLUTION, decimals=0, step=1)
+        self.output_res = LabeledSlider("Разрешение кадра, px", 128, 2048, DEFAULT_OUTPUT_RESOLUTION, decimals=0, step=2)
         self.frames = LabeledSlider("Количество кадров", 30, 720, DEFAULT_NUM_FRAMES, decimals=0, step=1)
         grid_layout.addWidget(self.grid_res)
         grid_layout.addWidget(self.output_res)
@@ -304,6 +304,14 @@ class ProcessSettingsPanel(QWidget):
             "Итерации оптимизатора", 1, 100, 8, decimals=0, step=1,
         )
         backend_layout.addWidget(self.optimizer_iterations)
+        self.dose_window = QCheckBox("Дозовое окно (эксперимент)")
+        self.dose_window.setChecked(bool(self._settings.value("dose_window", False, type=bool)))
+        self.dose_window.setToolTip(
+            "Дополнительные шаги по порогу дозы после линейной оптимизации. "
+            "Это эвристика: время оптимизации растёт примерно вдвое, а результат "
+            "отличается от проверенного в v0.3.1."
+        )
+        backend_layout.addWidget(self.dose_window)
 
         backend_hint = QLabel(
             "Встроенный сверхбыстрый физический движок (SIRT + C++ OpenMP). "
@@ -334,12 +342,28 @@ class ProcessSettingsPanel(QWidget):
         self.preserve_internal_voids.toggled.connect(lambda _v: self.settingsChanged.emit())
         self.optimizer_iterations.valueChanged.connect(lambda _v: self.settingsChanged.emit())
         self.compute_mode.currentIndexChanged.connect(self._on_compute_mode_changed)
+        self.dose_window.toggled.connect(self._on_dose_window_toggled)
+        self.output_res.valueChanged.connect(self._snap_output_res_even)
 
     def vat_diameter_mm(self) -> float:
         return self.diameter.value()
 
     def projection_backend_name(self) -> str:
         return "physical"
+
+    def dose_window_value(self) -> bool:
+        return self.dose_window.isChecked()
+
+    def _on_dose_window_toggled(self, checked: bool) -> None:
+        self._settings.setValue("dose_window", checked)
+        self.settingsChanged.emit()
+
+    def _snap_output_res_even(self, value: float) -> None:
+        """H.264 needs an even frame width, and the slicer requires it."""
+        number = int(round(value))
+        if number % 2:
+            with QSignalBlocker(self.output_res):
+                self.output_res.setValue(number + 1)
 
     def compute_mode_value(self) -> str:
         return str(self.compute_mode.currentData())

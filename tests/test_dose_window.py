@@ -57,7 +57,7 @@ def test_engine_records_dose_window_and_backend_used(tmp_path) -> None:
         diameter_mm=30.0, grid_res=24, output_res=48, num_frames=16, fill_holes=True,
         resin=ResinSettings(), output_dir=str(tmp_path), projection_backend="physical",
         optimizer_iterations=3, cuvette_outer_mm=30.0, cuvette_inner_mm=28.0,
-        n_air=1.0, n_glass=1.0, n_liquid=1.0, n_resin=1.0,
+        n_air=1.0, n_glass=1.0, n_liquid=1.0, n_resin=1.0, dose_window=True,
     )
     _, run_dir = SlicingEngine.run(mesh, params)
     manifest = load_manifest(run_dir)
@@ -65,3 +65,13 @@ def test_engine_records_dose_window_and_backend_used(tmp_path) -> None:
     assert manifest.slice_parameters["projection_backend_used"] == "physical"
     assert manifest.slice_parameters["dose_window"] is True
     assert manifest.frame_schedule["frame_rate_hz"] == 30.0
+
+
+def test_dose_window_is_off_unless_asked_for() -> None:
+    from slicing_engine import ResinSettings, SliceParams
+
+    params = SliceParams(
+        diameter_mm=30.0, grid_res=24, output_res=48, num_frames=16, fill_holes=True,
+        resin=ResinSettings(), output_dir=".",
+    )
+    assert params.dose_window is False

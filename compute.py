@@ -15,6 +15,8 @@ import sys
 from dataclasses import dataclass
 from typing import Optional
 
+from i18n import tr
+
 MODES = ("auto", "economy", "maximum")
 
 # Auto never picks maximum below these limits.
@@ -53,8 +55,12 @@ class ComputeProfile:
     reason: str
 
     def describe(self) -> str:
-        device = f"GPU {self.gpu_name}" if self.device == "gpu" else f"CPU, потоков: {self.threads}"
-        return f"Режим «{self.mode}» ({device}): {self.reason}"
+        if self.device == "gpu":
+            device = tr("GPU {name}").format(name=self.gpu_name)
+        else:
+            device = tr("CPU, потоков: {threads}").format(threads=self.threads)
+        mode = tr("экономный") if self.mode == "economy" else tr("максимальный")
+        return tr("Режим «{mode}» ({device}): {reason}").format(mode=mode, device=device, reason=self.reason)
 
     def as_manifest(self) -> dict:
         return {
@@ -221,26 +227,29 @@ def resolve_profile(mode: str = "auto", hardware: Optional[Hardware] = None,
         return (hw.gpu_name or "GPU") + f" ({arch})" if arch else ""
 
     if mode == "economy":
-        return economy("минимум памяти и один поток, результат тот же")
+        return economy(tr("минимум памяти и один поток, результат тот же"))
     if mode == "maximum":
         gpu = gpu_usable()
-        return maximum("вычисления на видеокарте" if gpu else "все ядра процессора", gpu)
+        return maximum(tr("вычисления на видеокарте") if gpu else tr("все ядра процессора"), gpu)
 
     # auto
     if hw.cores <= 2 or (free is not None and free < ECONOMY_BELOW_FREE_RAM):
-        return economy("мало ядер или свободной памяти")
+        return economy(tr("мало ядер или свободной памяти"))
     gpu = gpu_usable()
     if gpu:
-        return maximum("найдена подходящая видеокарта", gpu)
+        return maximum(tr("найдена подходящая видеокарта"), gpu)
     if hw.cores >= AUTO_MIN_CORES and (free is None or free >= AUTO_MIN_FREE_RAM):
-        return maximum("достаточно ядер и памяти, видеокарта не используется", "")
-    return economy("видеокарты нет, ядер или памяти немного")
+        return maximum(tr("достаточно ядер и памяти, видеокарта не используется"), "")
+    return economy(tr("видеокарты нет, ядер или памяти немного"))
 
 
 def describe_hardware(hw: Optional[Hardware] = None) -> str:
     """One-line summary for the settings panel (does not initialise Taichi)."""
     hw = hw or detect_hardware()
-    ram = f"{hw.free_ram / 1024**3:.1f} ГиБ свободно" if hw.free_ram else "память неизвестна"
-    gpu = hw.gpu_name or "видеокарта не определена"
-    taichi = "Taichi установлен" if hw.taichi_installed else "Taichi не установлен"
-    return f"{hw.cores} ядер, {ram}; {gpu}; {taichi}"
+    ram = (
+        tr("{value:.1f} ГиБ свободно").format(value=hw.free_ram / 1024**3)
+        if hw.free_ram else tr("память неизвестна")
+    )
+    gpu = hw.gpu_name or tr("видеокарта не определена")
+    taichi = tr("Taichi установлен") if hw.taichi_installed else tr("Taichi не установлен")
+    return tr("{cores} ядер, {ram}; {gpu}; {taichi}").format(cores=hw.cores, ram=ram, gpu=gpu, taichi=taichi)

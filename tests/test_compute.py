@@ -93,6 +93,7 @@ def _frames(tmp_path, mode: str) -> np.ndarray:
         resin=ResinSettings(), output_dir=str(tmp_path / mode), projection_backend="physical",
         optimizer_iterations=5, cuvette_outer_mm=30.0, cuvette_inner_mm=28.0,
         n_air=1.0, n_glass=1.51, n_liquid=1.45, n_resin=1.5, compute_mode=mode,
+        dose_window=True,  # exercise the window stage on every path, too
     )
     _, run_dir = SlicingEngine.run(mesh, params)
     return np.stack(

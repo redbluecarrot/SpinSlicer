@@ -29,8 +29,10 @@ from skimage.transform import resize as sk_resize
 from compute import MODES, resolve_profile, shutdown_taichi
 from constants import (
     ANTI_ALIAS_FACTOR,
+    BARE_PROJECTION_DIR,
     DEFAULT_ANGLE_OFFSET_DEG,
     DEFAULT_FRAME_RATE_HZ,
+    PROJECTOR_FRAMES_DIR,
     VAT_HEIGHT_RATIO,
 )
 from frame_io import (
@@ -41,6 +43,7 @@ from frame_io import (
     save_meta,
     sha256_file,
 )
+from i18n import tr
 from optics.geometry import detector_span_mm
 from optics.sinogram_store import SinogramStore
 from profiles import (
@@ -65,10 +68,24 @@ from vam_backend import (
 
 ProgressCallback = Callable[[float, str], None]
 # Sub-folder of a run holding the projection without vial compensation.
-BARE_PROJECTION_DIR = "bare_projection"
 # PNG is lossless at every level; a low one writes the same pixels much faster.
 PNG_COMPRESS_LEVEL = 1
 CancelCheck = Callable[[], bool]
+
+
+def _ordered_parallel(function: Callable[..., Any], arguments, workers: int):
+    """Yield ``function(*args)`` in order, computed on a thread pool.
+
+    When one call fails (or the consumer stops early) the calls that have not
+    started are cancelled instead of being run to completion.
+    """
+    pool = ThreadPoolExecutor(max_workers=max(1, int(workers)))
+    try:
+        futures = [pool.submit(function, *args) for args in arguments]
+        for future in futures:
+            yield future.result()
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
 
 
 def _radon_sinograms(
@@ -180,7 +197,10 @@ class SliceParams:
     alpha: float = 0.0
     # Threshold-aware refinement after the least-squares fit: gives the part a
     # dose window above its surroundings instead of a blurred relative dose.
-    dose_window: bool = True
+    dose_window: bool = False
+    # Heuristic threshold of the window stage, in units where 1 is the target dose.
+    window_level: float = 0.8
+    window_steepness: float = 10.0
     # Also write the plain projection without vial compensation, for the
     # projector tab's "bare projection" view.
     save_bare_projection: bool = True
@@ -205,6 +225,10 @@ class SliceParams:
             self.angle_offset_deg,
             self.angle_direction,
         )
+        if not 0.1 <= float(self.window_level) <= 1.5:
+            raise ValidationError("window_level must be between 0.1 and 1.5.")
+        if not 1.0 <= float(self.window_steepness) <= 50.0:
+            raise ValidationError("window_steepness must be between 1 and 50.")
         if self.compute_mode not in MODES:
             raise ValidationError(f"compute_mode must be one of: {', '.join(MODES)}.")
         if self.projection_backend == "physical":
@@ -296,14 +320,25 @@ class SlicingEngine:
         is_cancelled: Optional[CancelCheck] = None,
         manifest_context: Optional[dict[str, Any]] = None,
     ) -> Tuple[int, str]:
-        """Slice one mesh; the GPU, if used, is released in this same thread."""
+        """Slice one mesh; scratch files, the GPU and caches are released here, in
+        the thread that did the work, whether the job finishes, fails or is cancelled."""
+        state: dict[str, Any] = {"profile": None, "cleanups": []}
         try:
-            return SlicingEngine._run(mesh, params, progress_cb, is_cancelled, manifest_context)
+            return SlicingEngine._run(mesh, params, progress_cb, is_cancelled, manifest_context, state)
         finally:
+            for cleanup in state["cleanups"]:
+                try:
+                    cleanup()
+                except Exception:  # cleaning up must not hide the real error
+                    pass
             shutdown_taichi()
-            from optics.optimization import _matrix_cache
+            profile = state["profile"]
+            if profile is None or profile.mode != "maximum":
+                from optics.optimization import _matrix_cache
 
-            _matrix_cache.clear()  # hundreds of MB that nothing needs between jobs
+                # Hundreds of MB; economy gives them back, maximum keeps them so that
+                # repeating a job with the same geometry skips the ray tracing.
+                _matrix_cache.clear()
 
     @staticmethod
     def _run(
@@ -312,6 +347,7 @@ class SlicingEngine:
         progress_cb: Optional[ProgressCallback] = None,
         is_cancelled: Optional[CancelCheck] = None,
         manifest_context: Optional[dict[str, Any]] = None,
+        state: Optional[dict[str, Any]] = None,
     ) -> Tuple[int, str]:
         """Считает проекции для одного (уже финально трансформированного) меша.
 
@@ -338,8 +374,12 @@ class SlicingEngine:
             raise ValidationError("\n".join(preflight.errors))
         ensure_directory(params.output_dir)
 
+        state = state if state is not None else {"profile": None, "cleanups": []}
         profile = resolve_profile(params.compute_mode, use_gpu=params.projection_backend == "physical")
+        state["profile"] = profile
         report(0.03, profile.describe())
+        if params.projection_backend == "physical" and params.save_bare_projection and not profile.save_bare:
+            report(0.03, tr("Экономный режим: нескорректированная проекция не создаётся."))
 
         diameter_mm = params.diameter_mm
         grid_res = params.grid_res
@@ -456,12 +496,12 @@ class SlicingEngine:
 
         # Build trimesh's lazy caches once before the layers are cut in parallel.
         mesh.section(plane_origin=[0, 0, float(z_levels[0])], plane_normal=[0, 0, 1])
-        with ThreadPoolExecutor(max_workers=profile.slicing_threads) as pool:
-            for i, layer in enumerate(pool.map(render_layer, range(nz), z_levels)):
-                if layer is not None:
-                    slices[:, :, i] = layer
-                if i % report_step == 0:
-                    report(0.05 + 0.25 * (i / nz), f"Нарезка слоя {i}/{nz}...")
+        layer_arguments = ((i, float(z)) for i, z in enumerate(z_levels))
+        for i, layer in enumerate(_ordered_parallel(render_layer, layer_arguments, profile.slicing_threads)):
+            if layer is not None:
+                slices[:, :, i] = layer
+            if i % report_step == 0:
+                report(0.05 + 0.25 * (i / nz), f"Нарезка слоя {i}/{nz}...")
 
         # --- Проекционный backend ------------------------------------------
         base_angles = np.linspace(0.0, 360.0, num_frames, endpoint=False)
@@ -497,6 +537,7 @@ class SlicingEngine:
                 nz, grid_res, num_frames,
                 directory=str(params.output_dir) if profile.disk_sinograms else None,
             )
+            state["cleanups"].append(store.close)
             optimize_projections_sirt_volume(
                 slices,
                 angles_rad,
@@ -515,6 +556,7 @@ class SlicingEngine:
                 cancelled_cb=cancelled,
                 window_iterations=params.optimizer_iterations if params.dose_window else 0,
                 profile=profile, sink=store.add_block,
+                window_level=params.window_level, window_steepness=params.window_steepness,
             )
         elif backend in {"auto", "vamtoolbox"}:
             report(0.30, "Optimizing projections with VAMToolbox CAL...")
@@ -563,6 +605,23 @@ class SlicingEngine:
         out_dir = FrameRepository.create_run_dir(params.output_dir)
         model_height_mm = z_max - z_min
         target_h = max(int(round(output_res * model_height_mm / projection_span)), 1)
+        context = manifest_context or {}
+        machine_profile = _machine_profile_payload(
+            context.get("machine_profile"),
+            diameter_mm=diameter_mm,
+            output_res=output_res,
+            target_h=target_h,
+            frame_rate_hz=params.frame_rate_hz,
+            angle_offset_deg=params.angle_offset_deg,
+            angle_direction=params.angle_direction,
+        )
+        projector_gamma = float((machine_profile.get("projector") or {}).get("gamma", 1.0))
+        # With a non-linear projector the gamma is applied to the float frame, before the
+        # single 8-bit rounding, and the result is kept next to the linear PNGs.
+        encode_gamma = abs(projector_gamma - 1.0) > 1e-9
+        projector_dir = os.path.join(out_dir, PROJECTOR_FRAMES_DIR)
+        if encode_gamma:
+            os.makedirs(projector_dir, exist_ok=True)
         mid_z = nz // 2
         mid_frame_row = int(np.clip(round((nz - mid_z - 0.5) * target_h / nz - 0.5), 0, target_h - 1))
         exported_mid_sinograms = np.empty((grid_res, num_frames), dtype=np.float32)
@@ -593,6 +652,11 @@ class SlicingEngine:
             Image.fromarray(output).save(
                 os.path.join(out_dir, f"frame_{i:04d}.png"), compress_level=PNG_COMPRESS_LEVEL
             )
+            if encode_gamma:
+                encoded = np.rint(np.clip(resized, 0, 1) ** (1.0 / projector_gamma) * 255).astype(np.uint8)
+                Image.fromarray(encoded).save(
+                    os.path.join(projector_dir, f"frame_{i:04d}.png"), compress_level=PNG_COMPRESS_LEVEL
+                )
             if bare_sinograms is not None:
                 bare_gray = _projection_gray(np.flipud(bare_sinograms[:, :, i]), bare_max, resin)
                 bare_resized = sk_resize(
@@ -602,12 +666,11 @@ class SlicingEngine:
                 Image.fromarray(np.rint(np.clip(bare_resized, 0, 1) * 255).astype(np.uint8)).save(
                     os.path.join(bare_dir, f"frame_{i:04d}.png"), compress_level=PNG_COMPRESS_LEVEL
                 )
-        done = 0
-        with ThreadPoolExecutor(max_workers=profile.io_threads) as pool:
-            for _ in pool.map(export_frame, range(num_frames)):
-                if done % save_step == 0:
-                    report(0.80 + 0.19 * (done / num_frames), f"Сохранение кадра {done}/{num_frames}...")
-                done += 1
+        for done, _ in enumerate(
+            _ordered_parallel(export_frame, ((i,) for i in range(num_frames)), profile.io_threads)
+        ):
+            if done % save_step == 0:
+                report(0.80 + 0.19 * (done / num_frames), f"Сохранение кадра {done}/{num_frames}...")
 
         if store is not None:
             store.close()
@@ -677,7 +740,6 @@ class SlicingEngine:
         # hash and the ModelNode transform when those are available.
         if cancelled():
             raise SliceCancelled()
-        context = manifest_context or {}
         source_path = str(context.get("source_path", ""))
         source_hash = ""
         if source_path:
@@ -694,15 +756,6 @@ class SlicingEngine:
                 "source_name",
                 os.path.basename(source_path) if source_path else "",
             )
-        )
-        machine_profile = _machine_profile_payload(
-            context.get("machine_profile"),
-            diameter_mm=diameter_mm,
-            output_res=output_res,
-            target_h=target_h,
-            frame_rate_hz=params.frame_rate_hz,
-            angle_offset_deg=params.angle_offset_deg,
-            angle_direction=params.angle_direction,
         )
         resin_profile = _resin_profile_payload(context.get("resin_profile"), resin)
         save_manifest(
@@ -723,6 +776,10 @@ class SlicingEngine:
                     "dose_window": params.dose_window and backend == "physical",
                     "compute": profile.as_manifest(),
                     "bare_projection_dir": BARE_PROJECTION_DIR if bare_sinograms is not None else "",
+                    "projector_frames_dir": PROJECTOR_FRAMES_DIR if encode_gamma else "",
+                    "projector_gamma": projector_gamma,
+                    "window_level": params.window_level,
+                    "window_steepness": params.window_steepness,
                     "optimizer_iterations": params.optimizer_iterations,
                     "raster_layers": nz,
                     "voxel_pitch_z_mm": pitch,
