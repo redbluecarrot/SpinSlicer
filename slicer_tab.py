@@ -189,6 +189,9 @@ class SlicerTab(QWidget):
     def _on_transform_mode_changed(self, mode: str) -> None:
         self._viewport.set_transform_mode(mode)
 
+    def update_language(self) -> None:
+        self._viewport.update_language()
+
     def _on_viewport_transform_changed(self, matrix) -> None:
         node = self._model_node
         if node is None: return
