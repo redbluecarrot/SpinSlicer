@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="README.ru.md"><img src="https://img.shields.io/badge/🇷🇺_Русский-d52b1e?style=for-the-badge" alt="Русский"></a>
-  <a href="README.es.md"><img src="https://img.shields.io/badge/🇪🇸_Español-f1a208?style=for-the-badge" alt="Español"></a>
-  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/🇨🇳_中文-2b2d42?style=for-the-badge" alt="中文"></a>
+  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="44"></a>
+  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="44"></a>
+  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="44"></a>
 </p>
 
 SpinSlicer is a local research prototype for tomographic volumetric additive
