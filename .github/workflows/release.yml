@@ -77,6 +77,27 @@ jobs:
           --workpath build/SpinSlicer
           packaging/SpinSlicer.spec
 
+      - name: Build GPU add-on (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python packaging/build_gpu_addon.py --out dist/gpu --expect-tag cp312
+
+      - name: Check packaged Windows application with the GPU add-on
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYVISTA_OFF_SCREEN: 'true'
+          SPINSLICER_GPU_DIR: ${{ github.workspace }}\dist\gpu
+        run: |
+          $check = Start-Process -FilePath dist\SpinSlicer.exe -ArgumentList @('--self-check', 'build/self-check-gpu') -WindowStyle Hidden -PassThru -Wait
+          if ($check.ExitCode -ne 0) { throw "Packaged application with the add-on failed: $($check.ExitCode)" }
+          $report = Get-Content build/self-check-gpu/self-check.json -Raw | ConvertFrom-Json
+          if (-not $report.ok) { throw 'Packaged application check with the add-on did not pass' }
+          if (-not $report.taichi_version) { throw "The packaged application could not import the GPU add-on: $($report.taichi_error)" }
+          if (-not $report.gpu_kernels.ok) { throw "The GPU add-on kernels failed in the packaged application: $($report.gpu_kernels.error)" }
+
       - name: Install Linux packaging tools
         if: runner.os == 'Linux'
         run: |
@@ -111,6 +132,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: Compress-Archive -Path dist\SpinSlicer.exe -DestinationPath ${{ matrix.archive }}
+
+      - name: Package GPU add-on
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist\gpu -DestinationPath SpinSlicer-gpu-addon-windows-x64.zip
 
       - name: Install Inno Setup
         if: runner.os == 'Windows'
@@ -175,6 +201,14 @@ jobs:
         with:
           name: SpinSlicer-windows-executable
           path: dist/SpinSlicer.exe
+          if-no-files-found: error
+
+      - name: Upload GPU add-on
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: SpinSlicer-windows-gpu-addon
+          path: SpinSlicer-gpu-addon-windows-x64.zip
           if-no-files-found: error
 
       - name: Upload Windows installer

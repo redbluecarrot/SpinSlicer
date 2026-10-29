@@ -11,5 +11,4 @@ trimesh[easy]==5.1.0
 scikit-image==0.26.0
 opencv-python-headless==5.0.0.93
 matplotlib==3.11.1
-taichi==1.7.4
 imageio-ffmpeg==0.7.0

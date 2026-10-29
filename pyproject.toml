@@ -20,8 +20,13 @@ dependencies = [
     "scikit-image==0.26.0",
     "opencv-python-headless==5.0.0.93",
     "matplotlib==3.11.1",
-    "taichi==1.7.4",
     "imageio-ffmpeg==0.7.0",
+]
+
+[project.optional-dependencies]
+# GPU acceleration (see requirements-gpu.txt); SpinSlicer runs on the CPU without it.
+gpu = [
+    "taichi==1.7.4",
 ]
 
 [tool.pytest.ini_options]

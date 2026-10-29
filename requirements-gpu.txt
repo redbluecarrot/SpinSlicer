@@ -1,0 +1,11 @@
+# Optional GPU acceleration: pip install -r requirements.txt -r requirements-gpu.txt
+# (or: pip install .[gpu]). Without it SpinSlicer runs on the CPU with the same results.
+# packaging/build_gpu_addon.py installs exactly these pins, without numpy, as the
+# installer's "GPU acceleration" component.
+taichi==1.7.4
+colorama==0.4.6
+dill==0.4.1
+rich==15.0.0
+markdown-it-py==4.2.0
+mdurl==0.1.2
+pygments==2.21.0

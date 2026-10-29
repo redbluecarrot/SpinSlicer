@@ -17,6 +17,11 @@ from PyInstaller.utils.hooks import collect_all
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 
 datas = [(str(PROJECT_ROOT / "assets"), "assets")]
+# Taichi compiles a kernel from the *source text* of its function (through inspect), and
+# PyInstaller keeps only bytecode. Without this file the GPU add-on fails on the first
+# kernel call with "OSError: Cannot find source code", and the program falls back to the
+# CPU. release_check.py runs a real kernel to catch exactly that.
+datas += [(str(PROJECT_ROOT / "optics" / "gpu_operator.py"), "optics")]
 binaries: list[tuple[str, str]] = []
 native_name = "sirtsolver.dll" if sys.platform.startswith("win") else "sirtsolver.so"
 native_path = PROJECT_ROOT / "cpp_backend" / native_name
@@ -39,10 +44,10 @@ if sys.platform.startswith("win"):
             )
 
 hiddenimports = ["vtkmodules.qt.QVTKRenderWindowInteractor", "optics.gpu_operator"]
-# Taichi carries its own compiled core and runtime bitcode; without them the
-# GPU mode silently falls back to the CPU in the frozen build. imageio_ffmpeg
-# carries the ffmpeg binary that encodes the H.264 export.
-for package in ("qdarktheme", "pyvista", "pyvistaqt", "vtkmodules", "taichi", "imageio_ffmpeg"):
+# imageio_ffmpeg carries the ffmpeg binary that encodes the H.264 export. Taichi is
+# deliberately absent: it is the installer's optional "GPU acceleration" component, a
+# ``gpu`` folder next to the program built by packaging/build_gpu_addon.py.
+for package in ("qdarktheme", "pyvista", "pyvistaqt", "vtkmodules", "imageio_ffmpeg"):
     collected_datas, collected_binaries, collected_hiddenimports = collect_all(package)
     datas += collected_datas
     binaries += collected_binaries
@@ -63,7 +68,7 @@ a = Analysis(
     # environment, that plugin conditionally imports mypy's compiled checker
     # modules, which are not application dependencies and can fail in a frozen
     # build due to an incomplete ``__mypyc`` module graph.
-    excludes=["mypy", "mypy_extensions"],
+    excludes=["mypy", "mypy_extensions", "taichi"],
     noarchive=False,
     optimize=0,
 )
