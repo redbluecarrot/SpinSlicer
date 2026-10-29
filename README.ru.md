@@ -12,7 +12,7 @@
   <a href="README.md"><img src="https://img.shields.io/badge/🇬🇧_English-0b5fff?style=for-the-badge" alt="English"></a>
   <a href="README.ru.md"><img src="https://img.shields.io/badge/🇷🇺_Русский-d52b1e?style=for-the-badge" alt="Русский"></a>
   <a href="README.es.md"><img src="https://img.shields.io/badge/🇪🇸_Español-f1a208?style=for-the-badge" alt="Español"></a>
-  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/🇨🇳_中文-de2910?style=for-the-badge" alt="中文"></a>
+  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/🇨🇳_中文-2b2d42?style=for-the-badge" alt="中文"></a>
 </p>
 
 SpinSlicer — локальный исследовательский прототип для томографической объёмной
