@@ -56,13 +56,18 @@ def _decode_gray(path, frame: int = 0) -> np.ndarray:
     return np.frombuffer(raw, dtype=np.uint8).reshape(height, width)
 
 
-def _stream_luma(path, width: int, height: int) -> np.ndarray:
-    """Luma plane exactly as stored in the stream, with no range conversion."""
+def _stream_luma(path, width: int, height: int, stored: str = "pc") -> np.ndarray:
+    """Luma plane exactly as stored in the stream, with no range conversion.
+
+    ``stored`` is the range the stream was written in; naming it for both ends of the scaler
+    keeps every ffmpeg build from rescaling a full-range stream while converting to yuv420p.
+    """
     ffmpeg = workers._ffmpeg_executable()
     if ffmpeg is None:
         pytest.skip("ffmpeg is not available")
     raw = subprocess.run(
-        [ffmpeg, "-v", "error", "-i", str(path), "-vframes", "1", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"],
+        [ffmpeg, "-v", "error", "-i", str(path), "-vframes", "1",
+         "-vf", f"scale=in_range={stored}:out_range={stored}", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"],
         capture_output=True, check=True,
     ).stdout
     return np.frombuffer(raw, dtype=np.uint8)[: width * height].reshape(height, width)
@@ -370,7 +375,7 @@ def test_limited_range_option_stores_16_to_235_and_flags_it(tmp_path) -> None:
     ramp = workers.calibration_ramp(116, 32)
     frames = [ramp] * 4
     limited = _export(tmp_path, frames, video_range="limited")
-    luma = _stream_luma(limited, 116, 32)
+    luma = _stream_luma(limited, 116, 32, "tv")
     assert luma.min() == 16 and luma.max() == 235       # honest limited range in the stream
     decoded = _decode_gray(limited)                     # a player that reads the flag restores 0..255
     assert decoded.min() <= 1 and decoded.max() >= 254
