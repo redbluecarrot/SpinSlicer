@@ -379,7 +379,7 @@ class SlicingEngine:
         state["profile"] = profile
         report(0.03, profile.describe())
         if params.projection_backend == "physical" and params.save_bare_projection and not profile.save_bare:
-            report(0.03, tr("Экономный режим: нескорректированная проекция не создаётся."))
+            report(0.03, tr("Экономный режим: прямая проекция не создаётся."))
 
         diameter_mm = params.diameter_mm
         grid_res = params.grid_res
@@ -517,6 +517,7 @@ class SlicingEngine:
 
         bare_sinograms: Optional[np.ndarray] = None
         sinograms: Optional[np.ndarray] = None
+        device_status: dict[str, Any] = {}
         store: Optional[SinogramStore] = None
         if backend == "physical":
             report(0.30, "Физическая оптика: трассировка лучей и оптимизация...")
@@ -526,7 +527,7 @@ class SlicingEngine:
             L_out = params.cuvette_outer_mm
             L_in = params.cuvette_inner_mm
             if params.save_bare_projection and profile.save_bare:
-                report(0.30, "Расчёт нескорректированной проекции...")
+                report(0.30, "Расчёт прямой проекции...")
                 bare_sinograms = project_volume(
                     slices, angles_rad, L_out=L_out, L_in=L_in, grid_res=grid_res,
                     grid_span_mm=params.diameter_mm, container_mode=params.container_mode,
@@ -555,7 +556,7 @@ class SlicingEngine:
                 report_cb=report,
                 cancelled_cb=cancelled,
                 window_iterations=params.optimizer_iterations if params.dose_window else 0,
-                profile=profile, sink=store.add_block,
+                profile=profile, sink=store.add_block, status=device_status,
                 window_level=params.window_level, window_steepness=params.window_steepness,
             )
         elif backend in {"auto", "vamtoolbox"}:
@@ -774,7 +775,7 @@ class SlicingEngine:
                     "projection_backend": params.projection_backend,
                     "projection_backend_used": backend_used,
                     "dose_window": params.dose_window and backend == "physical",
-                    "compute": profile.as_manifest(),
+                    "compute": {**profile.as_manifest(), **device_status},
                     "bare_projection_dir": BARE_PROJECTION_DIR if bare_sinograms is not None else "",
                     "projector_frames_dir": PROJECTOR_FRAMES_DIR if encode_gamma else "",
                     "projector_gamma": projector_gamma,

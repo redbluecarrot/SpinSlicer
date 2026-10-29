@@ -13,10 +13,12 @@ import os
 from typing import List, Optional
 
 import numpy as np
-from PyQt6.QtCore import QSignalBlocker, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QSettings, QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QGroupBox,
@@ -31,6 +33,8 @@ from PyQt6.QtWidgets import (
 )
 
 from constants import (
+    APP_ORG,
+    APP_TITLE,
     BARE_PROJECTION_DIR,
     DEFAULT_FRAME_RATE_HZ,
     DEFAULT_PROJECTOR_GAMMA,
@@ -40,7 +44,7 @@ from frame_io import FrameRepository
 from i18n import language, tr
 from job_controller import JobController
 from widgets import LabeledSlider
-from workers import VideoAssembleWorker, VideoExportWorker
+from workers import VideoAssembleWorker, VideoExportWorker, calibration_ramp
 
 BASE_FPS = DEFAULT_FRAME_RATE_HZ
 
@@ -133,14 +137,14 @@ class ProjectorTab(QWidget):
         self.mode_corrected_btn.setCheckable(True)
         self.mode_corrected_btn.setChecked(True)
         self.mode_corrected_btn.setToolTip(
-            "Проекция для печати: компенсированы преломление и поглощение в колбе"
+            "Проекция для печати: оптимизирована SIRT с учётом преломления и поглощения в колбе"
         )
-        self.mode_bare_btn = QPushButton("Нескорректированная")
+        self.mode_bare_btn = QPushButton("Прямая проекция")
         self.mode_bare_btn.setObjectName("secondaryButton")
         self.mode_bare_btn.setCheckable(True)
         self.mode_bare_btn.setEnabled(False)
         self.mode_bare_btn.setToolTip(
-            "Прямая проекция детали без компенсации оптических искажений колбы"
+            "Прямая проекция детали: без оптимизации SIRT и без компенсации колбы. Разница с кадрами для печати складывается из оптимизации и компенсации, а не только из преломления"
         )
         self._mode_group = QButtonGroup(self)
         self._mode_group.setExclusive(True)
@@ -287,6 +291,44 @@ class ProjectorTab(QWidget):
         buttons.addWidget(self.save_btn)
         root.addLayout(buttons)
 
+        # How the gray levels are stored in the MP4, and a pattern to check the playback chain.
+        export_row = QHBoxLayout()
+        export_row.setSpacing(6)
+        export_row.addWidget(QLabel("Диапазон яркости MP4:"))
+        self.range_combo = QComboBox()
+        self.range_combo.addItem("Полный 0–255 (256 уровней)", "full")
+        self.range_combo.addItem("Ограниченный 16–235 (если плеер игнорирует флаг диапазона)", "limited")
+        self.range_combo.setToolTip(
+            "Полный диапазон сохраняет все 256 уровней, но плеер, который считает поток ограниченным "
+            "и игнорирует флаг, обрежет уровни 1–15 до 0 и 236–254 до 255 (тусклые серые уровни важны "
+            "для дозового окна). Ограниченный диапазон безопаснее для большинства плееров и даёт 220 "
+            "уровней, но плеер или HDMI-выход, которые считают всё полным диапазоном, покажут чёрный "
+            "как 16/255: около 6 % света на весь оборот. Проверьте свою цепочку тестовой рампой."
+        )
+        stored = str(QSettings(APP_ORG, APP_TITLE).value("video_range", "full"))
+        self.range_combo.setCurrentIndex(max(0, self.range_combo.findData(stored)))
+        self.range_combo.currentIndexChanged.connect(
+            lambda _i: QSettings(APP_ORG, APP_TITLE).setValue("video_range", self._video_range())
+        )
+        export_row.addWidget(self.range_combo, 1)
+        self.ramp_btn = QPushButton("Тестовая рампа")
+        self.ramp_btn.setObjectName("secondaryButton")
+        self.ramp_btn.setToolTip(
+            "Сохранить MP4 из серых полос 0–255 с выбранным диапазоном, чтобы проверить цепочку "
+            "проигрывания и проектор (например, фотометром). Число кадров и частота как у последнего "
+            "прогона, поэтому скорость вращения в имени файла обычная."
+        )
+        self.ramp_btn.clicked.connect(self._on_ramp_clicked)
+        export_row.addWidget(self.ramp_btn)
+        self.ramp_gamma_box = QCheckBox("С гаммой профиля")
+        self.ramp_gamma_box.setToolTip(
+            "Выключено: рампа линейная (гамма 1.0), по ней можно измерить гамму проектора с нуля. "
+            "Включено: рампа с гаммой из профиля станка, чтобы проверить, что калибровка даёт "
+            "линейный свет."
+        )
+        export_row.addWidget(self.ramp_gamma_box)
+        root.addLayout(export_row)
+
         sliders_row = QHBoxLayout()
         self.speed_slider = LabeledSlider(
             "Скорость воспроизведения", 0.1, 4.0, 1.0, decimals=2, suffix="×",
@@ -388,7 +430,7 @@ class ProjectorTab(QWidget):
             del blocker
         if not available:
             self.mode_bare_btn.setToolTip(
-                "Для этого прогона нескорректированная проекция недоступна (не создаётся в экономном режиме)"
+                "Для этого прогона прямая проекция недоступна (не создаётся в экономном режиме)"
             )
 
     def _on_mode_changed(self, _checked: bool) -> None:
@@ -517,7 +559,7 @@ class ProjectorTab(QWidget):
             answer = QMessageBox.question(
                 self,
                 tr("Внимание"),
-                tr("Нескорректированная проекция не компенсирует преломление и поглощение в колбе. "
+                tr("Прямая проекция не оптимизирована и не компенсирует преломление и поглощение в колбе. "
                    "Для печати используйте скорректированную проекцию. Сохранить файл?"),
             )
             if answer != QMessageBox.StandardButton.Yes:
@@ -525,7 +567,7 @@ class ProjectorTab(QWidget):
         fps, gamma = self._export_settings()
         # The count of frames on disk, not of the (possibly smaller) preview.
         rpm = 60.0 * fps / len(paths)
-        name = "projection_uncorrected" if self._bare_selected() else "projection"
+        name = "projection_direct" if self._bare_selected() else "projection"
         # OpenCAL reads the rotation speed from the file name: <name>_<rpm>rpm.mp4
         path, _ = QFileDialog.getSaveFileName(
             self, "Save video", f"{name}_{self._format_rpm(rpm)}rpm.mp4", "MP4 (*.mp4)"
@@ -548,11 +590,18 @@ class ProjectorTab(QWidget):
                    "откалиброван, доза будет нелинейной.")
             )
 
+        self._start_export(paths, fps, path, gamma if gamma_pending else 1.0)
+
+    def _video_range(self) -> str:
+        return str(self.range_combo.currentData())
+
+    def _start_export(self, frames, fps: float, path: str, gamma: float) -> None:
         self.save_btn.setEnabled(False)
+        self.ramp_btn.setEnabled(False)
         self.progress.emit(0.0, "Экспорт в MP4...")
 
         self._export_worker = VideoExportWorker(
-            paths, fps, path, self, projector_gamma=gamma if gamma_pending else 1.0
+            frames, fps, path, self, projector_gamma=gamma, video_range=self._video_range()
         )
         self._job_controller.register(self._export_worker)
         self._export_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
@@ -562,7 +611,37 @@ class ProjectorTab(QWidget):
             lambda: self.progress.emit(0.0, "Video export cancelled.")
         )
         self._export_worker.finished.connect(lambda: self.save_btn.setEnabled(True))
+        self._export_worker.finished.connect(lambda: self.ramp_btn.setEnabled(True))
         self._export_worker.start()
+
+    def _on_ramp_clicked(self) -> None:
+        """A static gray-bar video: the last run's frame size, rate and frame count (so the
+        rotation speed in the name is the usual one), the chosen range, linear unless asked."""
+        from PIL import Image
+
+        width, height = 1280, 720
+        paths, _gamma_pending = self._export_source()
+        if paths:
+            with Image.open(paths[0]) as picture:
+                width, height = picture.size
+        width += width % 2
+        height += height % 2
+        fps, profile_gamma = self._export_settings()
+        count = len(paths) if paths else 360
+        gamma = profile_gamma if self.ramp_gamma_box.isChecked() else 1.0
+        rpm = 60.0 * fps / count
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save video", f"ramp_{self._format_rpm(rpm)}rpm.mp4", "MP4 (*.mp4)"
+        )
+        if not path:
+            return
+        self.logMessage.emit(
+            tr("Тестовая рампа: гамма {gamma:g}, диапазон {video_range}.").format(
+                gamma=gamma, video_range=self._video_range()
+            )
+        )
+        # One array repeated: the export counts its memory once.
+        self._start_export([calibration_ramp(width, height)] * count, fps, path, gamma)
 
     def _on_export_done(self, path: str) -> None:
         self.progress.emit(1.0, "Video saved.")

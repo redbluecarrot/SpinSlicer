@@ -113,27 +113,39 @@ _EN: dict[str, str] = {
     "Taichi установлен": "Taichi installed",
     "Taichi не установлен": "Taichi not installed",
     "{cores} ядер, {ram}; {gpu}; {taichi}": "{cores} cores, {ram}; {gpu}; {taichi}",
-    "Экономный режим: нескорректированная проекция не создаётся.": "Economy mode: the uncorrected projection is not created.",
+    "Экономный режим: прямая проекция не создаётся.": "Economy mode: the direct projection is not created.",
     "Гамма проектора {gamma:g}: {where}.": "Projector gamma {gamma:g}: {where}.",
     "применена к кадрам при расчёте": "applied to the frames when they were computed",
     "применена к 8-битным кадрам при экспорте": "applied to the 8-bit frames at export",
     "Гамма проектора 1.0 (линейный вывод). Если гамма проектора около 2.2 и он не откалиброван, доза будет нелинейной.": "Projector gamma 1.0 (linear output). If the projector gamma is about 2.2 and it is not calibrated, the dose will be non-linear.",
     "Дозовое окно (эксперимент)": "Dose window (experimental)",
     "Дополнительные шаги по порогу дозы после линейной оптимизации. Это эвристика: время оптимизации растёт примерно вдвое, а результат отличается от проверенного в v0.3.1.": "Extra steps on a dose threshold after the linear optimisation. A heuristic: optimisation time roughly doubles and the result differs from the one validated in v0.3.1.",
-    "Меняет скорость и расход памяти, но не кадры для печати. Экономный: меньше памяти и один поток, без нескорректированной проекции. Максимальный: все ядра и, если есть подходящая видеокарта и Taichi, вычисления на ней. Авто выбирает по вашему устройству.": "Changes speed and memory use, not the frames for printing. Economy: less memory and one thread, no uncorrected projection. Maximum: all cores and, if a suitable graphics card and Taichi are present, computation on it. Auto picks for your device.",
+    "Меняет скорость и расход памяти, но не кадры для печати. Экономный: меньше памяти и один поток, без прямой проекции. Максимальный: все ядра и, если есть подходящая видеокарта и Taichi, вычисления на ней. Авто выбирает по вашему устройству.": "Changes speed and memory use, not the frames for printing. Economy: less memory and one thread, no direct projection. Maximum: all cores and, if a suitable graphics card and Taichi are present, computation on it. Auto picks for your device.",
+    "Диапазон яркости MP4:": "MP4 brightness range:",
+    "Полный 0–255 (256 уровней)": "Full 0–255 (256 levels)",
+    "Ограниченный 16–235 (если плеер игнорирует флаг диапазона)": "Limited 16–235 (if the player ignores the range flag)",
+    "Полный диапазон сохраняет все 256 уровней, но плеер, который считает поток ограниченным и игнорирует флаг, обрежет уровни 1–15 до 0 и 236–254 до 255 (тусклые серые уровни важны для дозового окна). Ограниченный диапазон безопаснее для большинства плееров и даёт 220 уровней, но плеер или HDMI-выход, которые считают всё полным диапазоном, покажут чёрный как 16/255: около 6 % света на весь оборот. Проверьте свою цепочку тестовой рампой.": "Full range keeps all 256 levels, but a player that treats the stream as limited and ignores the flag clips levels 1–15 to 0 and 236–254 to 255 (dim gray levels matter for the dose window). Limited range is safer for most players and gives 220 levels, but a player or HDMI output that treats everything as full range shows black as 16/255: about 6 % light all the way round. Check your own chain with the test ramp.",
+    "Тестовая рампа": "Test ramp",
+    "Сохранить MP4 из серых полос 0–255 с выбранным диапазоном, чтобы проверить цепочку проигрывания и проектор (например, фотометром). Число кадров и частота как у последнего прогона, поэтому скорость вращения в имени файла обычная.": "Save an MP4 of 0–255 gray bars with the chosen range, to check the playback chain and the projector (with a light meter, for example). Frame count and rate follow the last run, so the rotation speed in the file name is the usual one.",
+    "Тестовая рампа: гамма {gamma:g}, диапазон {video_range}.": "Test ramp: gamma {gamma:g}, range {video_range}.",
+    "Taichi не установлен (компонент «GPU-ускорение» установщика ускорит расчёт)": "Taichi not installed (the installer's “GPU acceleration” component would speed generation up)",
+    "С гаммой профиля": "With the profile gamma",
+    "Выключено: рампа линейная (гамма 1.0), по ней можно измерить гамму проектора с нуля. Включено: рампа с гаммой из профиля станка, чтобы проверить, что калибровка даёт линейный свет.": "Off: the ramp is linear (gamma 1.0), so the projector gamma can be measured from scratch. On: the ramp carries the machine profile's gamma, to check that the calibration gives linear light.",
+    "GPU недоступна, расчёт продолжен на процессоре: {error}": "The GPU is unavailable, the job continues on the processor: {error}",
+    "Taichi не запустился ({error}); все ядра процессора": "Taichi did not start ({error}); all processor cores",
     "Тип проекции:": "Projection type:",
     "ffmpeg недоступен: MP4 пишется кодеком mp4v с потерей качества.":
         "ffmpeg is unavailable: the MP4 is written with the lossy mp4v codec.",
     "Скорректированная": "Corrected",
-    "Нескорректированная": "Uncorrected",
-    "Проекция для печати: компенсированы преломление и поглощение в колбе":
-        "Projection for printing: refraction and absorption in the vial are compensated",
-    "Прямая проекция детали без компенсации оптических искажений колбы":
-        "Straight projection of the part without compensation for the optical distortion of the vial",
-    "Для этого прогона нескорректированная проекция недоступна (не создаётся в экономном режиме)":
-        "The uncorrected projection is not available for this run (it is not created in economy mode)",
-    "Нескорректированная проекция не компенсирует преломление и поглощение в колбе. Для печати используйте скорректированную проекцию. Сохранить файл?":
-        "The uncorrected projection does not compensate refraction or absorption in the vial. Use the corrected projection for printing. Save the file?",
+    "Прямая проекция": "Direct projection",
+    "Проекция для печати: оптимизирована SIRT с учётом преломления и поглощения в колбе":
+        "Projection for printing: optimised by SIRT with refraction and absorption in the vial taken into account",
+    "Прямая проекция детали: без оптимизации SIRT и без компенсации колбы. Разница с кадрами для печати складывается из оптимизации и компенсации, а не только из преломления":
+        "Direct projection of the part: no SIRT optimisation and no compensation for the vial. The difference from the frames for printing comes from the optimisation and the compensation together, not from refraction alone",
+    "Для этого прогона прямая проекция недоступна (не создаётся в экономном режиме)":
+        "The direct projection is not available for this run (it is not created in economy mode)",
+    "Прямая проекция не оптимизирована и не компенсирует преломление и поглощение в колбе. Для печати используйте скорректированную проекцию. Сохранить файл?":
+        "The direct projection is not optimised and does not compensate refraction or absorption in the vial. Use the corrected projection for printing. Save the file?",
     "Готово к работе. Загрузите STL-модель на вкладке «Слайсер», чтобы начать.":
         "Ready. Load an STL model on the Slicer tab to begin.",
     "Нажмите «Собрать и воспроизвести»,\nчтобы увидеть анимацию проекций.":

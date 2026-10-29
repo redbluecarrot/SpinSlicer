@@ -217,6 +217,27 @@ class VideoAssembleWorker(QThread):
 H264_CRF = 10
 
 
+# Gray bars that cover both ends of the range (0-16 and 235-255 are where a player that
+# ignores the range flag clips), for checking a whole playback chain with a camera or a
+# light meter.
+CALIBRATION_LEVELS = (
+    0, 2, 4, 8, 12, 16, 24, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224,
+    232, 236, 240, 244, 248, 250, 252, 254, 255,
+)
+
+VIDEO_RANGES = ("full", "limited")
+
+
+def calibration_ramp(width: int, height: int) -> np.ndarray:
+    """One frame of vertical gray bars, one per CALIBRATION_LEVELS entry."""
+    bars = len(CALIBRATION_LEVELS)
+    edges = np.linspace(0, width, bars + 1).astype(int)
+    image = np.zeros((height, width), dtype=np.uint8)
+    for level, left, right in zip(CALIBRATION_LEVELS, edges[:-1], edges[1:]):
+        image[:, left:right] = level
+    return image
+
+
 def _ffmpeg_executable() -> Optional[str]:
     """ffmpeg with libx264 shipped by imageio-ffmpeg, or None when it is missing.
 
@@ -246,6 +267,7 @@ class VideoExportWorker(QThread):
         out_path: str,
         parent=None,
         projector_gamma: float = DEFAULT_PROJECTOR_GAMMA,
+        video_range: str = "full",
     ):
         """``frames`` are grayscale arrays or paths of PNG files.
 
@@ -255,6 +277,7 @@ class VideoExportWorker(QThread):
         super().__init__(parent)
         self.frames = frames
         self.projector_gamma = projector_gamma
+        self.video_range = video_range
         self.fps = fps
         self.out_path = out_path
         self._cancel_event = threading.Event()
@@ -290,12 +313,12 @@ class VideoExportWorker(QThread):
             "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{w}x{h}", "-r", repr(float(self.fps)),
             "-i", "-",
             # yuv420p needs even sides; pad with black (no light) instead of resampling.
-            # Full range: black stays 0 and white 255. In the default limited range the
+            # Full range (the default): black stays 0 and white 255. In the default limited range the
             # background would be 16/255 (about 6 % light) all the way round the vial and
             # 36 gray levels would be lost; the pc flag tells decoders that the range is full.
-            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=in_range=full:out_range=full",
+            "-vf", f"pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=in_range=full:out_range={self.video_range}",
             "-c:v", "libx264", "-preset", "medium", "-crf", str(H264_CRF), "-pix_fmt", "yuv420p",
-            "-color_range", "pc",
+            "-color_range", "pc" if self.video_range == "full" else "tv",
             "-movflags", "+faststart", "-f", "mp4", path,
         ]
         flags = 0x08000000 if sys.platform == "win32" else 0  # no console flash in the GUI
@@ -343,6 +366,8 @@ class VideoExportWorker(QThread):
         try:
             if not self.frames:
                 raise ValueError("Нет кадров для сохранения.")
+            if self.video_range not in VIDEO_RANGES:
+                raise ValidationError("video_range must be 'full' or 'limited'.")
             if not math.isfinite(float(self.fps)) or not 0.1 <= self.fps <= 240.0:
                 raise ValidationError("FPS должен быть конечным числом от 0.1 до 240.")
             if len(self.frames) > MAX_NUM_FRAMES:
@@ -352,13 +377,16 @@ class VideoExportWorker(QThread):
             first_h, first_w = first.shape[:2]
             total_pixels = 0
             total_memory = 0
+            held: set[int] = set()
             for item in self.frames:
                 if isinstance(item, np.ndarray):
                     frame = item
                     if frame.ndim != 2:
                         raise ValueError("Кадры для экспорта должны быть grayscale-массивами.")
                     frame_h, frame_w = frame.shape[:2]
-                    total_memory += int(frame.nbytes)
+                    if id(frame) not in held:  # a repeated array occupies memory once
+                        held.add(id(frame))
+                        total_memory += int(frame.nbytes)
                 else:
                     frame_h, frame_w = first_h, first_w  # PNG files are streamed, not held
                 if (

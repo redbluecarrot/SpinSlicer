@@ -6,6 +6,8 @@ result is deterministic (no atomics) and equals SciPy's to float32 rounding.
 Importing this module requires Taichi, and ``compute.init_taichi_gpu`` must have
 started it first.
 """
+from typing import Optional
+
 import numpy as np
 import taichi as ti
 
@@ -97,6 +99,7 @@ class GpuMatrix:
         # Kept so that a device failure in the middle of a job falls back to the CPU.
         self._cpu = csr
         self._broken = False
+        self.error: Optional[str] = None  # why the device was given up, for the log
         self.shape = csr.shape
         self.dtype = np.dtype(np.float32)
         self._indptr = self._upload(csr.indptr.astype(np.int32), ti.i32)
@@ -114,8 +117,9 @@ class GpuMatrix:
         if not self._broken:
             try:
                 return self._device_matmul(values)
-            except Exception:  # driver or out-of-memory trouble: same product on the CPU
+            except Exception as exc:  # driver or out-of-memory trouble: same product on the CPU
                 self._broken = True
+                self.error = f"{type(exc).__name__}: {exc}"
         return np.asarray(self._cpu @ np.ascontiguousarray(values, dtype=np.float32))
 
     def _device_matmul(self, values: np.ndarray) -> np.ndarray:
@@ -173,6 +177,7 @@ class GpuSolver:
         self._voxel_norm = GpuMatrix._upload(np.ascontiguousarray(voxel_norm, dtype=np.float32), ti.f32)
         self._buffers: dict[int, tuple] = {}
         self.disabled = False
+        self.error: Optional[str] = None
 
     @property
     def usable(self) -> bool:

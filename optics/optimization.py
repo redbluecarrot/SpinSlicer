@@ -20,6 +20,7 @@ from scipy.fft import fft, ifft
 
 from compute import ComputeProfile, free_memory_bytes
 from constants import MAX_ESTIMATED_MEMORY_BYTES
+from i18n import tr
 
 from .geometry import detector_span_mm
 from .ray_tracing import intersect_circle, trace_cuvette, trace_immersion_vial
@@ -162,13 +163,14 @@ def build_system_matrix(
     container_mode: int = 0, report_cb: Optional[Callable[[float, str], None]] = None,
     cancelled_cb: Optional[Callable[[], bool]] = None,
     memory_budget_bytes: int = MAX_ESTIMATED_MEMORY_BYTES,
-    lean_transpose: bool = False, workers: int = 1,
+    lean_transpose: bool = False, workers: int = 1, use_cache: bool = True,
 ) -> tuple[Any, Any]:
     """Return ray integrals A and exact adjoint A.T (float32).
 
     ``lean_transpose`` returns the transpose as a CSC view of A instead of a second
     CSR copy: half the matrix memory, same values. ``workers`` builds the angles in
-    parallel; every angle is independent, so the matrix is identical.
+    parallel; every angle is independent, so the matrix is identical. The cache holds
+    one matrix; ``use_cache=False`` builds one that neither reads nor evicts it.
     """
     angles = _validate_geometry(
         angles_rad, num_s, grid_res, grid_span_mm, L_out, L_in,
@@ -178,13 +180,14 @@ def build_system_matrix(
     key = (angles.tobytes(), int(num_s), int(grid_res), float(grid_span_mm),
            float(L_out), float(L_in), float(n_air), float(n_glass),
            float(n_liquid), float(n_resin), float(alpha), container_mode, bool(lean_transpose))
-    if key in _matrix_cache:
+    if use_cache and key in _matrix_cache:
         return _matrix_cache[key]
     # Two grids of crossings per ray; 3 CSR payloads covers assembly/transpose.
     upper_bytes = len(angles) * num_s * (2 * grid_res + 1) * 24
     if upper_bytes > memory_budget_bytes:
         raise ValueError("Optical matrix exceeds the memory budget; reduce grid or angle count.")
-    _matrix_cache.clear()
+    if use_cache:
+        _matrix_cache.clear()
     # A rotating square needs its circumscribed diagonal as a constant field.
     # Detector centres and physical pitch must agree with frame export.
     detector_span = detector_span_mm(L_out, container_mode)
@@ -214,7 +217,8 @@ def build_system_matrix(
     del batches
     transpose = matrix.T if lean_transpose else matrix.T.tocsr()
     result = matrix, transpose
-    _matrix_cache[key] = result
+    if use_cache:
+        _matrix_cache[key] = result
     return result
 
 
@@ -303,6 +307,15 @@ def _mm(matrix, values):
     if hasattr(matrix, "matmul"):
         return matrix.matmul(values)
     return _threaded_matmul(matrix, values)
+
+
+def _gpu_problem(*operators) -> Optional[str]:
+    """Why a GPU object gave the device up, if it did."""
+    for operator in operators:
+        error = getattr(operator, "error", None)
+        if error:
+            return str(error)
+    return None
 
 
 def _release(*operators) -> None:
@@ -442,6 +455,7 @@ def optimize_projections_sirt_volume(
     window_iterations: int = 0, profile: Optional[ComputeProfile] = None,
     sink: Optional[Callable[[int, int, np.ndarray], None]] = None,
     window_level: float = WINDOW_LEVEL, window_steepness: float = WINDOW_STEEPNESS,
+    status: Optional[dict] = None,
 ) -> np.ndarray:
     """Fit nonnegative relative-dose projections; output is [z, detector, angle].
 
@@ -459,6 +473,9 @@ def optimize_projections_sirt_volume(
     where R/C are reciprocal row/column sums of B; there is no per-iteration max
     normalization. On a GPU profile the whole block (both stages) runs on the
     device; on a CPU profile the native C++ kernel covers only the linear stage.
+    If the device fails the job continues on the CPU with the same arithmetic; that is
+    reported through ``report_cb`` and, when ``status`` is given, recorded in it as
+    ``device_used`` ("gpu" or "cpu") and ``gpu_error``.
     """
     target = np.asarray(target_vol)
     if target.ndim != 3 or target.shape[:2] != (grid_res, grid_res) or not target.shape[2]:
@@ -481,6 +498,8 @@ def optimize_projections_sirt_volume(
         library = None
     a_op, at_op, library, label = _operators(a, at, profile, library)
     solver = None
+    warned = False
+    wanted_gpu = bool(profile and profile.device == "gpu")
     try:
         if report_cb:
             report_cb(0.35, f"SIRT: {label}")
@@ -548,8 +567,9 @@ def optimize_projections_sirt_volume(
                         window_level, window_steepness, on_step,
                     )
                     on_device = True
-                except GpuFailure:
+                except GpuFailure as failure:
                     solver.disabled = True  # redo this block, and the rest, on the CPU
+                    solver.error = f"{failure}: {failure.__cause__}" if failure.__cause__ else str(failure)
             if not on_device:
                 for iteration in range(iterations):
                     _check_cancelled(cancelled_cb)
@@ -576,6 +596,13 @@ def optimize_projections_sirt_volume(
                             0.36 + 0.42 * progress,
                             f"Dose window {step+1}/{window_iterations}; Z {start+1}–{stop}/{nz}",
                         )
+            # Tell the user as soon as the device was given up (after this block, so that a
+            # short job, or the last block of a long one, reports it too).
+            problem = _gpu_problem(a_op, at_op, solver)
+            if problem and not warned:
+                warned = True
+                if report_cb:
+                    report_cb(0.78, tr("GPU недоступна, расчёт продолжен на процессоре: {error}").format(error=problem))
             if sink is not None:
                 sink(start, stop, values)
             else:
@@ -588,6 +615,10 @@ def optimize_projections_sirt_volume(
             sinograms /= maximum
         return sinograms
     finally:
+        if status is not None:
+            problem = _gpu_problem(a_op, at_op, solver)
+            status["device_used"] = "gpu" if wanted_gpu and not problem else "cpu"
+            status["gpu_error"] = problem or ""
         _release(solver, a_op, at_op)
 
 
@@ -612,6 +643,7 @@ def project_volume(
         angles_rad, grid_res, grid_res, grid_span_mm, L_out, L_in,
         1.0, 1.0, 1.0, 1.0, 0.0, container_mode, report_cb, cancelled_cb, lean_transpose=True,
         workers=profile.threads if profile else 1,
+        use_cache=False,  # used once; it must not push the main matrix out of the cache
     )
     library = _load_cpp_backend()
     if a.indices.dtype != np.int32 or a.indptr.dtype != np.int32:

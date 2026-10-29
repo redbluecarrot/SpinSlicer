@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from i18n import tr
@@ -50,7 +51,7 @@ class ComputeProfile:
     lean_memory: bool       # skip the stored transpose of the ray matrix
     io_threads: int         # parallel frame resize and PNG writing
     slicing_threads: int    # parallel layer rasterisation
-    save_bare: bool         # also compute the uncorrected projection
+    save_bare: bool         # also compute the direct projection
     disk_sinograms: bool    # keep optimised blocks in scratch files, not RAM
     reason: str
 
@@ -72,6 +73,48 @@ class ComputeProfile:
             "lean_memory": self.lean_memory,
             "disk_sinograms": self.disk_sinograms,
         }
+
+
+GPU_ADDON_ENV = "SPINSLICER_GPU_DIR"
+
+
+def gpu_addon_directory() -> Optional[Path]:
+    """Folder of the optional GPU add-on (Taichi and its small dependencies).
+
+    The Windows installer puts it in ``gpu`` next to the program when the "GPU
+    acceleration" component is chosen; ``SPINSLICER_GPU_DIR`` points to any other place.
+    """
+    candidates = []
+    override = os.environ.get(GPU_ADDON_ENV)
+    if override:
+        candidates.append(Path(override))
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / "gpu")
+    return next((folder for folder in candidates if folder.is_dir()), None)
+
+
+def enable_gpu_addon() -> bool:
+    """Make the add-on importable; False when there is none.
+
+    It goes to the *end* of ``sys.path``, so the program's own numpy and other
+    libraries always win over any copy inside the add-on.
+    """
+    folder = gpu_addon_directory()
+    if folder is None:
+        return False
+    text = str(folder)
+    if text not in sys.path:
+        sys.path.append(text)
+    if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+        try:
+            os.add_dll_directory(text)
+        except OSError:
+            pass
+    importlib.invalidate_caches()
+    return True
+
+
+enable_gpu_addon()
 
 
 def free_memory_bytes() -> Optional[int]:
@@ -141,7 +184,7 @@ def detect_hardware(refresh: bool = False) -> Hardware:
     return _hardware_cache
 
 
-_taichi_state: dict = {"tried": False, "arch": None, "generation": 0}
+_taichi_state: dict = {"tried": False, "arch": None, "generation": 0, "error": ""}
 
 
 def init_taichi_gpu() -> Optional[str]:
@@ -160,9 +203,62 @@ def init_taichi_gpu() -> Optional[str]:
         arch = ti.lang.impl.current_cfg().arch
         if arch != ti.cpu:
             _taichi_state["arch"] = str(arch).split(".")[-1]
-    except Exception:  # missing wheel, no driver, unsupported device
+    except Exception as exc:  # missing wheel, no driver, unsupported device, wrong Python
         _taichi_state["arch"] = None
+        _taichi_state["error"] = f"{type(exc).__name__}: {exc}".splitlines()[0][:160]
     return _taichi_state["arch"]
+
+
+def selftest_gpu_kernels(arch: str = "cpu") -> dict:
+    """Compile and run every GPU kernel on a tiny problem; nothing is swallowed.
+
+    This is what catches a broken package: Taichi builds a kernel from the source text of
+    its function, which a bytecode-only build does not have. ``arch="cpu"`` works on any
+    machine (CI); ``"gpu"`` uses the graphics card. Returns ``{"ok", "arch", "error"}``.
+    """
+    result: dict = {"ok": False, "arch": arch, "error": None}
+    started = False
+    try:
+        import numpy as np
+        import scipy.sparse as sp
+        import taichi as ti
+
+        shutdown_taichi()
+        ti.init(arch=ti.cpu if arch == "cpu" else ti.gpu, log_level=ti.ERROR, offline_cache=True,
+                default_fp=ti.f32, default_ip=ti.i32)
+        started = True
+        result["arch"] = str(ti.lang.impl.current_cfg().arch).split(".")[-1]
+        from optics.gpu_operator import GpuMatrix, GpuSolver
+
+        rng = np.random.default_rng(0)
+        a = sp.random(30, 20, density=0.3, format="csr", dtype=np.float32, random_state=0)
+        at = a.T.tocsr()
+        gpu_a, gpu_at = GpuMatrix(a), GpuMatrix(at)
+        values = rng.random((20, 3), dtype=np.float32)
+        if not np.allclose(gpu_a._device_matmul(values), a @ values, rtol=1e-5, atol=1e-6):
+            raise RuntimeError("the sparse product kernel returned wrong numbers")
+        ones_rays = np.ones(30, dtype=np.float32)
+        ones_pixels = np.ones(20, dtype=np.float32)
+        solver = GpuSolver(gpu_a, gpu_at, ones_rays, ones_pixels)
+        rays = rng.random((30, 3), dtype=np.float32)
+        target = (rng.random((20, 3)) > 0.5).astype(np.float32)
+        solver.run(rays, target, rays > 0.1, 1, 1, 0.8, 10.0, lambda kind, index: None)
+        result["ok"] = True
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        if started:
+            try:
+                import gc
+
+                import taichi as ti
+
+                gc.collect()
+                ti.reset()
+            except Exception:
+                pass
+            _taichi_state["generation"] += 1
+    return result
 
 
 def taichi_generation() -> int:
@@ -194,6 +290,11 @@ def shutdown_taichi() -> None:
     _taichi_state["generation"] += 1
 
 
+def taichi_error() -> str:
+    """Why Taichi could not be started in this process ('' when it did or was not tried)."""
+    return str(_taichi_state["error"])
+
+
 def resolve_profile(mode: str = "auto", hardware: Optional[Hardware] = None,
                     use_gpu: bool = True) -> ComputeProfile:
     """Turn the user's choice into concrete settings for this machine."""
@@ -218,8 +319,14 @@ def resolve_profile(mode: str = "auto", hardware: Optional[Hardware] = None,
             save_bare=True, disk_sinograms=False, reason=reason,
         )
 
-    def gpu_usable() -> str:
+    def gpu_usable(asked_for_it: bool) -> str:
         if not (use_gpu and hw.taichi_installed):
+            return ""
+        # nvidia-smi is the only source of a card's memory. Without it the card may be an
+        # integrated one (Intel, AMD APU) that is slower than the processor or has shaky
+        # drivers: Auto leaves such cards alone, and does not even start Taichi for
+        # them. Only an explicit "Maximum" tries whatever the machine offers.
+        if hw.gpu_memory is None and not asked_for_it:
             return ""
         if hw.gpu_memory is not None and hw.gpu_memory < MIN_GPU_MEMORY_BYTES:
             return ""
@@ -229,15 +336,22 @@ def resolve_profile(mode: str = "auto", hardware: Optional[Hardware] = None,
     if mode == "economy":
         return economy(tr("минимум памяти и один поток, результат тот же"))
     if mode == "maximum":
-        gpu = gpu_usable()
-        return maximum(tr("вычисления на видеокарте") if gpu else tr("все ядра процессора"), gpu)
+        gpu = gpu_usable(True)
+        if gpu:
+            return maximum(tr("вычисления на видеокарте"), gpu)
+        if use_gpu and hw.taichi_installed and taichi_error():
+            # Installed but would not start: say so instead of pretending there is no GPU.
+            return maximum(tr("Taichi не запустился ({error}); все ядра процессора").format(error=taichi_error()), "")
+        return maximum(tr("все ядра процессора"), "")
 
     # auto
     if hw.cores <= 2 or (free is not None and free < ECONOMY_BELOW_FREE_RAM):
         return economy(tr("мало ядер или свободной памяти"))
-    gpu = gpu_usable()
+    gpu = gpu_usable(False)
     if gpu:
         return maximum(tr("найдена подходящая видеокарта"), gpu)
+    if use_gpu and hw.taichi_installed and taichi_error():
+        return maximum(tr("Taichi не запустился ({error}); все ядра процессора").format(error=taichi_error()), "")
     if hw.cores >= AUTO_MIN_CORES and (free is None or free >= AUTO_MIN_FREE_RAM):
         return maximum(tr("достаточно ядер и памяти, видеокарта не используется"), "")
     return economy(tr("видеокарты нет, ядер или памяти немного"))
@@ -251,5 +365,10 @@ def describe_hardware(hw: Optional[Hardware] = None) -> str:
         if hw.free_ram else tr("память неизвестна")
     )
     gpu = hw.gpu_name or tr("видеокарта не определена")
-    taichi = tr("Taichi установлен") if hw.taichi_installed else tr("Taichi не установлен")
+    if hw.taichi_installed:
+        taichi = tr("Taichi установлен")
+    elif hw.gpu_name:
+        taichi = tr("Taichi не установлен (компонент «GPU-ускорение» установщика ускорит расчёт)")
+    else:
+        taichi = tr("Taichi не установлен")
     return tr("{cores} ядер, {ram}; {gpu}; {taichi}").format(cores=hw.cores, ram=ram, gpu=gpu, taichi=taichi)
