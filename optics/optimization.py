@@ -11,23 +11,37 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
 import numpy as np
 import scipy.sparse as sp
 from scipy.fft import fft, ifft
 
+from compute import ComputeProfile, free_memory_bytes
 from constants import MAX_ESTIMATED_MEMORY_BYTES
 
 from .geometry import detector_span_mm
 from .ray_tracing import intersect_circle, trace_cuvette, trace_immersion_vial
 
-_matrix_cache: dict[tuple[Any, ...], tuple[sp.csr_matrix, sp.csr_matrix]] = {}
+_matrix_cache: dict[tuple[Any, ...], tuple[Any, Any]] = {}
 _sirt_lib = None
 _lib_loaded = False
 _dll_directory_handle = None
-# Bounds transient dense working buffers, independently of total layer count.
+# Floor for transient dense working buffers, independently of total layer count.
 DENSE_WORKSPACE_BYTES = 32 * 1024**2
+# Every SIRT product walks the whole sparse matrix once per Z block, so tiny
+# blocks make large jobs crawl. The block budget therefore grows with free RAM.
+MAX_WORKSPACE_BYTES = 1024**3
+WORKSPACE_FREE_FRACTION = 0.25
+
+
+def _workspace_bytes(profile: Optional[ComputeProfile] = None) -> int:
+    cap = profile.workspace_cap if profile is not None else MAX_WORKSPACE_BYTES
+    free = free_memory_bytes()
+    if free is None:
+        return min(cap, 4 * DENSE_WORKSPACE_BYTES)
+    return int(min(cap, max(DENSE_WORKSPACE_BYTES, free * WORKSPACE_FREE_FRACTION)))
 
 
 def _check_cancelled(callback):
@@ -114,6 +128,33 @@ def _angle_matrix(origins, directions, valid, num_s, grid_res, span, inner, alph
     return chunk
 
 
+def _stack_csr(batches: list) -> sp.csr_matrix:
+    """Stack CSR blocks row-wise, releasing each block once it is copied.
+
+    ``sp.vstack`` keeps every block alive next to the result, which doubles the
+    peak memory of building the ray matrix; here the peak is one matrix.
+    """
+    rows = sum(block.shape[0] for block in batches)
+    columns = batches[0].shape[1]
+    total = sum(block.nnz for block in batches)
+    index_dtype = np.int32 if total < 2**31 - 1 else np.int64
+    data = np.empty(total, dtype=np.float32)
+    indices = np.empty(total, dtype=index_dtype)
+    indptr = np.empty(rows + 1, dtype=index_dtype)
+    indptr[0] = 0
+    position = row = 0
+    for number in range(len(batches)):
+        block = batches[number]
+        count = block.nnz
+        data[position:position + count] = block.data
+        indices[position:position + count] = block.indices
+        indptr[row + 1:row + block.shape[0] + 1] = block.indptr[1:].astype(index_dtype) + position
+        position += count
+        row += block.shape[0]
+        batches[number] = None  # free the block now
+    return sp.csr_matrix((data, indices, indptr), shape=(rows, columns))
+
+
 def build_system_matrix(
     angles_rad: np.ndarray, num_s: int, grid_res: int, grid_span_mm: float,
     L_out: float, L_in: float, n_air: float = 1.0, n_glass: float = 1.51,
@@ -121,8 +162,14 @@ def build_system_matrix(
     container_mode: int = 0, report_cb: Optional[Callable[[float, str], None]] = None,
     cancelled_cb: Optional[Callable[[], bool]] = None,
     memory_budget_bytes: int = MAX_ESTIMATED_MEMORY_BYTES,
-) -> tuple[sp.csr_matrix, sp.csr_matrix]:
-    """Return ray integrals A and exact adjoint A.T (both float32 CSR)."""
+    lean_transpose: bool = False, workers: int = 1,
+) -> tuple[Any, Any]:
+    """Return ray integrals A and exact adjoint A.T (float32).
+
+    ``lean_transpose`` returns the transpose as a CSC view of A instead of a second
+    CSR copy: half the matrix memory, same values. ``workers`` builds the angles in
+    parallel; every angle is independent, so the matrix is identical.
+    """
     angles = _validate_geometry(
         angles_rad, num_s, grid_res, grid_span_mm, L_out, L_in,
         (n_air, n_glass, n_liquid, n_resin), alpha, container_mode,
@@ -130,7 +177,7 @@ def build_system_matrix(
     _check_cancelled(cancelled_cb)
     key = (angles.tobytes(), int(num_s), int(grid_res), float(grid_span_mm),
            float(L_out), float(L_in), float(n_air), float(n_glass),
-           float(n_liquid), float(n_resin), float(alpha), container_mode)
+           float(n_liquid), float(n_resin), float(alpha), container_mode, bool(lean_transpose))
     if key in _matrix_cache:
         return _matrix_cache[key]
     # Two grids of crossings per ray; 3 CSR payloads covers assembly/transpose.
@@ -142,8 +189,7 @@ def build_system_matrix(
     # Detector centres and physical pitch must agree with frame export.
     detector_span = detector_span_mm(L_out, container_mode)
     positions = (np.arange(num_s) + 0.5) * detector_span / num_s - detector_span / 2
-    batches = []
-    for index, theta in enumerate(angles):
+    def build_angle(theta: float):
         _check_cancelled(cancelled_cb)
         if container_mode == 1:
             p, v, valid = trace_cuvette(positions, theta, L_out, L_in, n_air, n_glass, n_resin)
@@ -152,13 +198,21 @@ def build_system_matrix(
             p, v, valid = trace_immersion_vial(
                 positions, theta, L_out, L_in, n_air, n_glass, surrounding_index, n_resin,
             )
-        batches.append(_angle_matrix(p, v, valid, num_s, grid_res, grid_span_mm, L_in, alpha, container_mode))
-        if report_cb and (index % max(1, len(angles) // 10) == 0 or index == len(angles) - 1):
-            report_cb(0.30 + 0.04 * (index + 1) / len(angles),
-                      f"Построение матрицы лучей {index + 1}/{len(angles)}...")
-    matrix = sp.vstack(batches, format="csr")
+        return _angle_matrix(p, v, valid, num_s, grid_res, grid_span_mm, L_in, alpha, container_mode)
+
+    batches: list = []
+    pool = ThreadPoolExecutor(max_workers=max(1, int(workers)))
+    try:
+        for index, block in enumerate(pool.map(build_angle, angles)):  # results keep angle order
+            batches.append(block)
+            if report_cb and (index % max(1, len(angles) // 10) == 0 or index == len(angles) - 1):
+                report_cb(0.30 + 0.04 * (index + 1) / len(angles),
+                          f"Построение матрицы лучей {index + 1}/{len(angles)}...")
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+    matrix = _stack_csr(batches)
     del batches
-    transpose = matrix.T.tocsr()
+    transpose = matrix.T if lean_transpose else matrix.T.tocsr()
     result = matrix, transpose
     _matrix_cache[key] = result
     return result
@@ -232,9 +286,103 @@ def _pointer(array):
     return array.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
 
+class CpuMatrix:
+    """A SciPy matrix whose products use a fixed number of threads."""
+
+    def __init__(self, matrix, workers: int) -> None:
+        self.matrix = matrix
+        self.workers = max(1, int(workers))
+        self.shape = matrix.shape
+
+    def matmul(self, values):
+        return _threaded_matmul(self.matrix, values, self.workers)
+
+
+def _mm(matrix, values):
+    """``matrix @ values`` for SciPy matrices and the CPU/GPU wrappers alike."""
+    if hasattr(matrix, "matmul"):
+        return matrix.matmul(values)
+    return _threaded_matmul(matrix, values)
+
+
+def _release(*operators) -> None:
+    """Free GPU matrices in this thread (a CUDA context belongs to one thread).
+
+    Taichi arrays sit in reference cycles, so they are only finalised by a garbage
+    collection. Run it here: a collection triggered later inside some other thread
+    (a worker pool, say) would destroy them there and abort the process.
+    """
+    released = False
+    for operator in operators:
+        if hasattr(operator, "release"):
+            operator.release()
+            released = True
+    if released:
+        import gc
+
+        gc.collect()
+
+
+def _operators(a, at, profile: Optional[ComputeProfile], library):
+    """Choose how the sparse products run: returns (a_op, at_op, library, label)."""
+    if profile is None:
+        return a, at, library, "C++ OpenMP" if library is not None else "SciPy (Python)"
+    if profile.device == "gpu":
+        try:
+            from .gpu_operator import GpuMatrix
+
+            return (
+                GpuMatrix(a), GpuMatrix(at) if at is not None else None, None,
+                f"GPU {profile.gpu_name}",
+            )
+        except Exception:  # no device memory, driver trouble: continue on the CPU
+            pass
+    if profile.lean_memory:
+        library = None
+    if library is not None:
+        return a, at, library, "C++ OpenMP"
+    return (
+        CpuMatrix(a, profile.threads), CpuMatrix(at, profile.threads) if at is not None else None,
+        None, f"CPU, {profile.threads} потоков",
+    )
+
+
+def _target_block(target: np.ndarray, start: int, stop: int, grid_res: int) -> np.ndarray:
+    """Layers ``start:stop`` as float32 (columns, layers); uint8 targets mean value/255."""
+    block = target[:, :, start:stop].reshape(grid_res**2, stop - start)
+    dense = np.ascontiguousarray(block, dtype=np.float32)
+    if target.dtype == np.uint8:
+        dense = dense / np.float32(255.0)
+    return dense
+
+
+def _threaded_matmul(matrix, values, workers=None):
+    """``matrix @ values`` with the dense columns split across threads.
+
+    scipy releases the GIL inside sparse products, so this scales with cores
+    when the C++ OpenMP kernel is not available.
+    """
+    workers = workers or min(os.cpu_count() or 1, 8)
+    columns = values.shape[1]
+    if workers < 2 or columns < 2 * workers:
+        return matrix @ values
+    from concurrent.futures import ThreadPoolExecutor
+
+    edges = np.linspace(0, columns, workers + 1).astype(int)
+    out = np.empty((matrix.shape[0], columns), dtype=np.result_type(matrix.dtype, values.dtype))
+
+    def run(index):
+        low, high = edges[index], edges[index + 1]
+        out[:, low:high] = matrix @ np.ascontiguousarray(values[:, low:high])
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(run, range(workers)))
+    return out
+
+
 def _project(matrix, values, library):
     if library is None:
-        return matrix @ values
+        return _mm(matrix, values)
     result = np.empty((matrix.shape[0], values.shape[1]), dtype=np.float32)
     library.forward_project(matrix.shape[0], matrix.shape[1], values.shape[1],
                             _pointer(values), *_csr_pointers(matrix), _pointer(result))
@@ -242,9 +390,33 @@ def _project(matrix, values, library):
 
 
 def _python_sirt_step(a, at, values, target, ray_norm, voxel_norm, hits, workspace):
-    np.subtract(target, at @ values, out=workspace)
+    np.subtract(target, _mm(at, values), out=workspace)
     workspace *= voxel_norm[:, None]
-    update = a @ workspace
+    update = _mm(a, workspace)
+    update *= ray_norm[:, None]
+    values += update
+    np.maximum(values, 0, out=values)
+    values[~hits] = 0
+
+
+# Dose window: voxels of the part should end up above WINDOW_LEVEL and the rest
+# below it. Units are the least-squares calibrated dose, where 1 is the target.
+WINDOW_LEVEL = 0.8
+WINDOW_STEEPNESS = 10.0
+
+
+def _window_step(a, at, values, target, ray_norm, voxel_norm, hits, library):
+    """One projected SIRT step on a sigmoid dose threshold, not on the raw dose.
+
+    Resin does not respond to dose linearly: it gels above a critical dose. The
+    least-squares fit leaves the dose of the part and its surroundings almost
+    equal, so this step pushes the part above WINDOW_LEVEL and the rest below.
+    """
+    dose = _project(at, values, library)
+    arg = np.clip(-WINDOW_STEEPNESS * (dose - WINDOW_LEVEL), -60.0, 60.0)
+    error = target - 1.0 / (1.0 + np.exp(arg))
+    error *= voxel_norm[:, None]
+    update = _project(a, np.ascontiguousarray(error, dtype=np.float32), library)
     update *= ray_norm[:, None]
     values += update
     np.maximum(values, 0, out=values)
@@ -259,8 +431,17 @@ def optimize_projections_sirt_volume(
     report_cb: Optional[Callable[[float, str], None]] = None,
     cancelled_cb: Optional[Callable[[], bool]] = None,
     batch_layers: Optional[int] = None, num_s: Optional[int] = None,
+    window_iterations: int = 0, profile: Optional[ComputeProfile] = None,
+    sink: Optional[Callable[[int, int, np.ndarray], None]] = None,
 ) -> np.ndarray:
     """Fit nonnegative relative-dose projections; output is [z, detector, angle].
+
+    ``window_iterations`` extra threshold steps follow the linear fit (see
+    ``_window_step``); 0 keeps the pure least-squares result.
+
+    With ``sink`` every finished Z block is handed over as ``sink(start, stop,
+    values)`` (values: angles*detector rows by layers, not normalised) instead of
+    being collected, and an empty array is returned.
 
     With B=A.T, each iteration is x <- max(0, x + C B.T R (target-B x)),
     where R/C are reciprocal row/column sums of B. No per-iteration max
@@ -269,7 +450,9 @@ def optimize_projections_sirt_volume(
     target = np.asarray(target_vol)
     if target.ndim != 3 or target.shape[:2] != (grid_res, grid_res) or not target.shape[2]:
         raise ValueError("Target must have shape (grid_res, grid_res, nonzero layers).")
-    if not np.isfinite(target).all() or np.any(target < 0) or np.any(target > 1):
+    if target.dtype != np.uint8 and (
+        not np.isfinite(target).all() or np.any(target < 0) or np.any(target > 1)
+    ):
         raise ValueError("Relative target dose must be finite and in [0, 1].")
     if isinstance(iterations, bool) or int(iterations) != iterations or iterations < 1:
         raise ValueError("iterations must be a positive integer.")
@@ -277,60 +460,130 @@ def optimize_projections_sirt_volume(
     a, at = build_system_matrix(
         angles_rad, detector_count, grid_res, grid_span_mm, L_out, L_in,
         n_air, n_glass, n_liquid, n_resin, alpha, container_mode, report_cb, cancelled_cb,
+        lean_transpose=bool(profile and profile.lean_memory),
+        workers=profile.threads if profile else 1,
     )
     library = _load_cpp_backend()
     if a.indices.dtype != np.int32 or a.indptr.dtype != np.int32:
         library = None
-    if report_cb:
-        report_cb(0.35, "SIRT: C++ OpenMP" if library is not None else "SIRT: SciPy (Python)")
-    row_sums = np.asarray(a.sum(axis=1)).ravel()
-    col_sums = np.asarray(at.sum(axis=1)).ravel()
-    ray_norm = np.divide(1, row_sums, out=np.zeros_like(row_sums), where=row_sums > 0)
-    voxel_norm = np.divide(1, col_sums, out=np.zeros_like(col_sums), where=col_sums > 0)
-    nz = target.shape[2]
-    # FFT warm start and both sparse products fit inside this working budget.
-    bytes_per_layer = 4 * (10 * a.shape[0] + 4 * a.shape[1])
-    block_size = max(1, DENSE_WORKSPACE_BYTES // bytes_per_layer)
-    if batch_layers is not None:
-        if isinstance(batch_layers, bool) or int(batch_layers) != batch_layers or batch_layers < 1:
-            raise ValueError("batch_layers must be a positive integer.")
-        block_size = min(block_size, int(batch_layers))
-    sinograms = np.empty((nz, detector_count, len(angles_rad)), dtype=np.float32)
-    for start in range(0, nz, block_size):
-        _check_cancelled(cancelled_cb)
-        stop = min(nz, start + block_size)
-        target_block = np.ascontiguousarray(target[:, :, start:stop].reshape(grid_res**2, stop-start), dtype=np.float32)
-        projected = _project(a, target_block, library)
-        hits = projected > 0
-        filtered = filter_sinograms_3d(projected.reshape(len(angles_rad), detector_count, -1).transpose(1, 0, 2))
-        values = np.ascontiguousarray(filtered.transpose(1, 0, 2).reshape(a.shape[0], -1), dtype=np.float32)
-        del projected, filtered
-        np.maximum(values, 0, out=values)
-        values[~hits] = 0
-        workspace = _project(at, values, library)
-        # Least-squares scale of the initializer, independently for each layer.
-        numerator = np.einsum("ij,ij,i->j", workspace, target_block, voxel_norm, dtype=np.float64)
-        denominator = np.einsum("ij,ij,i->j", workspace, workspace, voxel_norm, dtype=np.float64)
-        scale = np.divide(numerator, denominator, out=np.zeros_like(numerator), where=denominator > 0)
-        values *= scale.astype(np.float32)[None, :]
-        for iteration in range(iterations):
+    a_op, at_op, library, label = _operators(a, at, profile, library)
+    try:
+        if report_cb:
+            report_cb(0.35, f"SIRT: {label}")
+        row_sums = np.asarray(a.sum(axis=1)).ravel()
+        col_sums = np.asarray(at.sum(axis=1)).ravel()
+        ray_norm = np.divide(1, row_sums, out=np.zeros_like(row_sums), where=row_sums > 0)
+        voxel_norm = np.divide(1, col_sums, out=np.zeros_like(col_sums), where=col_sums > 0)
+        nz = target.shape[2]
+        # FFT warm start and both sparse products fit inside this working budget.
+        bytes_per_layer = 4 * (10 * a.shape[0] + 4 * a.shape[1])
+        block_size = max(1, _workspace_bytes(profile) // bytes_per_layer)
+        if batch_layers is not None:
+            if isinstance(batch_layers, bool) or int(batch_layers) != batch_layers or batch_layers < 1:
+                raise ValueError("batch_layers must be a positive integer.")
+            block_size = min(block_size, int(batch_layers))
+        if isinstance(window_iterations, bool) or int(window_iterations) != window_iterations or window_iterations < 0:
+            raise ValueError("window_iterations must be a non-negative integer.")
+        total_steps = iterations + window_iterations
+        sinograms = None if sink is not None else np.empty(
+            (nz, detector_count, len(angles_rad)), dtype=np.float32
+        )
+        for start in range(0, nz, block_size):
             _check_cancelled(cancelled_cb)
-            if library is None:
-                _python_sirt_step(a, at, values, target_block, ray_norm, voxel_norm, hits, workspace)
+            stop = min(nz, start + block_size)
+            target_block = _target_block(target, start, stop, grid_res)
+            projected = _project(a_op, target_block, library)
+            hits = projected > 0
+            filtered = filter_sinograms_3d(projected.reshape(len(angles_rad), detector_count, -1).transpose(1, 0, 2))
+            values = np.ascontiguousarray(filtered.transpose(1, 0, 2).reshape(a.shape[0], -1), dtype=np.float32)
+            del projected, filtered
+            np.maximum(values, 0, out=values)
+            values[~hits] = 0
+            workspace = _project(at_op, values, library)
+            # Least-squares scale of the initializer, independently for each layer.
+            numerator = np.einsum("ij,ij,i->j", workspace, target_block, voxel_norm, dtype=np.float64)
+            denominator = np.einsum("ij,ij,i->j", workspace, workspace, voxel_norm, dtype=np.float64)
+            scale = np.divide(numerator, denominator, out=np.zeros_like(numerator), where=denominator > 0)
+            values *= scale.astype(np.float32)[None, :]
+            for iteration in range(iterations):
+                _check_cancelled(cancelled_cb)
+                if library is None:
+                    _python_sirt_step(a_op, at_op, values, target_block, ray_norm, voxel_norm, hits, workspace)
+                else:
+                    library.sirt_linear_step(
+                        a.shape[0], a.shape[1], stop-start, _pointer(values), _pointer(target_block),
+                        *_csr_pointers(a), *_csr_pointers(at), _pointer(ray_norm), _pointer(voxel_norm),
+                        hits.ctypes.data_as(ctypes.POINTER(ctypes.c_bool)), _pointer(workspace),
+                    )
+                if report_cb:
+                    progress = (start + (stop-start) * (iteration+1) / total_steps) / nz
+                    report_cb(0.36 + 0.42 * progress, f"SIRT {iteration+1}/{iterations}; Z {start+1}–{stop}/{nz}")
+            for step in range(window_iterations):
+                _check_cancelled(cancelled_cb)
+                _window_step(a_op, at_op, values, target_block, ray_norm, voxel_norm, hits, library)
+                if report_cb:
+                    progress = (start + (stop-start) * (iterations+step+1) / total_steps) / nz
+                    report_cb(
+                        0.36 + 0.42 * progress,
+                        f"Dose window {step+1}/{window_iterations}; Z {start+1}–{stop}/{nz}",
+                    )
+            if sink is not None:
+                sink(start, stop, values)
             else:
-                library.sirt_linear_step(
-                    a.shape[0], a.shape[1], stop-start, _pointer(values), _pointer(target_block),
-                    *_csr_pointers(a), *_csr_pointers(at), _pointer(ray_norm), _pointer(voxel_norm),
-                    hits.ctypes.data_as(ctypes.POINTER(ctypes.c_bool)), _pointer(workspace),
-                )
-            if report_cb:
-                progress = (start + (stop-start) * (iteration+1) / iterations) / nz
-                report_cb(0.36 + 0.42 * progress, f"SIRT {iteration+1}/{iterations}; Z {start+1}–{stop}/{nz}")
-        sinograms[start:stop] = values.reshape(len(angles_rad), detector_count, -1).transpose(2, 1, 0)
-    maximum = float(np.max(sinograms))
-    if maximum > 0:
-        sinograms /= maximum
-    return sinograms
+                assert sinograms is not None
+                sinograms[start:stop] = values.reshape(len(angles_rad), detector_count, -1).transpose(2, 1, 0)
+        if sinograms is None:
+            return np.empty((0, 0, 0), dtype=np.float32)
+        maximum = float(np.max(sinograms))
+        if maximum > 0:
+            sinograms /= maximum
+        return sinograms
+    finally:
+        _release(a_op, at_op)
+
+
+def project_volume(
+    target_vol: np.ndarray, angles_rad: np.ndarray, L_out: float, L_in: float,
+    grid_res: int, grid_span_mm: float, container_mode: int = 0,
+    report_cb: Optional[Callable[[float, str], None]] = None,
+    cancelled_cb: Optional[Callable[[], bool]] = None,
+    batch_layers: Optional[int] = None, profile: Optional[ComputeProfile] = None,
+) -> np.ndarray:
+    """Bare projection: straight rays, no refraction and no absorption.
+
+    Same container geometry and detector as the optimised frames, but every
+    refractive index is 1, so this is what a plain projection of the part looks
+    like without any compensation for the vial. Output is [z, detector, angle],
+    in ray-length units and not normalised.
+    """
+    target = np.asarray(target_vol)
+    if target.ndim != 3 or target.shape[:2] != (grid_res, grid_res):
+        raise ValueError("Target must have shape (grid_res, grid_res, layers).")
+    a, _ = build_system_matrix(
+        angles_rad, grid_res, grid_res, grid_span_mm, L_out, L_in,
+        1.0, 1.0, 1.0, 1.0, 0.0, container_mode, report_cb, cancelled_cb, lean_transpose=True,
+        workers=profile.threads if profile else 1,
+    )
+    library = _load_cpp_backend()
+    if a.indices.dtype != np.int32 or a.indptr.dtype != np.int32:
+        library = None
+    a_op, _, library, _label = _operators(a, None, profile, library)
+    try:
+        nz = target.shape[2]
+        bytes_per_layer = 4 * (2 * a.shape[0] + a.shape[1])
+        block_size = max(1, _workspace_bytes(profile) // bytes_per_layer)
+        if batch_layers is not None:
+            block_size = min(block_size, int(batch_layers))
+        result = np.empty((nz, grid_res, len(angles_rad)), dtype=np.float32)
+        for start in range(0, nz, block_size):
+            _check_cancelled(cancelled_cb)
+            stop = min(nz, start + block_size)
+            block = _target_block(target, start, stop, grid_res)
+            projected = _project(a_op, block, library)
+            result[start:stop] = projected.reshape(len(angles_rad), grid_res, -1).transpose(2, 1, 0)
+        return result
+    finally:
+        _release(a_op)
 
 
 def optimize_projections_sirt(

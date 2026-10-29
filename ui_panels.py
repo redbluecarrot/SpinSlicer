@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from compute import describe_hardware
 from constants import (
     APP_ORG,
     APP_TITLE,
@@ -205,6 +206,32 @@ class ProcessSettingsPanel(QWidget):
         self.transform_panel = ObjectTransformPanel(self)
         layout.addWidget(self.transform_panel)
 
+        # --- Performance: right under the transformation -------------------
+        perf_box = QGroupBox("Производительность")
+        perf_layout = QVBoxLayout(perf_box)
+        # How the work is spread over this machine; the result does not change.
+        self.compute_mode = QComboBox()
+        self.compute_mode.addItem("Авто", "auto")
+        self.compute_mode.addItem("Экономный (слабые устройства)", "economy")
+        self.compute_mode.addItem("Максимальный (мощные устройства)", "maximum")
+        saved_mode = str(self._settings.value("compute_mode", "auto"))
+        saved_index = self.compute_mode.findData(saved_mode)
+        self.compute_mode.setCurrentIndex(saved_index if saved_index >= 0 else 0)
+        self.compute_mode.setToolTip(
+            "Меняет только скорость и расход памяти, но не результат. "
+            "Экономный: меньше памяти и потоков. Максимальный: все ядра и, "
+            "если есть подходящая видеокарта и Taichi, вычисления на ней. "
+            "Авто выбирает по вашему устройству."
+        )
+        perf_layout.addWidget(self.compute_mode)
+        self.compute_hint = QLabel(describe_hardware())
+        self.compute_hint.setObjectName("hintLabel")
+        self.compute_hint.setWordWrap(True)
+        self.compute_hint.setProperty("_spinslicer_skip_text_translation", True)
+        perf_layout.addWidget(self.compute_hint)
+        layout.addWidget(perf_box)
+
+
         # --- Колба / принтер -----------------------------------------------
         vat_box = QGroupBox("Печатная колба")
         vat_layout = QVBoxLayout(vat_box)
@@ -277,6 +304,7 @@ class ProcessSettingsPanel(QWidget):
             "Итерации оптимизатора", 1, 100, 8, decimals=0, step=1,
         )
         backend_layout.addWidget(self.optimizer_iterations)
+
         backend_hint = QLabel(
             "Встроенный сверхбыстрый физический движок (SIRT + C++ OpenMP). "
             "Учитывает преломление света по закону Снеллиуса и поглощение по Бугеру-Ламберту."
@@ -305,12 +333,20 @@ class ProcessSettingsPanel(QWidget):
         self.fill_holes.toggled.connect(lambda _v: self.settingsChanged.emit())
         self.preserve_internal_voids.toggled.connect(lambda _v: self.settingsChanged.emit())
         self.optimizer_iterations.valueChanged.connect(lambda _v: self.settingsChanged.emit())
+        self.compute_mode.currentIndexChanged.connect(self._on_compute_mode_changed)
 
     def vat_diameter_mm(self) -> float:
         return self.diameter.value()
 
     def projection_backend_name(self) -> str:
         return "physical"
+
+    def compute_mode_value(self) -> str:
+        return str(self.compute_mode.currentData())
+
+    def _on_compute_mode_changed(self, _index: int) -> None:
+        self._settings.setValue("compute_mode", self.compute_mode_value())
+        self.settingsChanged.emit()
 
     def optimizer_iterations_value(self) -> int:
         return self.optimizer_iterations.value_int()

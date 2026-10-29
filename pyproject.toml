@@ -20,6 +20,8 @@ dependencies = [
     "scikit-image==0.26.0",
     "opencv-python-headless==5.0.0.93",
     "matplotlib==3.11.1",
+    "taichi==1.7.4",
+    "imageio-ffmpeg==0.7.0",
 ]
 
 [tool.pytest.ini_options]
@@ -40,6 +42,7 @@ ignore = ["E501", "E701", "E702", "E402", "F601", "F841", "W291"]
 python_version = "3.12"
 files = [
     "SpinSlicer.py",
+    "compute.py",
     "constants.py",
     "frame_io.py",
     "i18n.py",

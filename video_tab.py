@@ -12,26 +12,33 @@ import os
 from typing import List, Optional
 
 import numpy as np
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QFileDialog,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from constants import DEFAULT_FRAME_RATE_HZ, DEFAULT_PROJECTOR_GAMMA
+from frame_io import FrameRepository
 from i18n import language, tr
 from job_controller import JobController
 from widgets import LabeledSlider
 from workers import VideoAssembleWorker, VideoExportWorker
 
-BASE_FPS = 24.0
+BASE_FPS = DEFAULT_FRAME_RATE_HZ
+# Sub-folder written by the slicer with the projection without vial compensation.
+BARE_PROJECTION_DIR = "bare_projection"
 
 
 class VideoPreviewWidget(QLabel):
@@ -112,9 +119,34 @@ class ProjectorTab(QWidget):
         root.setContentsMargins(16, 12, 16, 12)
         root.setSpacing(10)
 
-        self.dir_label = QLabel("Папка кадров не выбрана — сначала сгенерируйте проекции на вкладке «Слайсер».")
-        self.dir_label.setObjectName("hintLabel")
-        root.addWidget(self.dir_label)
+        # Which frames to play: compensated for the vial, or the bare projection.
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(6)
+        self.mode_label = QLabel("Тип проекции:")
+        mode_row.addWidget(self.mode_label)
+        self.mode_corrected_btn = QPushButton("Скорректированная")
+        self.mode_corrected_btn.setObjectName("secondaryButton")
+        self.mode_corrected_btn.setCheckable(True)
+        self.mode_corrected_btn.setChecked(True)
+        self.mode_corrected_btn.setToolTip(
+            "Проекция для печати: компенсированы преломление и поглощение в колбе"
+        )
+        self.mode_bare_btn = QPushButton("Нескорректированная")
+        self.mode_bare_btn.setObjectName("secondaryButton")
+        self.mode_bare_btn.setCheckable(True)
+        self.mode_bare_btn.setEnabled(False)
+        self.mode_bare_btn.setToolTip(
+            "Прямая проекция детали без компенсации оптических искажений колбы"
+        )
+        self._mode_group = QButtonGroup(self)
+        self._mode_group.setExclusive(True)
+        self._mode_group.addButton(self.mode_corrected_btn)
+        self._mode_group.addButton(self.mode_bare_btn)
+        self.mode_bare_btn.toggled.connect(self._on_mode_changed)
+        mode_row.addWidget(self.mode_corrected_btn)
+        mode_row.addWidget(self.mode_bare_btn)
+        mode_row.addStretch(1)
+        root.addLayout(mode_row)
 
         # Content row: Video Preview on left, Tomo Dose Reconstruction card on right
         content_row = QHBoxLayout()
@@ -123,12 +155,16 @@ class ProjectorTab(QWidget):
         self.preview = VideoPreviewWidget("Нажмите «Собрать и воспроизвести»,\nчтобы увидеть анимацию проекций.")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setObjectName("videoPreview")
-        self.preview.setMinimumHeight(280)
+        self.preview.setMinimumHeight(120)
         self.preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         content_row.addWidget(self.preview, 3)
 
         # Side column on right: Dose Reconstruction + CyberPepe Meme
-        side_col = QVBoxLayout()
+        # The column scrolls instead of imposing a tall minimum on the window,
+        # so the log pane below can be dragged as tall as the user likes.
+        side_widget = QWidget()
+        side_col = QVBoxLayout(side_widget)
+        side_col.setContentsMargins(0, 0, 0, 0)
         side_col.setSpacing(8)
 
         # Dose Reconstruction Card
@@ -215,7 +251,17 @@ class ProjectorTab(QWidget):
         side_col.addWidget(pepe_box)
         side_col.addStretch(1)
 
-        content_row.addLayout(side_col, 1)
+        side_scroll = QScrollArea()
+        side_scroll.setWidgetResizable(True)
+        side_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        side_scroll.setFixedWidth(285)
+        side_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+        side_scroll.setWidget(side_widget)
+        content_row.addWidget(side_scroll)
         root.addLayout(content_row, 1)
 
         buttons = QHBoxLayout()
@@ -310,8 +356,41 @@ class ProjectorTab(QWidget):
             self.save_btn.setEnabled(False)
             self.preview.clear_frame()
         self._output_dir = path
-        self.dir_label.setText(f"{tr('Папка кадров: ')}{path}")
         self._load_dose_preview(path)
+        self._refresh_modes()
+
+    def _run_dir(self) -> Optional[str]:
+        if not self._output_dir:
+            return None
+        try:
+            return FrameRepository.validate(self._output_dir).resolved_dir
+        except Exception:
+            return None
+
+    def _bare_available(self) -> bool:
+        run_dir = self._run_dir()
+        return bool(run_dir) and os.path.isdir(os.path.join(run_dir or "", BARE_PROJECTION_DIR))
+
+    def _bare_selected(self) -> bool:
+        return self.mode_bare_btn.isChecked()
+
+    def _refresh_modes(self) -> None:
+        """Enable the bare view only for runs that actually contain it."""
+        available = self._bare_available()
+        self.mode_bare_btn.setEnabled(available)
+        if not available and self.mode_bare_btn.isChecked():
+            blocker = QSignalBlocker(self.mode_bare_btn)
+            self.mode_corrected_btn.setChecked(True)
+            del blocker
+        if not available:
+            self.mode_bare_btn.setToolTip(
+                "Для этого прогона нескорректированная проекция недоступна (не создаётся в экономном режиме)"
+            )
+
+    def _on_mode_changed(self, _checked: bool) -> None:
+        # Frames of the other mode have to be loaded; replay from the start.
+        if self._frames or self._timer.isActive():
+            self._on_assemble_clicked()
 
     # --- сборка и проигрывание ---------------------------------------------------
     def _on_assemble_clicked(self) -> None:
@@ -325,7 +404,10 @@ class ProjectorTab(QWidget):
         self.assemble_btn.setEnabled(False)
         self.progress.emit(0.0, "Сборка видео из кадров...")
 
-        self._assemble_worker = VideoAssembleWorker(self._output_dir, self)
+        self._assemble_worker = VideoAssembleWorker(
+            self._output_dir, self,
+            subdir=BARE_PROJECTION_DIR if self._bare_selected() else "",
+        )
         self._job_controller.register(self._assemble_worker)
         self._assemble_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
         self._assemble_worker.finished_ok.connect(self._on_assembled)
@@ -380,22 +462,54 @@ class ProjectorTab(QWidget):
         self.preview.set_frame(frame)
 
     # --- экспорт в MP4 -----------------------------------------------------------
+    def _export_settings(self) -> tuple[float, float]:
+        """FPS and projector gamma of the printed file, taken from the run manifest.
+
+        FPS follows the generation schedule, never the preview speed; gamma is
+        the machine profile's projector gamma (1.0 keeps the frames linear).
+        """
+        from frame_io import FrameRepository, load_manifest
+
+        rate, gamma = 0.0, DEFAULT_PROJECTOR_GAMMA
+        try:
+            directory = FrameRepository.validate(self._output_dir or "").resolved_dir
+            manifest = load_manifest(directory)
+            if manifest:
+                rate = float((manifest.frame_schedule or {}).get("frame_rate_hz", 0.0))
+                projector = (manifest.machine_profile or {}).get("projector") or {}
+                gamma = float(projector.get("gamma", DEFAULT_PROJECTOR_GAMMA))
+        except Exception:
+            pass
+        return (rate if rate > 0 else DEFAULT_FRAME_RATE_HZ), gamma
+
     def _on_save_clicked(self) -> None:
         if not self._frames:
             QMessageBox.warning(self, "Warning", "Assemble the video first.")
             return
 
+        if self._bare_selected():
+            answer = QMessageBox.question(
+                self,
+                tr("Внимание"),
+                tr("Нескорректированная проекция не компенсирует преломление и поглощение в колбе. "
+                   "Для печати используйте скорректированную проекцию. Сохранить файл?"),
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        fps, gamma = self._export_settings()
+        rpm = 60.0 * fps / len(self._frames)
+        name = "projection_uncorrected" if self._bare_selected() else "projection"
+        # OpenCAL reads the rotation speed from the file name: <name>_<rpm>rpm.mp4
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save video", "projection_preview.mp4", "MP4 (*.mp4)"
+            self, "Save video", f"{name}_{rpm:g}rpm.mp4", "MP4 (*.mp4)"
         )
         if not path:
             return
 
-        fps = BASE_FPS * self.speed_slider.value()
         self.save_btn.setEnabled(False)
         self.progress.emit(0.0, "Экспорт в MP4...")
 
-        self._export_worker = VideoExportWorker(self._frames, fps, path, self)
+        self._export_worker = VideoExportWorker(self._frames, fps, path, self, projector_gamma=gamma)
         self._job_controller.register(self._export_worker)
         self._export_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
         self._export_worker.finished_ok.connect(self._on_export_done)

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/spinslicer.svg" alt="SpinSlicer" width="160">
+  <img src="../../assets/spinslicer.svg" alt="SpinSlicer" width="160">
 </p>
 
 <h1 align="center">SpinSlicer</h1>
@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="README.md"><img src="assets/lang-en.svg" alt="English" height="36"></a>
-  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
-  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
-  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
+  <a href="../../README.md"><img src="../../assets/lang-en.svg" alt="English" height="36"></a>
+  <a href="README.ru.md"><img src="../../assets/lang-ru.svg" alt="Русский" height="36"></a>
+  <a href="README.es.md"><img src="../../assets/lang-es.svg" alt="Español" height="36"></a>
+  <a href="README.zh-CN.md"><img src="../../assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
 SpinSlicer es un prototipo de investigación local para la fabricación aditiva
@@ -26,9 +26,9 @@ controla un proyector real, una cubeta de resina ni una platina giratoria.
 ## Características
 
 La versión estable v0.3.2 incluye **Slicer (3D)**, **Projector (Video)** y la barra lateral **Settings**.
-Consulta las [notas de la versión](docs/releases/v0.3.2.md).
+Consulta las [notas de la versión](../releases/v0.3.2.md).
 
-- **Óptica dispersa con memoria acotada:** las matrices CSR de rayos a resolución completa y la optimización por lotes en Z conservan la malla de 256×256 y 360 ángulos. Las condiciones medidas y el uso de recursos se recogen en el [informe de validación numérica](docs/validation/physical-optics-v0.3.1.md).
+- **Óptica dispersa con memoria acotada:** las matrices CSR de rayos a resolución completa y la optimización por lotes en Z conservan la malla de 256×256 y 360 ángulos. Las condiciones medidas y el uso de recursos se recogen en el [informe de validación numérica](../validation/physical-optics-v0.3.1.md).
 - **Motor SIRT paralelo nativo con OpenMP:** el backend multihilo en C++ (`sirtsolver.dll` / `sirtsolver.so`) funciona en cualquier CPU estándar sin necesidad de GPU dedicadas costosas.
 - **Espacio de trabajo CAD ergonómico:** visor 3D interactivo amplio a la izquierda y parámetros de acceso rápido a la derecha.
 - **Visor 3D limpio:** órbita trackball, desplazamiento y zoom sin cubos de vista que estorben.
@@ -77,7 +77,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python build_sirt.py
+python tools/build_sirt.py
 ```
 
 Ejecuta la aplicación con:
@@ -116,13 +116,13 @@ informa del RMSE de forma de la dosis relativa tras ajustar una escala común.
 No es una predicción de curado calibrada. La reflexión de Fresnel, la
 dispersión, la respuesta de curado del material y la dosis absoluta del hardware
 requieren calibración adicional. Consulta el [modelo y las comprobaciones
-reproducibles](docs/validation/physical-optics-v0.3.1.md).
+reproducibles](../validation/physical-optics-v0.3.1.md).
 
 Las cubetas cuadradas usan un campo de proyección fijo igual a la diagonal
 exterior en cada ángulo. Este valor y el paso físico de píxel se registran en el
 manifiesto; la calibración del proyector debe usar ese valor. Consulta la
 [corrección del campo cuadrado y las comprobaciones de cobertura de
-esquinas](docs/validation/square-detector-field.md).
+esquinas](../validation/square-detector-field.md).
 
 ## Formato de salida
 

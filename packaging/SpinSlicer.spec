@@ -21,7 +21,7 @@ binaries: list[tuple[str, str]] = []
 native_name = "sirtsolver.dll" if sys.platform.startswith("win") else "sirtsolver.so"
 native_path = PROJECT_ROOT / "cpp_backend" / native_name
 if not native_path.is_file():
-    raise FileNotFoundError("Build the native backend with python build_sirt.py before packaging.")
+    raise FileNotFoundError("Build the native backend with python tools/build_sirt.py before packaging.")
 # BINARY collection makes PyInstaller resolve OpenMP runtime dependencies.
 # Copying the folder as DATA can silently omit vcomp140/libgomp on clean PCs.
 binaries.append((str(native_path), "cpp_backend"))
@@ -38,8 +38,11 @@ if sys.platform.startswith("win"):
                 if path.name.casefold().startswith(("msvcp140", "vcruntime140"))
             )
 
-hiddenimports = ["vtkmodules.qt.QVTKRenderWindowInteractor"]
-for package in ("qdarktheme", "pyvista", "pyvistaqt", "vtkmodules"):
+hiddenimports = ["vtkmodules.qt.QVTKRenderWindowInteractor", "optics.gpu_operator"]
+# Taichi carries its own compiled core and runtime bitcode; without them the
+# GPU mode silently falls back to the CPU in the frozen build. imageio_ffmpeg
+# carries the ffmpeg binary that encodes the H.264 export.
+for package in ("qdarktheme", "pyvista", "pyvistaqt", "vtkmodules", "taichi", "imageio_ffmpeg"):
     collected_datas, collected_binaries, collected_hiddenimports = collect_all(package)
     datas += collected_datas
     binaries += collected_binaries
@@ -54,7 +57,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(PROJECT_ROOT / "runtime_hook_qt_path.py")],
+    runtime_hooks=[str(PROJECT_ROOT / "packaging" / "runtime_hook_qt_path.py")],
     # PyVista imports its lightweight runtime decorator from
     # ``pyvista.typing.mypy_plugin``.  When mypy is installed in the build
     # environment, that plugin conditionally imports mypy's compiled checker

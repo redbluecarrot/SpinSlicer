@@ -91,10 +91,27 @@ _EN: dict[str, str] = {
     "🎬 Проектор (Видео)": "🎬 Projector (Video)",
     "Язык:": "Language:",
     "Готово к работе.": "Ready.",
+    "Производительность": "Performance",
+    "Авто": "Auto",
+    "Экономный (слабые устройства)": "Economy (low-power devices)",
+    "Максимальный (мощные устройства)": "Maximum (powerful devices)",
+    "Меняет только скорость и расход памяти, но не результат. Экономный: меньше памяти и потоков. Максимальный: все ядра и, если есть подходящая видеокарта и Taichi, вычисления на ней. Авто выбирает по вашему устройству.":
+        "Changes only speed and memory use, never the result. Economy: less memory and fewer threads. Maximum: all cores and, if a suitable graphics card and Taichi are present, computation on it. Auto picks for your device.",
+    "Тип проекции:": "Projection type:",
+    "ffmpeg недоступен: MP4 пишется кодеком mp4v с потерей качества.":
+        "ffmpeg is unavailable: the MP4 is written with the lossy mp4v codec.",
+    "Скорректированная": "Corrected",
+    "Нескорректированная": "Uncorrected",
+    "Проекция для печати: компенсированы преломление и поглощение в колбе":
+        "Projection for printing: refraction and absorption in the vial are compensated",
+    "Прямая проекция детали без компенсации оптических искажений колбы":
+        "Straight projection of the part without compensation for the optical distortion of the vial",
+    "Для этого прогона нескорректированная проекция недоступна (не создаётся в экономном режиме)":
+        "The uncorrected projection is not available for this run (it is not created in economy mode)",
+    "Нескорректированная проекция не компенсирует преломление и поглощение в колбе. Для печати используйте скорректированную проекцию. Сохранить файл?":
+        "The uncorrected projection does not compensate refraction or absorption in the vial. Use the corrected projection for printing. Save the file?",
     "Готово к работе. Загрузите STL-модель на вкладке «Слайсер», чтобы начать.":
         "Ready. Load an STL model on the Slicer tab to begin.",
-    "Папка кадров не выбрана — сначала сгенерируйте проекции на вкладке «Слайсер».":
-        "No frame folder selected — generate projections on the Slicer tab first.",
     "Нажмите «Собрать и воспроизвести»,\nчтобы увидеть анимацию проекций.":
         "Click “Assemble and play”\nto preview the projection animation.",
     "▶ Собрать и воспроизвести": "▶ Assemble and play",
@@ -333,7 +350,6 @@ for ru_str, en_str in _EN.items():
         _RU[en_str] = ru_str
 
 _PREFIX_EN: tuple[tuple[str, str], ...] = (
-    ("Папка кадров: ", "Frames folder: "),
     ("Загружено: ", "Loaded: "),
     ("Сохранено ", "Saved "),
     ("Собрано ", "Assembled "),
@@ -353,7 +369,6 @@ _PREFIX_EN: tuple[tuple[str, str], ...] = (
 )
 
 _PREFIX_RU: tuple[tuple[str, str], ...] = (
-    ("Frames folder: ", "Папка кадров: "),
     ("Loaded: ", "Загружено: "),
     ("Saved ", "Сохранено "),
     ("Assembled ", "Собрано "),

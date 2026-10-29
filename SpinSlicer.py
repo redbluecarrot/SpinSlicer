@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,6 +81,8 @@ class CALSlicerMainWindow(QMainWindow):
         self.setWindowTitle(APP_TITLE)
         self.setWindowIcon(QIcon(APP_ICON_PATH))
         self._settings = QSettings(APP_ORG, APP_TITLE)
+        self._last_progress_key = ""
+        self._last_logged_fraction = 0.0
         self._job_controller = JobController()
 
         self._build_central()
@@ -170,14 +173,21 @@ class CALSlicerMainWindow(QMainWindow):
         main_splitter.setStretchFactor(1, 0)
         main_splitter.setSizes([1040, 500])
 
-        root.addWidget(main_splitter, 1)
-
         self._log_panel = QPlainTextEdit()
         self._log_panel.setObjectName("logPanel")
         self._log_panel.setReadOnly(True)
-        self._log_panel.setMinimumHeight(64)
-        self._log_panel.setMaximumHeight(96)
-        root.addWidget(self._log_panel)
+        self._log_panel.setMinimumHeight(40)
+
+        # The log can be dragged taller or shorter, like the settings sidebar.
+        self._log_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._log_splitter.setChildrenCollapsible(False)
+        self._log_splitter.addWidget(main_splitter)
+        self._log_splitter.addWidget(self._log_panel)
+        self._log_splitter.setStretchFactor(0, 1)
+        self._log_splitter.setStretchFactor(1, 0)
+        saved_height = self._settings.value("log_height", 96, type=int)
+        self._log_splitter.setSizes([700, max(40, min(int(saved_height), 600))])
+        root.addWidget(self._log_splitter, 1)
 
         self.setCentralWidget(central)
 
@@ -237,13 +247,22 @@ class CALSlicerMainWindow(QMainWindow):
     def _set_progress(self, frac: float, message: str) -> None:
         self._progress_bar.setValue(int(max(0.0, min(1.0, frac)) * 1000))
         self._status_label.setText(tr(message))
-        self._log(message)
+        # The status bar already shows every update. The log gets one line when a
+        # phase starts and then at most one per 10 % of progress, instead of a
+        # line for every iteration of every layer block.
+        key = re.sub(r"\d+", "#", message)
+        advanced = frac - self._last_logged_fraction >= 0.10
+        if key != self._last_progress_key or advanced or frac >= 1.0 or frac < self._last_logged_fraction:
+            self._last_progress_key = key
+            self._last_logged_fraction = frac
+            self._log(message)
 
     def _log(self, message: str) -> None:
         stamp = datetime.now(timezone.utc).astimezone().strftime("%H:%M:%S")
         self._log_panel.appendPlainText(f"[{stamp}] {tr(message)}")
 
     def closeEvent(self, event) -> None:  # noqa: N802 (имя метода задано Qt)
+        self._settings.setValue("log_height", self._log_splitter.sizes()[1])
         self.settings_tab.shutdown()
         if self._job_controller.shutdown():
             event.accept()

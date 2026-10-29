@@ -296,6 +296,7 @@ class SlicerTab(QWidget):
             output_dir=out_dir,
             projection_backend=self._process_panel.projection_backend_name(),
             optimizer_iterations=self._process_panel.optimizer_iterations_value(),
+            compute_mode=self._process_panel.compute_mode_value(),
             preserve_internal_voids=self._process_panel.preserve_internal_voids.isChecked(),
             container_mode=self._process_panel.container_mode_value(),
             cuvette_outer_mm=diameter,

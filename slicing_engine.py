@@ -14,6 +14,7 @@ trimesh.Trimesh и параметры, а сообщает о прогрессе
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional, Tuple, cast
@@ -25,6 +26,7 @@ from scipy.ndimage import binary_fill_holes
 from skimage.transform import radon
 from skimage.transform import resize as sk_resize
 
+from compute import MODES, resolve_profile, shutdown_taichi
 from constants import (
     ANTI_ALIAS_FACTOR,
     DEFAULT_ANGLE_OFFSET_DEG,
@@ -40,6 +42,7 @@ from frame_io import (
     sha256_file,
 )
 from optics.geometry import detector_span_mm
+from optics.sinogram_store import SinogramStore
 from profiles import (
     MachineProfile,
     ProfileValidationError,
@@ -61,6 +64,10 @@ from vam_backend import (
 )
 
 ProgressCallback = Callable[[float, str], None]
+# Sub-folder of a run holding the projection without vial compensation.
+BARE_PROJECTION_DIR = "bare_projection"
+# PNG is lossless at every level; a low one writes the same pixels much faster.
+PNG_COMPRESS_LEVEL = 1
 CancelCheck = Callable[[], bool]
 
 
@@ -171,6 +178,15 @@ class SliceParams:
     n_liquid: float = 1.45
     n_resin: float = 1.50
     alpha: float = 0.0
+    # Threshold-aware refinement after the least-squares fit: gives the part a
+    # dose window above its surroundings instead of a blurred relative dose.
+    dose_window: bool = True
+    # Also write the plain projection without vial compensation, for the
+    # projector tab's "bare projection" view.
+    save_bare_projection: bool = True
+    # auto / economy / maximum: how the work is spread over this machine. It
+    # changes speed and memory, never the computed result.
+    compute_mode: str = "auto"
 
     def validate(self) -> None:
         """Validate values before they can determine array dimensions."""
@@ -189,6 +205,8 @@ class SliceParams:
             self.angle_offset_deg,
             self.angle_direction,
         )
+        if self.compute_mode not in MODES:
+            raise ValidationError(f"compute_mode must be one of: {', '.join(MODES)}.")
         if self.projection_backend == "physical":
             from optics.optimization import _validate_geometry
             try:
@@ -278,6 +296,23 @@ class SlicingEngine:
         is_cancelled: Optional[CancelCheck] = None,
         manifest_context: Optional[dict[str, Any]] = None,
     ) -> Tuple[int, str]:
+        """Slice one mesh; the GPU, if used, is released in this same thread."""
+        try:
+            return SlicingEngine._run(mesh, params, progress_cb, is_cancelled, manifest_context)
+        finally:
+            shutdown_taichi()
+            from optics.optimization import _matrix_cache
+
+            _matrix_cache.clear()  # hundreds of MB that nothing needs between jobs
+
+    @staticmethod
+    def _run(
+        mesh: trimesh.Trimesh,
+        params: SliceParams,
+        progress_cb: Optional[ProgressCallback] = None,
+        is_cancelled: Optional[CancelCheck] = None,
+        manifest_context: Optional[dict[str, Any]] = None,
+    ) -> Tuple[int, str]:
         """Считает проекции для одного (уже финально трансформированного) меша.
 
         Возвращает (num_frames, out_dir). Бросает SliceCancelled при отмене
@@ -302,6 +337,9 @@ class SlicingEngine:
         if not preflight.ok:
             raise ValidationError("\n".join(preflight.errors))
         ensure_directory(params.output_dir)
+
+        profile = resolve_profile(params.compute_mode, use_gpu=params.projection_backend == "physical")
+        report(0.03, profile.describe())
 
         diameter_mm = params.diameter_mm
         grid_res = params.grid_res
@@ -328,13 +366,13 @@ class SlicingEngine:
         scale_2d = aa_size / diameter_mm
         offset = aa_size / 2.0
 
-        slices = np.zeros((grid_res, grid_res, nz), dtype=np.float32)
+        slices = np.zeros((grid_res, grid_res, nz), dtype=np.uint8)  # value / 255
 
         report(0.05, "Оптическая нарезка сечений...")
         report_step = max(1, nz // 25)
 
         # --- Бронебойный послойный метод: не крашится на грязных сетках ---
-        for i, z in enumerate(z_levels):
+        def render_layer(i: int, z: float) -> Optional[np.ndarray]:
             if cancelled():
                 raise SliceCancelled()
 
@@ -413,10 +451,17 @@ class SlicingEngine:
                 # Уменьшаем с антиалиасингом для мягких краёв
                 img_filled = Image.fromarray((arr * 255).astype(np.uint8))
                 img_resized = img_filled.resize((grid_res, grid_res), Image.Resampling.LANCZOS)
-                slices[:, :, i] = (np.array(img_resized, dtype=np.float32) / 255.0).T
+                return np.array(img_resized, dtype=np.uint8).T
+            return None
 
-            if i % report_step == 0:
-                report(0.05 + 0.25 * (i / nz), f"Нарезка слоя {i}/{nz}...")
+        # Build trimesh's lazy caches once before the layers are cut in parallel.
+        mesh.section(plane_origin=[0, 0, float(z_levels[0])], plane_normal=[0, 0, 1])
+        with ThreadPoolExecutor(max_workers=profile.slicing_threads) as pool:
+            for i, layer in enumerate(pool.map(render_layer, range(nz), z_levels)):
+                if layer is not None:
+                    slices[:, :, i] = layer
+                if i % report_step == 0:
+                    report(0.05 + 0.25 * (i / nz), f"Нарезка слоя {i}/{nz}...")
 
         # --- Проекционный backend ------------------------------------------
         base_angles = np.linspace(0.0, 360.0, num_frames, endpoint=False)
@@ -424,15 +469,35 @@ class SlicingEngine:
             params.angle_offset_deg + params.angle_direction * base_angles
         ) % 360.0
         backend = params.projection_backend
+        # What actually produced the frames; "auto" may fall back below.
+        backend_used = "internal" if backend == "auto" else backend
 
+        def float_slices() -> np.ndarray:
+            return slices.astype(np.float32) / np.float32(255.0)
+
+        bare_sinograms: Optional[np.ndarray] = None
+        sinograms: Optional[np.ndarray] = None
+        store: Optional[SinogramStore] = None
         if backend == "physical":
             report(0.30, "Физическая оптика: трассировка лучей и оптимизация...")
-            from optics.optimization import optimize_projections_sirt_volume
+            from optics.optimization import optimize_projections_sirt_volume, project_volume
+            from optics.sinogram_store import SinogramStore
             angles_rad = np.deg2rad(angles)
             L_out = params.cuvette_outer_mm
             L_in = params.cuvette_inner_mm
+            if params.save_bare_projection and profile.save_bare:
+                report(0.30, "Расчёт нескорректированной проекции...")
+                bare_sinograms = project_volume(
+                    slices, angles_rad, L_out=L_out, L_in=L_in, grid_res=grid_res,
+                    grid_span_mm=params.diameter_mm, container_mode=params.container_mode,
+                    cancelled_cb=cancelled, profile=profile,
+                )
 
-            sinograms = optimize_projections_sirt_volume(
+            store = SinogramStore(
+                nz, grid_res, num_frames,
+                directory=str(params.output_dir) if profile.disk_sinograms else None,
+            )
+            optimize_projections_sirt_volume(
                 slices,
                 angles_rad,
                 L_out=L_out,
@@ -448,6 +513,8 @@ class SlicingEngine:
                 container_mode=params.container_mode,
                 report_cb=report,
                 cancelled_cb=cancelled,
+                window_iterations=params.optimizer_iterations if params.dose_window else 0,
+                profile=profile, sink=store.add_block,
             )
         elif backend in {"auto", "vamtoolbox"}:
             report(0.30, "Optimizing projections with VAMToolbox CAL...")
@@ -457,34 +524,39 @@ class SlicingEngine:
                 # the same (z, detector, angle) convention used by the
                 # internal Radon path.
                 sinograms = optimize_sinograms(
-                    slices,
+                    float_slices(),
                     angles,
                     iterations=params.optimizer_iterations,
                     conda_executable=params.vam_conda_executable or None,
                     environment_name=params.vam_environment_name or DEFAULT_VAM_ENV_NAME,
                 )
+                backend_used = "vamtoolbox"
                 report(0.78, "VAMToolbox projection optimization complete.")
             except VAMToolboxUnavailable as exc:
                 if backend == "vamtoolbox":
                     raise ValidationError(str(exc)) from exc
                 report(0.30, "VAMToolbox is unavailable; using internal Radon backend.")
                 sinograms = _radon_sinograms(
-                    slices, angles, grid_res, num_frames, report, cancelled
+                    float_slices(), angles, grid_res, num_frames, report, cancelled
                 )
             except Exception:
                 if backend == "vamtoolbox":
                     raise
                 report(0.30, "VAMToolbox failed; using internal Radon backend.")
                 sinograms = _radon_sinograms(
-                    slices, angles, grid_res, num_frames, report, cancelled
+                    float_slices(), angles, grid_res, num_frames, report, cancelled
                 )
         else:
             report(0.30, "Calculating Radon projections...")
             sinograms = _radon_sinograms(
-                slices, angles, grid_res, num_frames, report, cancelled
+                float_slices(), angles, grid_res, num_frames, report, cancelled
             )
 
-        global_max = float(sinograms.max()) if sinograms.size else 1.0
+        if store is not None:
+            global_max = store.maximum
+        else:
+            assert sinograms is not None
+            global_max = float(sinograms.max()) if sinograms.size else 1.0
         if global_max <= 0:
             global_max = 1.0
 
@@ -494,13 +566,22 @@ class SlicingEngine:
         mid_z = nz // 2
         mid_frame_row = int(np.clip(round((nz - mid_z - 0.5) * target_h / nz - 0.5), 0, target_h - 1))
         exported_mid_sinograms = np.empty((grid_res, num_frames), dtype=np.float32)
+        bare_dir = os.path.join(out_dir, BARE_PROJECTION_DIR)
+        bare_max = 1.0
+        if bare_sinograms is not None:
+            os.makedirs(bare_dir, exist_ok=True)
+            bare_max = float(bare_sinograms.max()) or 1.0
 
         report(0.80, "Сохранение кадров...")
         save_step = max(1, num_frames // 20)
-        for i in range(num_frames):
+        def export_frame(i: int) -> None:
             if cancelled():
                 raise SliceCancelled()
-            frame = np.flipud(sinograms[:, :, i])
+            if store is not None:
+                frame = np.flipud(store.frame(i))
+            else:
+                assert sinograms is not None
+                frame = np.flipud(sinograms[:, :, i])
             normalized = _projection_gray(frame, global_max, resin)
             # Resize floating gray values before the single 8-bit quantization.
             resized = sk_resize(
@@ -509,10 +590,27 @@ class SlicingEngine:
             )
             output = np.rint(np.clip(resized, 0, 1) * 255).astype(np.uint8)
             exported_mid_sinograms[:, i] = _exported_detector_row(output, mid_frame_row, grid_res)
-            Image.fromarray(output).save(os.path.join(out_dir, f"frame_{i:04d}.png"))
-            if i % save_step == 0:
-                report(0.80 + 0.19 * (i / num_frames), f"Сохранение кадра {i}/{num_frames}...")
+            Image.fromarray(output).save(
+                os.path.join(out_dir, f"frame_{i:04d}.png"), compress_level=PNG_COMPRESS_LEVEL
+            )
+            if bare_sinograms is not None:
+                bare_gray = _projection_gray(np.flipud(bare_sinograms[:, :, i]), bare_max, resin)
+                bare_resized = sk_resize(
+                    bare_gray, (target_h, output_res), order=1, mode="edge",
+                    anti_aliasing=True, preserve_range=True,
+                )
+                Image.fromarray(np.rint(np.clip(bare_resized, 0, 1) * 255).astype(np.uint8)).save(
+                    os.path.join(bare_dir, f"frame_{i:04d}.png"), compress_level=PNG_COMPRESS_LEVEL
+                )
+        done = 0
+        with ThreadPoolExecutor(max_workers=profile.io_threads) as pool:
+            for _ in pool.map(export_frame, range(num_frames)):
+                if done % save_step == 0:
+                    report(0.80 + 0.19 * (done / num_frames), f"Сохранение кадра {done}/{num_frames}...")
+                done += 1
 
+        if store is not None:
+            store.close()
         if cancelled():
             raise SliceCancelled()
         # Reconstruct actual saved drive values, including user gain, cutoff,
@@ -524,7 +622,7 @@ class SlicingEngine:
                 L_out=params.cuvette_outer_mm, L_in=params.cuvette_inner_mm,
                 n_air=params.n_air, n_glass=params.n_glass, n_liquid=params.n_liquid,
                 n_resin=params.n_resin, alpha=params.alpha, container_mode=params.container_mode,
-                cancelled_cb=cancelled,
+                cancelled_cb=cancelled, lean_transpose=profile.lean_memory,
             )
             dose_mid = (adjoint @ exported_mid_sinograms.T.ravel()).reshape(grid_res, grid_res)
         else:
@@ -532,20 +630,35 @@ class SlicingEngine:
             # Optical exposure accumulates positive frames; a ramp-filtered CT
             # inversion would hide backprojection blur and is not delivered dose.
             dose_mid = iradon(exported_mid_sinograms, theta=angles, circle=True, filter_name=None)
-        target_mid = slices[:, :, mid_z]
+        target_mid = slices[:, :, mid_z].astype(np.float32) / np.float32(255.0)
         relative_dose, dose_rmse, dose_scale = _relative_dose_fit(dose_mid, target_mid)
         # Numeric artifacts allow the score to be reproduced independently.
         np.save(os.path.join(out_dir, "reconstruction_dose.npy"), dose_mid)
         np.save(os.path.join(out_dir, "reconstruction_target.npy"), target_mid)
         from matplotlib import colormaps
-        rgba = colormaps["viridis"](np.flipud(np.clip(relative_dose, 0, 1).T))
-        Image.fromarray(np.rint(rgba[:, :, :3] * 255).astype(np.uint8)).save(
-            os.path.join(out_dir, "reconstruction_preview.png")
-        )
+        from scipy.ndimage import binary_dilation, binary_erosion
+
+        # Show the dose against its own peak and outline the target on top, so
+        # it is obvious which pixels were supposed to be solid.
+        peak = float(dose_mid.max())
+        shown = np.clip(dose_mid / peak, 0, 1) if peak > 0 else np.zeros_like(dose_mid)
+        rgb = np.rint(colormaps["viridis"](np.flipud(shown.T))[:, :, :3] * 255).astype(np.uint8)
+        part = target_mid > 0.5
+        outline = part & ~binary_erosion(part)
+        rgb[np.flipud(outline.T)] = (255, 70, 70)
+        Image.fromarray(rgb).save(os.path.join(out_dir, "reconstruction_preview.png"))
+        # Window: weakest dose inside the part vs strongest dose well outside it.
+        core = binary_erosion(part, iterations=2)
+        far = ~binary_dilation(part, iterations=2)
+        part_min = float(dose_mid[core].min()) if core.any() else float("nan")
+        background_max = float(dose_mid[far].max()) if far.any() else float("nan")
+        contrast = part_min / background_max if background_max > 0 else float("nan")
         with open(os.path.join(out_dir, "dose_stats.txt"), "w", encoding="utf-8") as handle:
             handle.write(
                 f"rmse={dose_rmse:.8f}\nloss={np.linalg.norm(relative_dose-target_mid):.8f}\n"
                 f"relative_scale={dose_scale:.10g}\nsource=exported_png\nmodel=relative_linear_dose\n"
+                f"part_core_min={part_min:.8g}\nbackground_max={background_max:.8g}\n"
+                f"window_contrast={contrast:.6g}\n"
             )
 
         # Metadata становится видимым только после того, как все PNG уже
@@ -606,6 +719,10 @@ class SlicingEngine:
                     "num_frames": params.num_frames,
                     "fill_holes": params.fill_holes,
                     "projection_backend": params.projection_backend,
+                    "projection_backend_used": backend_used,
+                    "dose_window": params.dose_window and backend == "physical",
+                    "compute": profile.as_manifest(),
+                    "bare_projection_dir": BARE_PROJECTION_DIR if bare_sinograms is not None else "",
                     "optimizer_iterations": params.optimizer_iterations,
                     "raster_layers": nz,
                     "voxel_pitch_z_mm": pitch,

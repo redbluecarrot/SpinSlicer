@@ -347,6 +347,11 @@ def preflight_mesh(
         projection_backend=getattr(params, "projection_backend", "internal"),
         frame_height_px=target_height,
     )
+    if getattr(params, "projection_backend", "internal") == "physical" and getattr(
+        params, "save_bare_projection", False
+    ):
+        # The bare projection keeps a second float32 sinogram stack alive.
+        estimated_memory += grid * estimated_layers * frames * 4
     if estimated_memory > MAX_ESTIMATED_MEMORY_BYTES:
         errors.append(
             f"Estimated slicing memory is {estimated_memory / 1024**3:.2f} GiB; "

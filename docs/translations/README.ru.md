@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/spinslicer.svg" alt="SpinSlicer" width="160">
+  <img src="../../assets/spinslicer.svg" alt="SpinSlicer" width="160">
 </p>
 
 <h1 align="center">SpinSlicer</h1>
@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="README.md"><img src="assets/lang-en.svg" alt="English" height="36"></a>
-  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
-  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
-  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
+  <a href="../../README.md"><img src="../../assets/lang-en.svg" alt="English" height="36"></a>
+  <a href="README.ru.md"><img src="../../assets/lang-ru.svg" alt="Русский" height="36"></a>
+  <a href="README.es.md"><img src="../../assets/lang-es.svg" alt="Español" height="36"></a>
+  <a href="README.zh-CN.md"><img src="../../assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
 SpinSlicer — локальный исследовательский прототип для томографической объёмной
@@ -25,9 +25,9 @@ SpinSlicer — локальный исследовательский прото�
 ## Возможности
 
 Стабильная версия v0.3.2 включает **Slicer (3D)**, **Projector (Video)** и боковую панель **Settings**.
-См. [заметки о выпуске](docs/releases/v0.3.2.md).
+См. [заметки о выпуске](../releases/v0.3.2.md).
 
-- **Разреженная оптика с ограниченной памятью:** полноразмерные CSR-матрицы лучей и пакетная по Z оптимизация сохраняют сетку 256×256 и 360 углов. Условия измерений и потребление ресурсов приведены в [отчёте о численной валидации](docs/validation/physical-optics-v0.3.1.md).
+- **Разреженная оптика с ограниченной памятью:** полноразмерные CSR-матрицы лучей и пакетная по Z оптимизация сохраняют сетку 256×256 и 360 углов. Условия измерений и потребление ресурсов приведены в [отчёте о численной валидации](../validation/physical-optics-v0.3.1.md).
 - **Нативный параллельный SIRT на OpenMP:** многопоточный C++-бэкенд (`sirtsolver.dll` / `sirtsolver.so`) работает на любых обычных CPU без дорогих дискретных GPU.
 - **Удобное CAD-рабочее пространство:** широкий интерактивный 3D-вьюпорт слева и быстрые параметры справа.
 - **Чистый 3D-вьюпорт:** орбита трекбола, панорамирование и масштаб без лишних элементов.
@@ -76,7 +76,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python build_sirt.py
+python tools/build_sirt.py
 ```
 
 Запуск приложения:
@@ -111,12 +111,12 @@ Python API также сохраняет внутренний путь Радо�
 RMSE формы относительной дозы после подгонки общего масштаба. Это не
 калиброванный прогноз отверждения. Отражение Френеля, рассеяние, отклик
 материала и абсолютная доза оборудования требуют дополнительной калибровки.
-См. [модель и воспроизводимые проверки](docs/validation/physical-optics-v0.3.1.md).
+См. [модель и воспроизводимые проверки](../validation/physical-optics-v0.3.1.md).
 
 Квадратные кюветы используют фиксированное поле проекции, равное внешней
 диагонали, при каждом угле. Это значение и физический шаг пикселя записываются в
 манифест; калибровка проектора должна использовать именно его. См. [коррекцию
-квадратного поля и проверки покрытия углов](docs/validation/square-detector-field.md).
+квадратного поля и проверки покрытия углов](../validation/square-detector-field.md).
 
 ## Формат вывода
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import math
 import os
+import subprocess
+import sys
 import tempfile
 import threading
 import traceback
@@ -21,10 +23,13 @@ import trimesh
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from constants import (
+    DEFAULT_PROJECTOR_GAMMA,
     MAX_FRAME_DIMENSION,
     MAX_FRAME_TOTAL_PIXELS,
     MAX_NUM_FRAMES,
+    MAX_PROJECTOR_GAMMA,
     MAX_VIDEO_PREVIEW_BYTES,
+    MIN_PROJECTOR_GAMMA,
 )
 from frame_io import FrameRepository
 from slicing_engine import SliceCancelled, SliceParams, SlicingEngine
@@ -121,9 +126,11 @@ class VideoAssembleWorker(QThread):
     failed = pyqtSignal(str)
     cancelled = pyqtSignal()
 
-    def __init__(self, frames_dir: str, parent=None):
+    def __init__(self, frames_dir: str, parent=None, subdir: str = ""):
         super().__init__(parent)
         self.frames_dir = frames_dir
+        # Optional sub-folder of the run (e.g. the bare projection frames).
+        self.subdir = subdir
         self._cancel_event = threading.Event()
 
     def request_cancel(self) -> None:
@@ -141,6 +148,15 @@ class VideoAssembleWorker(QThread):
         try:
             frame_set = FrameRepository.validate(self.frames_dir)
             paths = frame_set.paths
+            if self.subdir:
+                folder = Path(frame_set.resolved_dir) / self.subdir
+                if folder.is_symlink() or not folder.is_dir():
+                    raise ValidationError(f"Папка кадров {self.subdir} не найдена.")
+                paths = sorted(str(item) for item in folder.glob("frame_*.png") if not item.is_symlink())
+                if len(paths) != frame_set.frame_count:
+                    raise ValidationError(
+                        f"В папке {self.subdir} {len(paths)} кадров, ожидалось {frame_set.frame_count}."
+                    )
 
             frames: List[np.ndarray] = []
             target_shape: Optional[Tuple[int, int]] = None  # (h, w) по первому кадру
@@ -196,20 +212,97 @@ class VideoAssembleWorker(QThread):
             self.failed.emit(f"{exc}\n{traceback.format_exc(limit=4)}")
 
 
+# H.264 quality for the exported MP4: near-lossless for smooth gray projections
+# while still playing on ordinary yuv420p decoders.
+H264_CRF = 10
+
+
+def _ffmpeg_executable() -> Optional[str]:
+    """ffmpeg with libx264 shipped by imageio-ffmpeg, or None when it is missing.
+
+    The pip builds of OpenCV cannot encode H.264, and their mp4v fallback is
+    lossy enough to wreck gray levels, so MP4 export goes through ffmpeg.
+    """
+    try:
+        import imageio_ffmpeg
+
+        return str(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:  # package or its bundled binary missing
+        return None
+
+
 class VideoExportWorker(QThread):
-    """Кодирует уже собранные в памяти кадры в MP4 через cv2.VideoWriter."""
+    """Кодирует уже собранные в памяти кадры в MP4 (H.264 через ffmpeg)."""
 
     progress = pyqtSignal(float, str)
     finished_ok = pyqtSignal(str)
     failed = pyqtSignal(str)
     cancelled = pyqtSignal()
 
-    def __init__(self, frames: List[np.ndarray], fps: float, out_path: str, parent=None):
+    def __init__(
+        self,
+        frames: List[np.ndarray],
+        fps: float,
+        out_path: str,
+        parent=None,
+        projector_gamma: float = DEFAULT_PROJECTOR_GAMMA,
+    ):
         super().__init__(parent)
         self.frames = frames
+        self.projector_gamma = projector_gamma
         self.fps = fps
         self.out_path = out_path
         self._cancel_event = threading.Event()
+
+    def _encode_frames(self, write, prepared) -> bool:
+        """Feed every prepared frame to ``write``; False when cancelled."""
+        total = len(self.frames)
+        report_step = max(1, total // 30)
+        for i, frame in enumerate(self.frames):
+            if self._cancel_event.is_set():
+                return False
+            write(prepared(frame))
+            if i % report_step == 0:
+                self.progress.emit(i / total, f"Кодирование кадра {i}/{total}...")
+        return True
+
+    def _encode_h264(self, ffmpeg: str, path: str, w: int, h: int, prepared) -> bool:
+        """Pipe raw gray frames into ffmpeg/libx264; False when cancelled."""
+        command = [
+            ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{w}x{h}", "-r", repr(float(self.fps)),
+            "-i", "-",
+            # yuv420p needs even sides; pad with black (no light) instead of resampling.
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            "-c:v", "libx264", "-preset", "medium", "-crf", str(H264_CRF), "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", "-f", "mp4", path,
+        ]
+        flags = 0x08000000 if sys.platform == "win32" else 0  # no console flash in the GUI
+        with tempfile.TemporaryFile() as errors:
+            process = subprocess.Popen(
+                command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errors,
+                creationflags=flags,
+            )
+            stdin = process.stdin
+            assert stdin is not None
+            try:
+                done = self._encode_frames(lambda frame: stdin.write(frame.tobytes()), prepared)
+                if not done:
+                    process.kill()
+                stdin.close()
+                process.wait()
+            except BrokenPipeError:
+                process.wait()  # ffmpeg quit early; its exit code carries the error
+                done = True
+            except BaseException:
+                process.kill()
+                process.wait()
+                raise
+            if done and process.returncode != 0:
+                errors.seek(0)
+                detail = errors.read().decode("utf-8", "replace").strip()
+                raise RuntimeError(f"ffmpeg не смог закодировать видео: {detail}")
+        return done
 
     def request_cancel(self) -> None:
         self._cancel_event.set()
@@ -254,7 +347,14 @@ class VideoExportWorker(QThread):
                 raise ValidationError("Память для экспорта видео превышает установленный лимит.")
 
             h, w = self.frames[0].shape[:2]
-            fourcc = getattr(cv2, "VideoWriter_fourcc")(*"mp4v")
+            # Gamma pre-compensation: a projector shows value v as (v/255)**gamma
+            # of its peak light, so encode (v/255)**(1/gamma) to get linear dose.
+            gamma = float(self.projector_gamma)
+            if not math.isfinite(gamma) or not MIN_PROJECTOR_GAMMA <= gamma <= MAX_PROJECTOR_GAMMA:
+                raise ValidationError(
+                    f"Projector gamma must be between {MIN_PROJECTOR_GAMMA:g} and {MAX_PROJECTOR_GAMMA:g}."
+                )
+            lut = np.rint(255.0 * (np.arange(256) / 255.0) ** (1.0 / gamma)).astype(np.uint8)
             output_path = Path(self.out_path)
             if not output_path.parent.is_dir():
                 raise ValueError("Папка для сохранения видео не существует.")
@@ -266,25 +366,33 @@ class VideoExportWorker(QThread):
                 prefix=".spinslicer-", suffix=".mp4", dir=str(output_path.parent)
             )
             os.close(fd)
-            writer = cv2.VideoWriter(temporary_path, fourcc, self.fps, (w, h), isColor=True)
-            if not writer.isOpened():
-                raise RuntimeError("Не удалось открыть VideoWriter — проверьте кодек/путь сохранения.")
 
-            total = len(self.frames)
-            report_step = max(1, total // 30)
-
-            for i, frame in enumerate(self.frames):
-                if self._cancel_event.is_set():
-                    self.cancelled.emit()
-                    return
+            def prepared(frame: np.ndarray) -> np.ndarray:
                 if frame.shape[:2] != (h, w):
                     frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
-                writer.write(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR))
-                if i % report_step == 0:
-                    self.progress.emit(i / total, f"Кодирование кадра {i}/{total}...")
+                return np.ascontiguousarray(cv2.LUT(frame, lut))
 
-            writer.release()
-            writer = None
+            ffmpeg = _ffmpeg_executable()
+            if ffmpeg is not None:
+                done = self._encode_h264(ffmpeg, temporary_path, w, h, prepared)
+            else:
+                self.progress.emit(0.0, "ffmpeg недоступен: MP4 пишется кодеком mp4v с потерей качества.")
+                writer = cv2.VideoWriter(
+                    temporary_path, getattr(cv2, "VideoWriter_fourcc")(*"mp4v"), self.fps, (w, h),
+                    isColor=True,
+                )
+                if not writer.isOpened():
+                    raise RuntimeError("Не удалось открыть VideoWriter — проверьте кодек/путь сохранения.")
+                mp4v = writer
+                done = self._encode_frames(
+                    lambda frame: mp4v.write(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)), prepared
+                )
+                writer.release()
+                writer = None
+            if not done:
+                self.cancelled.emit()
+                return
+
             os.replace(temporary_path, output_path)
             published = True
             self.finished_ok.emit(str(output_path))

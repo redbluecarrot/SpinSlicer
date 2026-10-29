@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/spinslicer.svg" alt="SpinSlicer" width="160">
+  <img src="../../assets/spinslicer.svg" alt="SpinSlicer" width="160">
 </p>
 
 <h1 align="center">SpinSlicer</h1>
@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="README.md"><img src="assets/lang-en.svg" alt="English" height="36"></a>
-  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
-  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
-  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
+  <a href="../../README.md"><img src="../../assets/lang-en.svg" alt="English" height="36"></a>
+  <a href="README.ru.md"><img src="../../assets/lang-ru.svg" alt="Русский" height="36"></a>
+  <a href="README.es.md"><img src="../../assets/lang-es.svg" alt="Español" height="36"></a>
+  <a href="README.zh-CN.md"><img src="../../assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
 SpinSlicer 是一个用于断层扫描式体积增材制造（VAM）的本地研究原型。它集成了
@@ -23,9 +23,9 @@ PyQt6 桌面界面、PyVista/VTK 视口、投影生成器和帧播放器。
 ## 功能
 
 稳定版 v0.3.2 包含 **Slicer (3D)**、**Projector (Video)** 和 **Settings** 侧边栏。
-详见[发布说明](docs/releases/v0.3.2.md)。
+详见[发布说明](../releases/v0.3.2.md)。
 
-- **稀疏、内存受限的光学计算：** 全分辨率 CSR 光线矩阵和按 Z 分批的优化保持 256×256 网格与 360 个角度。测量条件与资源占用记录在[数值验证报告](docs/validation/physical-optics-v0.3.1.md)中。
+- **稀疏、内存受限的光学计算：** 全分辨率 CSR 光线矩阵和按 Z 分批的优化保持 256×256 网格与 360 个角度。测量条件与资源占用记录在[数值验证报告](../validation/physical-optics-v0.3.1.md)中。
 - **原生 OpenMP 并行 SIRT 引擎：** 多线程 C++ 后端（`sirtsolver.dll` / `sirtsolver.so`）可在任何常规 CPU 上运行，无需昂贵的独立显卡。
 - **人体工学 CAD 工作区：** 左侧为宽大的交互式 3D 视口，右侧为快捷参数面板。
 - **简洁的 3D 视口：** 流畅的轨迹球旋转、平移和缩放，不被视图立方体遮挡。
@@ -74,7 +74,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python build_sirt.py
+python tools/build_sirt.py
 ```
 
 运行应用：
@@ -103,10 +103,10 @@ C++/OpenMP 加速同一计算。Python API 还保留了内部 Radon 路径和可
 
 预览会根据导出的 PNG 灰度值重建，并在拟合统一缩放后报告相对剂量形状 RMSE。
 这不是经过校准的固化预测。菲涅耳反射、散射、材料固化响应和硬件绝对剂量都需要额外校准。
-参见[模型与可复现检查](docs/validation/physical-optics-v0.3.1.md)。
+参见[模型与可复现检查](../validation/physical-optics-v0.3.1.md)。
 
 方形比色皿在每个角度都使用等于外部对角线的固定投影视场。该跨度和物理像素间距会记录在
-清单中；投影仪校准必须使用该跨度。参见[方形视场校正与角部覆盖检查](docs/validation/square-detector-field.md)。
+清单中；投影仪校准必须使用该跨度。参见[方形视场校正与角部覆盖检查](../validation/square-detector-field.md)。
 
 ## 输出格式
 

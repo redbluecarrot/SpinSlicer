@@ -219,6 +219,16 @@ QSplitter::handle:horizontal:hover {{
     image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='15 18 9 12 15 6'></polyline></svg>");
 }}
 
+QSplitter::handle:vertical {{
+    background-color: #333333;
+    height: 4px;
+    margin: 0;
+    border: none;
+}}
+QSplitter::handle:vertical:hover {{
+    background-color: #1E90FF;
+}}
+
 QDoubleSpinBox {{
     background-color: #2D2D2D;
     color: #E0E0E0;

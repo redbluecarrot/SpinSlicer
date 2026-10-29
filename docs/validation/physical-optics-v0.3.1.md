@@ -85,7 +85,7 @@ model-based measurements, not experimental printing accuracy.
 Run from the project root, using a separate process for each memory benchmark:
 
 ```bash
-python build_sirt.py
+python tools/build_sirt.py
 python -m pytest tests/test_physical_optics.py tests/test_physical_export.py
 python tools/benchmark_optics.py --layers 256
 python tools/validate_optics.py --baseline-ref v0.3.0
