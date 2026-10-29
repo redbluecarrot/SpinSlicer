@@ -501,8 +501,6 @@ def optimize_projections_sirt_volume(
     warned = False
     wanted_gpu = bool(profile and profile.device == "gpu")
     try:
-        if report_cb:
-            report_cb(0.35, f"SIRT: {label}")
         row_sums = np.asarray(a.sum(axis=1)).ravel()
         col_sums = np.asarray(at.sum(axis=1)).ravel()
         ray_norm = np.divide(1, row_sums, out=np.zeros_like(row_sums), where=row_sums > 0)

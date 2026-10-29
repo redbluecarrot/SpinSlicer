@@ -195,9 +195,6 @@ class CALSlicerMainWindow(QMainWindow):
         bar = QStatusBar()
         self.setStatusBar(bar)
 
-        self._status_label = QLabel("Готово к работе.")
-        bar.addWidget(self._status_label, 1)
-
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 1000)
         self._progress_bar.setValue(0)
@@ -246,9 +243,7 @@ class CALSlicerMainWindow(QMainWindow):
     # =======================================================================
     def _set_progress(self, frac: float, message: str) -> None:
         self._progress_bar.setValue(int(max(0.0, min(1.0, frac)) * 1000))
-        self._status_label.setText(tr(message))
-        # The status bar already shows every update. The log gets one line when a
-        # phase starts and then at most one per 10 % of progress, instead of a
+        # The log gets one line when a phase starts and then at most one per 10 % of progress, instead of a
         # line for every iteration of every layer block.
         key = re.sub(r"\d+", "#", message)
         advanced = frac - self._last_logged_fraction >= 0.10
