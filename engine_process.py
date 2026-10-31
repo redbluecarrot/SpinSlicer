@@ -10,7 +10,7 @@ priority, and the UI stays fluid.
 
 Protocol: the parent pickles ``(mesh, params, manifest_context, calibration)``
 into a job file and starts ``python engine_process.py JOB CANCEL_FLAG`` (or the
-frozen app with ``--engine-worker``). The child prints one JSON line per event:
+frozen app with ``--engine-worker``). The child prints one ASCII JSON line per event:
 ``{"p": frac, "m": msg}``, then ``{"done": [n, out_dir]}``, ``{"cancelled": 1}``
 or ``{"error": text}``. Creating the CANCEL_FLAG file asks it to stop.
 
@@ -56,7 +56,9 @@ def run_job(job_path: str, cancel_path: str) -> int:
     sys.stdout = sys.stderr if sys.stderr is not None else open(os.devnull, "w")      # stray prints from libraries must not mix with the protocol
 
     def emit(payload: dict) -> None:
-        out.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        # ASCII-only JSON: the pipe uses the console code page (cp1251 on a
+        # Russian Windows), while the parent decodes UTF-8.
+        out.write(json.dumps(payload, ensure_ascii=True) + "\n")
         out.flush()
 
     last = [0.0, -1.0]

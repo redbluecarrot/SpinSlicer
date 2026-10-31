@@ -161,6 +161,7 @@ class GenerationWorker(QThread):
                 flags = 0x08000000 | 0x00004000   # no console window, below-normal priority
             process = subprocess.Popen(self._child_command(job, self._cancel_flag), stdout=subprocess.PIPE,
                                        stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                       errors="replace",  # native libraries may print to fd 1
                                        creationflags=flags, bufsize=1)
             assert process.stdout is not None
             outcome: dict[str, Any] = {}
