@@ -110,6 +110,14 @@ they will cure, and plays them on the projector for exactly the planned exposure
   <li><strong>Projector output, ready to print.</strong> Frames placed 1:1 on the projector screen, one frame row per layer, timed by the clock, and stopped automatically when the planned dose is delivered.</li>
 </ul>
 
+<h2>Engine results</h2>
+<p>The FastCAL engine was benchmarked against OSMO, PM, BCLP and classic CAL (filtered back-projection),
+each planning the same jobs and all judged on a twice finer grid with an exact ray-traced operator, from
+8-bit frames as a projector shows them. At grid 128 FastCAL had the best IoU and surface error on every
+test part; BCLP and PM kept a lead of at most 0.005 in worst-case robustness on some parts. On a 2-core
+2.1 GHz machine a Benchy takes about 34 s at grid 256. Details and all numbers:
+<a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/engine-judge-2026-10-31.md">engine judge report</a>.</p>
+
 <h2>Who it is for</h2>
 <p>Researchers working on computed axial lithography and volumetric additive manufacturing, and
 makers building their own CAL / volumetric 3D printer. Every setting shows what it physically

@@ -28,6 +28,12 @@
 - Print plan and exposure calibration from resin and projector data
 - Projector output placed 1:1, one frame row per layer, timed by the clock, automatic stop
 
+## Engine results (measured, see the engine comparison link)
+
+- FastCAL was benchmarked against OSMO, PM, BCLP and classic CAL (FBP) on the same jobs, judged on a 2x finer grid with an exact ray-traced operator from 8-bit projector frames
+- At grid 128 FastCAL had the best IoU and surface error on every test part; BCLP/PM kept a lead of at most 0.005 in worst-case robustness on some parts
+- Speed: a Benchy takes about 34 s at grid 256 on a 2-core 2.1 GHz CPU, no GPU needed
+
 ## Related software
 
 - VAMToolbox (Python library for VAM projection optimization): https://github.com/computed-axial-lithography/VAMToolbox
