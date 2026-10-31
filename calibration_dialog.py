@@ -56,12 +56,12 @@ class CalibrationDialog(QDialog):
 
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("Самый короткий затвердевший столбик:")))
-        self.result = QComboBox()
+        self.result_choice = QComboBox()
         for i in range(PILLARS):
-            self.result.addItem(f"{i + 1}  ({heights[i]:.0f} {tr('мм')})", i + 1)
-        self.result.addItem(tr("Ни один не затвердел"), 0)
-        self.result.setCurrentIndex(PILLARS // 2)
-        row.addWidget(self.result, 1)
+            self.result_choice.addItem(f"{i + 1}  ({heights[i]:.0f} {tr('мм')})", i + 1)
+        self.result_choice.addItem(tr("Ни один не затвердел"), 0)
+        self.result_choice.setCurrentIndex(PILLARS // 2)
+        row.addWidget(self.result_choice, 1)
         root.addLayout(row)
 
         self.apply_btn = QPushButton(tr("Применить"))
@@ -88,7 +88,7 @@ class CalibrationDialog(QDialog):
 
     def factor(self) -> float:
         assert self._plan is not None
-        choice = int(self.result.currentData())
+        choice = int(self.result_choice.currentData())
         return gel_dose_factor(self._plan, choice if choice > 0 else None)
 
     def _apply(self) -> None:

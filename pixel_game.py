@@ -510,7 +510,7 @@ class Photon(Game):
                 h, w = f.shape
                 x = int(np.clip(w * (0.5 + 0.34 * math.sin(i * 0.33)), 0, w - 1))
                 col = f[:, max(0, x - 2):x + 3].astype(np.float32).mean(axis=1)
-                col = np.interp(np.linspace(0, h - 1, rows), np.arange(h), col)
+                col = np.interp(np.linspace(0, h - 1, rows), np.arange(h), col).astype(np.float32)
                 peak = float(col.max())
                 if peak <= 0:
                     continue

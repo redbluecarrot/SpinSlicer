@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
+from typing import Optional, cast
 
 import numpy as np
 import trimesh
@@ -545,7 +545,7 @@ class SlicerTab(QWidget):
             self.virtual_btn.setEnabled(False)
             return
         try:
-            mesh = trimesh.load(path, force="mesh")
+            mesh = cast(trimesh.Trimesh, trimesh.load(path, force="mesh"))
             self._viewport.show_virtual_print(mesh)
         except Exception as exc:  # display only: never break the run
             self.logMessage.emit(f"virtual_print: {exc}")

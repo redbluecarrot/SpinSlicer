@@ -350,16 +350,16 @@ class _ValueBox(QDoubleSpinBox):
         text = f"{value:.{self.decimals()}f}"
         return text.replace(".", ",") if language() == "ru" else text
 
-    def valueFromText(self, text: str) -> float:  # noqa: N802
-        cleaned = text.replace(self.suffix(), "").replace(",", ".").strip()
+    def valueFromText(self, text: str | None) -> float:  # noqa: N802
+        cleaned = (text or "").replace(self.suffix(), "").replace(",", ".").strip()
         try:
             return float(cleaned)
         except ValueError:
             return self.value()
 
-    def validate(self, text: str, pos: int) -> tuple[Any, str, int]:
+    def validate(self, text: str | None, pos: int) -> tuple[Any, str, int]:
         from PyQt6.QtGui import QValidator
-        return QValidator.State.Acceptable, text, pos
+        return QValidator.State.Acceptable, text or "", pos
 
 
 class Stepper(QWidget):

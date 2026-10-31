@@ -1170,7 +1170,8 @@ class Viewport3D(QWidget):
     def _on_boil_tick(self) -> None:
         if not self.isVisible() or not self._sketch_ok:
             return
-        if self.window().isMinimized() or time.monotonic() > self._boil_until:
+        window = self.window()
+        if (window is not None and window.isMinimized()) or time.monotonic() > self._boil_until:
             self._boil_timer.stop()      # hold the last frame; the next change wakes it
             return
         self._sketch.tick()

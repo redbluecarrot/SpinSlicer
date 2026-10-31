@@ -41,7 +41,7 @@ BASE_FPS = 24.0
 def _qimage(frame: np.ndarray) -> QImage:
     frame = np.ascontiguousarray(frame, dtype=np.uint8)
     h, w = frame.shape[:2]
-    return QImage(frame.data, w, h, w, QImage.Format.Format_Grayscale8).copy()
+    return QImage(frame.tobytes(), w, h, w, QImage.Format.Format_Grayscale8).copy()
 
 
 def alignment_pattern(geometry: CanvasGeometry, vial_px: int, height_px: int) -> np.ndarray:
@@ -292,7 +292,7 @@ class DoseCard(QWidget):
             rgb[yy[dashed], xx[dashed]] = np.array(QColor(p.sketch).getRgb()[:3], dtype=np.float32)
             img8 = np.ascontiguousarray(np.clip(rgb, 0, 255).astype(np.uint8))
             h, w = img8.shape[:2]
-            self._image = QImage(img8.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
+            self._image = QImage(img8.tobytes(), w, h, 3 * w, QImage.Format.Format_RGB888).copy()
         self._refresh_text()
         self.map.update()
 
