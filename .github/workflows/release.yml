@@ -97,6 +97,16 @@ jobs:
           $report = Get-Content build/self-check/self-check.json -Raw | ConvertFrom-Json
           if (-not $report.ok) { throw 'Packaged application check did not pass' }
 
+      - name: Show hang traceback (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path build/self-check/hang-traceback.txt) {
+            Get-Content build/self-check/hang-traceback.txt
+          } else {
+            Write-Output 'No hang traceback was written.'
+          }
+
       - name: Check packaged Linux application
         if: runner.os == 'Linux'
         timeout-minutes: 2

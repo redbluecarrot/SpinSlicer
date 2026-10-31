@@ -1,6 +1,7 @@
 """Headless smoke check of the source app and the actual release executable."""
 from __future__ import annotations
 
+import faulthandler
 import json
 import math
 import os
@@ -19,7 +20,10 @@ from workers import GenerationWorker, VideoExportWorker
 
 def check_release(app, window, output: Path) -> int:
     output.mkdir(parents=True, exist_ok=True)
-    report = {"ok": False, "tabs": [type(window.tabs.widget(i)).__name__ for i in range(window.tabs.count())],
+    # If the check hangs, a watchdog thread writes where every thread is stuck and exits.
+    hang_file = open(output / "hang-traceback.txt", "w", encoding="utf-8")
+    faulthandler.dump_traceback_later(60, exit=True, file=hang_file)
+    report ={"ok": False, "tabs": [type(window.tabs.widget(i)).__name__ for i in range(window.tabs.count())],
               "simulation_loaded": any(name in sys.modules for name in
                                        ("simulator_tab", "simulation_workbench_tab", "guided_simulation_tab", "printer_search"))}
     report["native_backend"] = _load_cpp_backend() is not None
@@ -28,6 +32,7 @@ def check_release(app, window, output: Path) -> int:
     def finish(error=None):
         if error:
             report["error"] = str(error)
+        faulthandler.cancel_dump_traceback_later()
         report["shutdown_ok"] = window._job_controller.shutdown()
         report["ok"] = (not error and report["shutdown_ok"] and not report["simulation_loaded"]
                         and report["tabs"] == ["SlicerTab", "ProjectorTab", "ProcessSettingsPanel"]
