@@ -584,6 +584,15 @@ class CALSlicerMainWindow(QMainWindow):
 
 
 def main() -> None:
+    if "--self-check" in sys.argv:
+        # Armed before any window is built: if the packaged check hangs anywhere,
+        # a watchdog thread writes where every thread is stuck and exits.
+        import faulthandler
+
+        report_dir = Path(sys.argv[sys.argv.index("--self-check") + 1])
+        report_dir.mkdir(parents=True, exist_ok=True)
+        hang_file = open(report_dir / "hang-traceback.txt", "w", encoding="utf-8")
+        faulthandler.dump_traceback_later(60, exit=True, file=hang_file)
     app = QApplication(sys.argv)
     app.setApplicationName(APP_TITLE)
     # Matches spinslicer.desktop, so the taskbar (Wayland) shows the app icon.

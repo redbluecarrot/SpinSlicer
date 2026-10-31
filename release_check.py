@@ -20,10 +20,7 @@ from workers import GenerationWorker, VideoExportWorker
 
 def check_release(app, window, output: Path) -> int:
     output.mkdir(parents=True, exist_ok=True)
-    # If the check hangs, a watchdog thread writes where every thread is stuck and exits.
-    hang_file = open(output / "hang-traceback.txt", "w", encoding="utf-8")
-    faulthandler.dump_traceback_later(60, exit=True, file=hang_file)
-    report ={"ok": False, "tabs": [type(window.tabs.widget(i)).__name__ for i in range(window.tabs.count())],
+    report = {"ok": False, "tabs": [type(window.tabs.widget(i)).__name__ for i in range(window.tabs.count())],
               "simulation_loaded": any(name in sys.modules for name in
                                        ("simulator_tab", "simulation_workbench_tab", "guided_simulation_tab", "printer_search"))}
     report["native_backend"] = _load_cpp_backend() is not None
