@@ -29,17 +29,17 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from constants import APP_ORG, APP_TITLE, FILL_FRACTION, VAT_HEIGHT_RATIO
-from i18n import num, tr
-from job_controller import JobController
-from model_node import ModelNode
-from print_plan import format_print_plan
-from slicing_engine import ResinSettings, SliceParams
-from ui_kit import EmptyScene
-from ui_panels import ProcessSettingsPanel
-from validation import format_preflight_report, preflight_mesh
-from viewport import Viewport3D
-from workers import GenerationWorker, LoadMeshWorker
+from spinslicer.constants import APP_ORG, APP_TITLE, FILL_FRACTION, VAT_HEIGHT_RATIO
+from spinslicer.i18n import num, tr
+from spinslicer.job_controller import JobController
+from spinslicer.model_node import ModelNode
+from spinslicer.print_plan import format_print_plan
+from spinslicer.slicing_engine import ResinSettings, SliceParams
+from spinslicer.ui_kit import EmptyScene
+from spinslicer.ui_panels import ProcessSettingsPanel
+from spinslicer.validation import format_preflight_report, preflight_mesh
+from spinslicer.viewport import Viewport3D
+from spinslicer.workers import GenerationWorker, LoadMeshWorker
 
 
 def open_local_directory(target: str) -> bool:
@@ -198,7 +198,7 @@ class SlicerTab(QWidget):
         self._load_worker.start()
 
     def load_test_nut(self) -> None:
-        from threaded_nut import create_default_threaded_nut
+        from spinslicer.threaded_nut import create_default_threaded_nut
         self.progress.emit(0.3, "Создаю тестовую гайку M20...")
         mesh = create_default_threaded_nut()
         folder = os.path.join(os.path.expanduser("~"), "SpinSlicer")
@@ -445,7 +445,7 @@ class SlicerTab(QWidget):
         if self._model_node.source_path:
             base_dir = os.path.dirname(os.path.abspath(self._model_node.source_path))
         else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         params = self._slice_params(os.path.join(base_dir, "output_frames"))
         diameter = params.diameter_mm
         # Генерация всегда использует полностью трансформированную копию —
@@ -503,15 +503,15 @@ class SlicerTab(QWidget):
     def _on_calibrate_clicked(self) -> None:
         from PyQt6.QtCore import QSettings
 
-        from calibration_dialog import CalibrationDialog
+        from spinslicer.calibration_dialog import CalibrationDialog
         panel = self._process_panel
         dialog = CalibrationDialog(QSettings(APP_ORG, APP_TITLE), self._start_calibration,
                                    panel.gel_dose.value, panel.gel_dose.setValue, self)
         dialog.exec()
 
     def _start_calibration(self) -> None:
-        from calibration import Ladder
-        from optics import fastcal
+        from spinslicer.calibration import Ladder
+        from spinslicer.optics import fastcal
         if self._gen_worker is not None and self._gen_worker.isRunning():
             return
         out_dir = os.path.join(os.path.expanduser("~"), "SpinSlicer", "calibration")
@@ -542,7 +542,7 @@ class SlicerTab(QWidget):
         if not checked:
             self._viewport.clear_virtual_print()
             return
-        import virtual_print
+        from spinslicer import virtual_print
         path = virtual_print.mesh_path(self._last_output_dir) if self._last_output_dir else None
         if path is None:
             self.virtual_btn.setChecked(False)
@@ -566,7 +566,7 @@ class SlicerTab(QWidget):
         if getattr(self, "_calibration_run", False):
             from PyQt6.QtCore import QSettings
 
-            from calibration_dialog import SETTINGS_KEY
+            from spinslicer.calibration_dialog import SETTINGS_KEY
             QSettings(APP_ORG, APP_TITLE).setValue(SETTINGS_KEY, os.path.join(out_dir, "print_plan.json"))
         self.progress.emit(1.0, "Готово!")
         self.logMessage.emit(f"{tr('Сохранено')} {num_frames} {tr('кадров в:')} {out_dir}")
@@ -581,7 +581,7 @@ class SlicerTab(QWidget):
             for line in plan_text.splitlines():
                 self.logMessage.emit(line)
         self.outputGenerated.emit(out_dir)
-        import virtual_print
+        from spinslicer import virtual_print
         has_virtual = virtual_print.mesh_path(out_dir) is not None
         self.virtual_btn.setEnabled(has_virtual)
         plan = None

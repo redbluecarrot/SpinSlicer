@@ -1,7 +1,7 @@
 """Projector row blur: model and pre-compensation."""
 import numpy as np
 
-from optics.presharpen import blur_rows, blurred_rows_getter, presharpen_rows, row_sigma
+from spinslicer.optics.presharpen import blur_rows, blurred_rows_getter, presharpen_rows, row_sigma
 
 
 def _frames() -> np.ndarray:

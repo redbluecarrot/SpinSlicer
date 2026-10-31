@@ -3,8 +3,8 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from frame_io import FrameRepository, load_manifest, sha256_file
-from slicing_engine import ResinSettings, SliceParams, SlicingEngine
+from spinslicer.frame_io import FrameRepository, load_manifest, sha256_file
+from spinslicer.slicing_engine import ResinSettings, SliceParams, SlicingEngine
 
 
 def test_repeated_generation_keeps_completed_runs_and_manifest(tmp_path) -> None:

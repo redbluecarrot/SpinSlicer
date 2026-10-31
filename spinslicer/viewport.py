@@ -35,8 +35,8 @@ from PyQt6.QtCore import QEasingCurve, QEvent, QRect, Qt, QTimer, QVariantAnimat
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 
-import theme
-from constants import (
+from spinslicer import theme
+from spinslicer.constants import (
     MAX_VIEWPORT_TRIANGLES,
     VAT_HEIGHT_RATIO,
     VIEWPORT_ORIENTATION_AXIS_CONE_RADIUS,
@@ -50,7 +50,7 @@ from constants import (
     VIEWPORT_ORIENTATION_VIEWPORT,
     VIEWPORT_ORIENTATION_WIDGET_SIZE,
 )
-from sketch_scene import SceneParams, SketchScene, apply_dither, scene_bounds
+from spinslicer.sketch_scene import SceneParams, SketchScene, apply_dither, scene_bounds
 
 # How long the drawing keeps "boiling" after the last change before it holds still.
 BOIL_SETTLE_S = 4.0

@@ -17,8 +17,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from calibration import PILLARS, Ladder, gel_dose_factor
-from i18n import tr
+from spinslicer.calibration import PILLARS, Ladder, gel_dose_factor
+from spinslicer.i18n import tr
 
 SETTINGS_KEY = "calibration/last_plan"
 

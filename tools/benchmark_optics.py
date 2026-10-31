@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from optics.optimization import build_system_matrix
+from spinslicer.optics.optimization import build_system_matrix
 
 
 def peak_rss_bytes() -> int:
@@ -62,7 +62,10 @@ if __name__ == "__main__":
         ), "matrix_process_peak_rss_bytes": peak_rss_bytes(),
     }
     if arguments.layers:
-        from optics.optimization import _load_cpp_backend, optimize_projections_sirt_volume
+        from spinslicer.optics.optimization import (
+            _load_cpp_backend,
+            optimize_projections_sirt_volume,
+        )
         coordinates = (np.arange(256) + 0.5) * 60 / 256 - 30
         xx, yy = np.meshgrid(coordinates, coordinates, indexing="ij")
         ring = ((xx-3)**2 + (yy+2)**2 < 14**2) & ((xx-3)**2 + (yy+2)**2 > 5**2)

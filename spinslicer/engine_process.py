@@ -9,7 +9,7 @@ stalls up to 6 s. A child process has its own interpreter, runs at a lower
 priority, and the UI stays fluid.
 
 Protocol: the parent pickles ``(mesh, params, manifest_context, calibration)``
-into a job file and starts ``python engine_process.py JOB CANCEL_FLAG`` (or the
+into a job file and starts ``python spinslicer/engine_process.py JOB CANCEL_FLAG`` (or the
 frozen app with ``--engine-worker``). The child prints one ASCII JSON line per event:
 ``{"p": frac, "m": msg}``, then ``{"done": [n, out_dir]}``, ``{"cancelled": 1}``
 or ``{"error": text}``. Creating the CANCEL_FLAG file asks it to stop.
@@ -49,9 +49,10 @@ def _single_threaded_blas() -> None:
 def run_job(job_path: str, cancel_path: str) -> int:
     _single_threaded_blas()
     _lower_priority()
-    here = os.path.dirname(os.path.abspath(__file__))
-    if here not in sys.path:
-        sys.path.insert(0, here)
+    # Run as a script, only this folder is on the path: the project root makes `spinslicer` importable.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in sys.path:
+        sys.path.insert(0, root)
     out = sys.stdout if sys.stdout is not None else os.fdopen(1, "w", encoding="utf-8")
     sys.stdout = sys.stderr if sys.stderr is not None else open(os.devnull, "w")      # stray prints from libraries must not mix with the protocol
 
@@ -80,7 +81,7 @@ def run_job(job_path: str, cancel_path: str) -> int:
         return bool(checked[1])
 
     try:
-        from slicing_engine import SliceCancelled, SlicingEngine
+        from spinslicer.slicing_engine import SliceCancelled, SlicingEngine
 
         with open(job_path, "rb") as handle:
             mesh, params, context, calibration = pickle.load(handle)

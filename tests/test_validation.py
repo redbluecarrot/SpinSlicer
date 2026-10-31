@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from slicing_engine import ResinSettings, SliceParams
-from validation import (
+from spinslicer.slicing_engine import ResinSettings, SliceParams
+from spinslicer.validation import (
     ValidationError,
     estimate_layer_count,
     estimate_slicing_memory,
@@ -31,7 +31,7 @@ def test_physical_memory_budget_counts_sparse_matrices() -> None:
 
 
 def test_fastcal_memory_budget_allows_fine_grids() -> None:
-    from constants import MAX_ESTIMATED_MEMORY_BYTES
+    from spinslicer.constants import MAX_ESTIMATED_MEMORY_BYTES
     sirt = estimate_slicing_memory(384, 432, 360, output_res=720, projection_backend="physical")
     fast = estimate_slicing_memory(384, 432, 360, output_res=720, projection_backend="physical",
                                    fastcal=True)
@@ -127,8 +127,7 @@ def test_preflight_rejects_unreasonable_render_dimensions() -> None:
 
 
 def test_stl_file_size_budget_is_checked_before_parsing(monkeypatch, tmp_path) -> None:
-    import validation
-
+    from spinslicer import validation
     path = tmp_path / "too-large.stl"
     path.write_bytes(b"123")
     monkeypatch.setattr(validation, "MAX_STL_FILE_BYTES", 2)
@@ -138,8 +137,7 @@ def test_stl_file_size_budget_is_checked_before_parsing(monkeypatch, tmp_path) -
 
 
 def test_binary_stl_triangle_budget_is_checked_from_header(monkeypatch, tmp_path) -> None:
-    import validation
-
+    from spinslicer import validation
     path = tmp_path / "too-many.stl"
     triangle_count = 2
     payload = bytearray(84 + 50 * triangle_count)

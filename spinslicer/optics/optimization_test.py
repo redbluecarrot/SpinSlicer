@@ -1,6 +1,6 @@
 import numpy as np
 
-from optics.optimization import optimize_projections_sirt_volume
+from spinslicer.optics.optimization import optimize_projections_sirt_volume
 
 grid_res = 112
 nz = 5

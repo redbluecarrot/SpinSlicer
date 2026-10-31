@@ -29,11 +29,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-import theme
-from i18n import tr
-from job_controller import JobController
-from projector_canvas import CanvasGeometry, compose
-from workers import VideoAssembleWorker, VideoExportWorker, calibration_ramp
+from spinslicer import theme
+from spinslicer.i18n import tr
+from spinslicer.job_controller import JobController
+from spinslicer.projector_canvas import CanvasGeometry, compose
+from spinslicer.workers import VideoAssembleWorker, VideoExportWorker, calibration_ramp
 
 BASE_FPS = 24.0
 
@@ -612,7 +612,7 @@ class ProjectorTab(QWidget):
         self._frames = frames
         self._true_size = None
         try:
-            from frame_io import FrameRepository
+            from spinslicer.frame_io import FrameRepository
             frame_set = FrameRepository.validate(self._output_dir or "")
             self._true_size = (int(frame_set.width), int(frame_set.height))
         except Exception:
@@ -685,7 +685,7 @@ class ProjectorTab(QWidget):
         """The saved PNG frames at full resolution when available (the preview may be downscaled)."""
         if self._output_dir:
             try:
-                from frame_io import FrameRepository
+                from spinslicer.frame_io import FrameRepository
                 return list(FrameRepository.validate(self._output_dir).paths)
             except Exception:
                 pass

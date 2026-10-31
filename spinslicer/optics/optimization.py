@@ -17,7 +17,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.fft import fft, ifft
 
-from constants import MAX_ESTIMATED_MEMORY_BYTES
+from spinslicer.constants import MAX_ESTIMATED_MEMORY_BYTES
 
 from .geometry import detector_span_mm
 from .ray_tracing import intersect_circle, trace_cuvette, trace_immersion_vial
@@ -32,7 +32,7 @@ DENSE_WORKSPACE_BYTES = 32 * 1024**2
 
 def _check_cancelled(callback):
     if callback and callback():
-        from slicing_engine import SliceCancelled
+        from spinslicer.slicing_engine import SliceCancelled
         raise SliceCancelled()
 
 
@@ -184,7 +184,7 @@ def _load_cpp_backend():
     if _lib_loaded:
         return _sirt_lib
     _lib_loaded = True
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     bundle = getattr(sys, "_MEIPASS", None)
     directories = [os.path.join(base, "cpp_backend"), base]
     if bundle:

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from optics import optimization as optics
-from optics.ray_tracing import refract_rays, trace_cuvette, trace_immersion_vial
+from spinslicer.optics import optimization as optics
+from spinslicer.optics.ray_tracing import refract_rays, trace_cuvette, trace_immersion_vial
 
 
 def matrix(angles=(0.0,), alpha=0.0, mode=0, n_resin=1.0):
@@ -186,7 +186,7 @@ def test_sparse_feature_is_not_discarded_or_overdriven_by_percentile_normalizati
 
 
 def test_cancelled_cache_hit_does_not_start_work():
-    from slicing_engine import SliceCancelled
+    from spinslicer.slicing_engine import SliceCancelled
     matrix()
     with pytest.raises(SliceCancelled):
         optics.build_system_matrix(np.array([0.0]), 33, 32, 50., 50., 46., cancelled_cb=lambda: True)

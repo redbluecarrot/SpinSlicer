@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from frame_io import load_manifest
-from slicing_engine import ResinSettings, SliceParams, SlicingEngine
-from threaded_nut import ThreadedNutParameters, create_threaded_nut
-from vam_backend import normalize_sinogram_shape
+from spinslicer.frame_io import load_manifest
+from spinslicer.slicing_engine import ResinSettings, SliceParams, SlicingEngine
+from spinslicer.threaded_nut import ThreadedNutParameters, create_threaded_nut
+from spinslicer.vam_backend import normalize_sinogram_shape
 
 
 def test_threaded_nut_is_closed_and_centered() -> None:

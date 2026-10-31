@@ -5,9 +5,9 @@ import os
 import numpy as np
 import pytest
 
-from calibration import PILLARS, REFERENCE, Ladder, gel_dose_factor
-from print_plan import format_print_plan
-from slicing_engine import ResinSettings, SliceParams, SlicingEngine
+from spinslicer.calibration import PILLARS, REFERENCE, Ladder, gel_dose_factor
+from spinslicer.print_plan import format_print_plan
+from spinslicer.slicing_engine import ResinSettings, SliceParams, SlicingEngine
 
 
 def test_factor_sits_between_the_last_liquid_and_first_solid_pillar():

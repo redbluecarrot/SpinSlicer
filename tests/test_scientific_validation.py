@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from metrics import (
+from spinslicer.metrics import (
     ValidationReport,
     binarize_dose,
     compute_dice,
@@ -21,7 +21,7 @@ from metrics import (
     compute_validation_report,
     voxelize_mesh,
 )
-from synthetic_shapes import create_cube, create_cylinder, create_sphere
+from spinslicer.synthetic_shapes import create_cube, create_cylinder, create_sphere
 
 # -----------------------------------------------------------------------
 # Синтетические формы: smoke-тесты

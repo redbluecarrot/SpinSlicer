@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 import trimesh
 
-import virtual_print
-from print_plan import compute_print_plan, format_print_plan
-from slicing_engine import ResinSettings, SliceParams, SlicingEngine
+from spinslicer import virtual_print
+from spinslicer.print_plan import compute_print_plan, format_print_plan
+from spinslicer.slicing_engine import ResinSettings, SliceParams, SlicingEngine
 
 
 def _ball(n: int = 40, radius: float = 12.0) -> tuple[np.ndarray, np.ndarray]:

@@ -7,7 +7,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from sketch_scene import (  # noqa: E402
+from spinslicer.sketch_scene import (  # noqa: E402
     SceneParams,
     _beam_profile,
     bath_lines,
@@ -64,7 +64,7 @@ def test_panel_settings_reach_the_engine(tmp_path) -> None:
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
     QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
     QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope, str(tmp_path))
-    from ui_panels import ProcessSettingsPanel
+    from spinslicer.ui_panels import ProcessSettingsPanel
 
     panel = ProcessSettingsPanel()
     panel.placement.setValue(1)

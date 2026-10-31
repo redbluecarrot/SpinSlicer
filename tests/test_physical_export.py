@@ -6,9 +6,9 @@ import pytest
 import trimesh
 from PIL import Image
 
-from frame_io import FrameRepository, load_manifest
-from optics.optimization import build_system_matrix
-from slicing_engine import (
+from spinslicer.frame_io import FrameRepository, load_manifest
+from spinslicer.optics.optimization import build_system_matrix
+from spinslicer.slicing_engine import (
     ResinSettings,
     SliceParams,
     SlicingEngine,

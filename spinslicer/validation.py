@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from constants import (
+from spinslicer.constants import (
     ANTI_ALIAS_FACTOR,
     MAX_DIAMETER_MM,
     MAX_ESTIMATED_MEMORY_BYTES,
@@ -31,7 +31,7 @@ from constants import (
     MIN_NUM_FRAMES,
     MIN_OUTPUT_RESOLUTION,
 )
-from optics.geometry import detector_span_mm
+from spinslicer.optics.geometry import detector_span_mm
 
 
 class ValidationError(ValueError):
@@ -252,7 +252,7 @@ def estimate_slicing_memory(
         # half-resolution start engine and solver temporaries double it.
         # Measured peak RSS: 491 / 781 / 1421 MiB at grid 256 / 384 / 512.
         polar = 0.33 * grid + 0.0012 * grid * grid
-        from optics.fastcal import detector_bins
+        from spinslicer.optics.fastcal import detector_bins
         bins = detector_bins(grid, int(output_res or grid))
         operator = (frames // 2 + 1) * bins * polar * 8 * 2.0
         target = grid * grid * nz                      # uint8 coverage

@@ -3,7 +3,7 @@ import json
 import pytest
 from PIL import Image
 
-from frame_io import (
+from spinslicer.frame_io import (
     FrameRepository,
     GenerationManifest,
     SliceMeta,
@@ -12,7 +12,7 @@ from frame_io import (
     save_manifest,
     save_meta,
 )
-from validation import ValidationError
+from spinslicer.validation import ValidationError
 
 
 def write_frame(directory, index: int, size: tuple[int, int] = (8, 6)) -> None:
@@ -109,8 +109,7 @@ def test_mismatched_dimensions_are_rejected(tmp_path) -> None:
 
 
 def test_frame_dimension_budget_is_checked_before_decode(monkeypatch, tmp_path) -> None:
-    import frame_io
-
+    from spinslicer import frame_io
     write_frame(tmp_path, 0)
     write_frame(tmp_path, 1)
     monkeypatch.setattr(frame_io, "MAX_FRAME_DIMENSION", 4)
@@ -120,8 +119,7 @@ def test_frame_dimension_budget_is_checked_before_decode(monkeypatch, tmp_path) 
 
 
 def test_frame_pixel_budget_is_checked(monkeypatch, tmp_path) -> None:
-    import frame_io
-
+    from spinslicer import frame_io
     write_frame(tmp_path, 0)
     write_frame(tmp_path, 1)
     monkeypatch.setattr(frame_io, "MAX_FRAME_TOTAL_PIXELS", 10)

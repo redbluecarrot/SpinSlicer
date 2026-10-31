@@ -16,8 +16,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from optics.optimization import build_system_matrix, optimize_projections_sirt_volume
-from slicing_engine import _relative_dose_fit
+from spinslicer.optics.optimization import build_system_matrix, optimize_projections_sirt_volume
+from spinslicer.slicing_engine import _relative_dose_fit
 
 
 def phantom():

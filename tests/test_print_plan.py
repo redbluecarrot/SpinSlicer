@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 import trimesh
 
-from frame_io import load_manifest
-from print_plan import compute_print_plan
-from slicing_engine import (
+from spinslicer.frame_io import load_manifest
+from spinslicer.print_plan import compute_print_plan
+from spinslicer.slicing_engine import (
     ResinSettings,
     SliceParams,
     SlicingEngine,

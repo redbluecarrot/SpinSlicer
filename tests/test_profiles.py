@@ -1,6 +1,6 @@
 import pytest
 
-from profiles import (
+from spinslicer.profiles import (
     MachineProfile,
     ProfileValidationError,
     ProjectorProfile,

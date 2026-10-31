@@ -24,8 +24,8 @@ from PyQt6.QtCore import QEvent, QRect, QSettings, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
-import theme
-from constants import APP_ORG, APP_TITLE
+from spinslicer import theme
+from spinslicer.constants import APP_ORG, APP_TITLE
 
 W, H = 160, 120
 COLS, ROWS = 34, 19

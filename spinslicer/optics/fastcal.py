@@ -1299,7 +1299,7 @@ def optimize_projections_fast(
 
     def check() -> None:
         if cancelled_cb and cancelled_cb():
-            from slicing_engine import SliceCancelled
+            from spinslicer.slicing_engine import SliceCancelled
             raise SliceCancelled()
 
     check()

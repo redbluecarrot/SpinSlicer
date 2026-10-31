@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, TypeVar
 
-from constants import MAX_FRAME_DIMENSION
+from spinslicer.constants import MAX_FRAME_DIMENSION
 
 PROFILE_SCHEMA_VERSION = 1
 MIN_PROFILE_FPS = 0.1

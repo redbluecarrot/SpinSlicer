@@ -17,7 +17,7 @@ def test_child_protocol_survives_a_non_utf8_console(tmp_path):
     job.write_bytes(pickle.dumps((None, None, {}, None)))
     env = dict(os.environ, PYTHONIOENCODING="cp1251", PYTHONUTF8="0")
     result = subprocess.run(
-        [sys.executable, str(ROOT / "engine_process.py"), str(job), str(tmp_path / "cancel")],
+        [sys.executable, str(ROOT / "spinslicer" / "engine_process.py"), str(job), str(tmp_path / "cancel")],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env, timeout=120,
     )
     lines = result.stdout.decode("utf-8").splitlines()

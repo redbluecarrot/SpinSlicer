@@ -7,7 +7,12 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from projector_canvas import CanvasGeometry, compose, cone_smear_mm, throw_distance_mm  # noqa: E402
+from spinslicer.projector_canvas import (  # noqa: E402
+    CanvasGeometry,
+    compose,
+    cone_smear_mm,
+    throw_distance_mm,
+)
 
 
 def test_frame_is_pasted_one_to_one_in_the_middle() -> None:
@@ -40,7 +45,7 @@ def test_export_writes_the_projector_size(tmp_path) -> None:
     from PyQt6.QtCore import QCoreApplication
 
     _app = QCoreApplication.instance() or QCoreApplication([])
-    from workers import VideoExportWorker, _ffmpeg_executable
+    from spinslicer.workers import VideoExportWorker, _ffmpeg_executable
 
     if _ffmpeg_executable() is None:
         return
@@ -63,7 +68,7 @@ def test_game_cures_the_part_silhouette() -> None:
     _app = QApplication.instance() or QApplication([])
     import trimesh
 
-    from pixel_game import PixelGame, silhouette_from_mesh
+    from spinslicer.pixel_game import PixelGame, silhouette_from_mesh
 
     box = trimesh.creation.box(extents=(20, 10, 10))
     grid = silhouette_from_mesh(box)
@@ -76,7 +81,7 @@ def test_game_cures_the_part_silhouette() -> None:
 
 
 def test_brightness_scales_light_not_gray_code() -> None:
-    from video_tab import brightness_lut
+    from spinslicer.video_tab import brightness_lut
     lut = brightness_lut(0.5, 2.2)
     light = (lut.astype(float) / 255) ** 2.2
     full = (np.arange(256) / 255) ** 2.2
@@ -93,7 +98,7 @@ def test_projector_frame_follows_the_clock_and_stops_after_the_dose() -> None:
     from PyQt6.QtGui import QGuiApplication
     from PyQt6.QtWidgets import QApplication
 
-    from video_tab import ProjectorOutputWindow
+    from spinslicer.video_tab import ProjectorOutputWindow
     app = QApplication.instance() or QApplication([])
     frames = [np.full((8, 16), i, np.uint8) for i in range(24)]
     window = ProjectorOutputWindow(frames, CanvasGeometry(64, 32), 24.0,
@@ -117,7 +122,7 @@ def test_layers_pieces_stay_put_until_an_arrow_is_pressed() -> None:
     """New pieces spawn in the middle and do not slide towards a resting mouse cursor."""
     from PyQt6.QtCore import Qt
 
-    from pixel_game import Layers
+    from spinslicer.pixel_game import Layers
     game = Layers()
     game.state = "play"
     start = game.px

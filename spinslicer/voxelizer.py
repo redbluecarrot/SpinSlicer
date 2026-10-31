@@ -111,7 +111,7 @@ def voxelize(mesh, z_levels: np.ndarray, grid_res: int, span_mm: float,
 
     def layer_batch(L0: int) -> None:
         if cancelled is not None and cancelled():
-            from slicing_engine import SliceCancelled
+            from spinslicer.slicing_engine import SliceCancelled
             raise SliceCancelled()
         L1 = min(nz, L0 + layers_per_batch)
         zs = planes[L0 * len(offsets):L1 * len(offsets)]
@@ -169,7 +169,7 @@ def voxelize(mesh, z_levels: np.ndarray, grid_res: int, span_mm: float,
     starts = list(range(0, nz, layers_per_batch))
     from concurrent.futures import ThreadPoolExecutor
 
-    from optics.fastcal import engine_threads
+    from spinslicer.optics.fastcal import engine_threads
     threads = max(1, min(engine_threads(), len(starts)))
     with ThreadPoolExecutor(max_workers=threads) as pool:
         for L0, _ in zip(starts, pool.map(layer_batch, starts)):

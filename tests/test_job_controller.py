@@ -5,7 +5,7 @@ import pytest
 PyQt6 = pytest.importorskip("PyQt6")
 from PyQt6.QtCore import QCoreApplication, QThread  # noqa: E402
 
-from job_controller import JobController  # noqa: E402
+from spinslicer.job_controller import JobController  # noqa: E402
 
 
 class CancellableThread(QThread):

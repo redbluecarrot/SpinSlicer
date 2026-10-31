@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from vam_backend import (
+from spinslicer.vam_backend import (
     DEFAULT_VAM_ENV_NAME,
     VAMToolboxUnavailable,
     _subprocess_command,

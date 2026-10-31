@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 from PIL import Image
 
-from constants import (
+from spinslicer.constants import (
     MAX_ESTIMATED_MEMORY_BYTES,
     MAX_FRAME_DIMENSION,
     MAX_FRAME_FILE_BYTES,
@@ -36,7 +36,7 @@ from constants import (
     MIN_NUM_FRAMES,
     MIN_OUTPUT_RESOLUTION,
 )
-from validation import (
+from spinslicer.validation import (
     ValidationError,
     ensure_directory,
     validate_directory,

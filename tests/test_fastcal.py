@@ -2,14 +2,14 @@
 import numpy as np
 import pytest
 
-from optics.fastcal import (
+from spinslicer.optics.fastcal import (
     CirculantVialProjector,
     FastVialEngine,
     cartesian_to_polar_matrix,
     optimize_projections_fast,
     supports,
 )
-from optics.optimization import build_system_matrix, optimize_projections_sirt_volume
+from spinslicer.optics.optimization import build_system_matrix, optimize_projections_sirt_volume
 
 N, NT, SPAN, L_OUT, L_IN = 64, 72, 60.0, 60.0, 56.0
 
@@ -101,7 +101,7 @@ def test_rejects_unsupported_geometry():
 
 
 # ------------------------------------------------------------------- physics
-from optics.fastcal import (  # noqa: E402
+from spinslicer.optics.fastcal import (  # noqa: E402
     LEGACY_OPTICS,
     OpticsOptions,
     fresnel_transmission,

@@ -4,7 +4,7 @@ import numpy as np
 import trimesh.transformations as tf
 import vtk
 
-from constants import (
+from spinslicer.constants import (
     VIEWPORT_ORIENTATION_AXIS_CONE_RESOLUTION,
     VIEWPORT_ORIENTATION_AXIS_LENGTH,
     VIEWPORT_ORIENTATION_AXIS_LINE_WIDTH,
@@ -12,7 +12,7 @@ from constants import (
     VIEWPORT_ORIENTATION_AXIS_TIP_LENGTH,
     VIEWPORT_ORIENTATION_CUBE_SCALE,
 )
-from viewport import (
+from spinslicer.viewport import (
     Viewport3D,
     _camera_up_vector,
     _interpolate_camera_pose,

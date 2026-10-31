@@ -38,8 +38,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-import theme
-from i18n import tr
+from spinslicer import theme
+from spinslicer.i18n import tr
 
 # ---------------------------------------------------------------------------
 # hints
@@ -346,7 +346,7 @@ class _ValueBox(QDoubleSpinBox):
             event.ignore()
 
     def textFromValue(self, value: float) -> str:  # noqa: N802
-        from i18n import language
+        from spinslicer.i18n import language
         text = f"{value:.{self.decimals()}f}"
         return text.replace(".", ",") if language() == "ru" else text
 

@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from threaded_nut import ThreadedNutParameters
+from spinslicer.threaded_nut import ThreadedNutParameters
 
 
 class ThreadedNutDialog(QDialog):

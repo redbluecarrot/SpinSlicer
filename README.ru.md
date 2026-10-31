@@ -99,7 +99,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python build_sirt.py
+python tools/build_sirt.py
 ```
 
 Запуск приложения:
@@ -231,20 +231,20 @@ output_frames/
 
 | Файл | Назначение |
 | --- | --- |
-| `SpinSlicer.py` | Главное окно: шаги, шапка, журнал; запускает процесс расчёта. |
-| `ui_panels.py` | Панель настроек: страницы принтера, модели, света и печати. |
-| `ui_kit.py`, `theme.py` | Нарисованные виджеты, палитры, переключатель день/ночь. |
-| `slicer_tab.py`, `viewport.py`, `sketch_scene.py` | 3D-сцена: деталь и живой эскиз принтера. |
-| `video_tab.py`, `projector_canvas.py` | Экран печати, карта дозы, вывод на проектор, экспорт MP4. |
-| `engine_process.py`, `workers.py` | Процесс расчёта и фоновые воркеры. |
-| `slicing_engine.py`, `voxelizer.py` | Вокселизация, планирование, экспорт кадров. |
-| `optics/fastcal.py` | Движок FastCAL для круглых колб. |
-| `optics/optimization.py`, `optics/ray_tracing.py` | Разреженный SIRT (квадратные кюветы) и трассировка лучей. |
-| `optics/presharpen.py` | Компенсация размытия строк проектора. |
-| `virtual_print.py`, `print_plan.py`, `calibration.py` | Виртуальная печать, время печати, калибровка экспозиции. |
-| `pixel_game.py` | Мини-игры на время расчёта. |
-| `frame_io.py`, `profiles.py`, `validation.py` | Хранение кадров и манифесты, профили станка и смолы, предпроверка. |
-| `i18n.py` | Строки на русском и английском. |
+| `spinslicer/app.py` (started by `SpinSlicer.py`) | Главное окно: шаги, шапка, журнал; запускает процесс расчёта. |
+| `spinslicer/ui_panels.py` | Панель настроек: страницы принтера, модели, света и печати. |
+| `spinslicer/ui_kit.py`, `spinslicer/theme.py` | Нарисованные виджеты, палитры, переключатель день/ночь. |
+| `spinslicer/slicer_tab.py`, `spinslicer/viewport.py`, `spinslicer/sketch_scene.py` | 3D-сцена: деталь и живой эскиз принтера. |
+| `spinslicer/video_tab.py`, `spinslicer/projector_canvas.py` | Экран печати, карта дозы, вывод на проектор, экспорт MP4. |
+| `spinslicer/engine_process.py`, `spinslicer/workers.py` | Процесс расчёта и фоновые воркеры. |
+| `spinslicer/slicing_engine.py`, `spinslicer/voxelizer.py` | Вокселизация, планирование, экспорт кадров. |
+| `spinslicer/optics/fastcal.py` | Движок FastCAL для круглых колб. |
+| `spinslicer/optics/optimization.py`, `spinslicer/optics/ray_tracing.py` | Разреженный SIRT (квадратные кюветы) и трассировка лучей. |
+| `spinslicer/optics/presharpen.py` | Компенсация размытия строк проектора. |
+| `spinslicer/virtual_print.py`, `spinslicer/print_plan.py`, `spinslicer/calibration.py` | Виртуальная печать, время печати, калибровка экспозиции. |
+| `spinslicer/pixel_game.py` | Мини-игры на время расчёта. |
+| `spinslicer/frame_io.py`, `spinslicer/profiles.py`, `spinslicer/validation.py` | Хранение кадров и манифесты, профили станка и смолы, предпроверка. |
+| `spinslicer/i18n.py` | Строки на русском и английском. |
 | `tests/` | Тесты геометрии, оптики, движка, хранения, интерфейса и безопасности. |
 
 ## Валидация и безопасность

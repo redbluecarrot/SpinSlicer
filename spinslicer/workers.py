@@ -21,15 +21,15 @@ import numpy as np
 import trimesh
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from constants import (
+from spinslicer.constants import (
     MAX_FRAME_DIMENSION,
     MAX_FRAME_TOTAL_PIXELS,
     MAX_NUM_FRAMES,
     MAX_VIDEO_PREVIEW_BYTES,
 )
-from frame_io import FrameRepository
-from slicing_engine import SliceCancelled, SliceParams, SlicingEngine
-from validation import ValidationError, validate_mesh_geometry, validate_stl_path
+from spinslicer.frame_io import FrameRepository
+from spinslicer.slicing_engine import SliceCancelled, SliceParams, SlicingEngine
+from spinslicer.validation import ValidationError, validate_mesh_geometry, validate_stl_path
 
 # Верхняя граница стороны кадра при сборке видео в памяти — защита от
 # многогигабайтного потребления RAM на длинных сериях в высоком разрешении.
@@ -69,7 +69,7 @@ class LoadMeshWorker(QThread):
             mesh.apply_translation(-mesh.bounding_box.centroid)
             try:
                 # Build the viewport copy here, off the UI thread.
-                from viewport import prepare_display_mesh
+                from spinslicer.viewport import prepare_display_mesh
                 mesh.metadata["spinslicer_display"] = prepare_display_mesh(mesh)
             except Exception:
                 pass
@@ -380,7 +380,7 @@ class VideoExportWorker(QThread):
             if self.lut is not None:
                 frame = self.lut[np.asarray(frame, dtype=np.uint8)]
             if self.canvas is not None:
-                from projector_canvas import compose
+                from spinslicer.projector_canvas import compose
                 frame = compose(frame, self.canvas)
             if (frame.shape[1], frame.shape[0]) != size:
                 frame = cv2.resize(frame, size, interpolation=cv2.INTER_AREA)

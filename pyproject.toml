@@ -39,34 +39,7 @@ ignore = ["E501", "E701", "E702", "E402", "F601", "F841", "W291"]
 
 [tool.mypy]
 python_version = "3.12"
-files = [
-    "SpinSlicer.py",
-    "constants.py",
-    "frame_io.py",
-    "i18n.py",
-    "job_controller.py",
-    "model_node.py",
-    "pixel_game.py",
-    "profiles.py",
-    "projector_canvas.py",
-    "qt_runtime.py",
-    "release_check.py",
-    "nut_dialog.py",
-    "sketch_scene.py",
-    "slicer_tab.py",
-    "theme.py",
-    "ui_kit.py",
-    "slicing_engine.py",
-    "ui_panels.py",
-    "validation.py",
-    "threaded_nut.py",
-    "vam_backend.py",
-    "video_tab.py",
-    "viewport.py",
-    "virtual_print.py",
-    "widgets.py",
-    "workers.py",
-]
+files = ["spinslicer"]
 ignore_missing_imports = true
 check_untyped_defs = false
 warn_return_any = false

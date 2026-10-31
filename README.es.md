@@ -79,7 +79,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python build_sirt.py
+python tools/build_sirt.py
 ```
 
 Ejecuta la aplicación con:
@@ -155,23 +155,23 @@ un reproductor pueda consumir una ejecución. Las carpetas planas heredadas con
 
 | Archivo | Propósito |
 | --- | --- |
-| `SpinSlicer.py` | Ventana principal, selector de idioma, barra de estado compartida y registro. |
+| `spinslicer/app.py` (started by `SpinSlicer.py`) | Ventana principal, selector de idioma, barra de estado compartida y registro. |
 | `assets/spinslicer.svg` | Icono de la aplicación para la interfaz y los paquetes. |
-| `slicer_tab.py` | Carga y transformación de STL, e interfaz de generación de proyecciones. |
-| `nut_dialog.py` | Diálogo heredado de tuerca roscada, conservado por compatibilidad de API. |
-| `threaded_nut.py` | Generador paramétrico heredado de tuercas, conservado por compatibilidad de API. |
-| `ui_panels.py` | Ajustes de impresora/proceso y controles compactos de transformación del modelo. |
-| `slicing_engine.py` | Rasterización de secciones, planificación de proyecciones y exportación PNG verificada. |
-| `optics/` | Rayos de Snell, integrales exactas de trayectoria por vóxel y SIRT de dosis relativa no negativa. |
-| `vam_backend.py` | Adaptador opcional de VAMToolbox CAL y normalización del diseño del sinograma. |
-| `video_tab.py` | Reproducción de fotogramas y exportación a MP4. |
-| `frame_io.py` | Almacenamiento validado de conjuntos de fotogramas, metadatos y manifiestos. |
-| `profiles.py` | Ajustes validados de máquina y resina registrados con cada ejecución. |
-| `validation.py` | Comprobación previa de malla/recursos y presupuestos de carga. |
-| `model_node.py` | Malla original y estado de transformación apto para GPU. |
-| `viewport.py` | Visor 3D con PyVista/VTK. |
-| `workers.py` | Workers Qt en segundo plano para carga de modelos, generación y vídeo. |
-| `synthetic_shapes.py` | Fantomas canónicos para validación numérica. |
+| `spinslicer/slicer_tab.py` | Carga y transformación de STL, e interfaz de generación de proyecciones. |
+| `spinslicer/nut_dialog.py` | Diálogo heredado de tuerca roscada, conservado por compatibilidad de API. |
+| `spinslicer/threaded_nut.py` | Generador paramétrico heredado de tuercas, conservado por compatibilidad de API. |
+| `spinslicer/ui_panels.py` | Ajustes de impresora/proceso y controles compactos de transformación del modelo. |
+| `spinslicer/slicing_engine.py` | Rasterización de secciones, planificación de proyecciones y exportación PNG verificada. |
+| `spinslicer/optics/` | Rayos de Snell, integrales exactas de trayectoria por vóxel y SIRT de dosis relativa no negativa. |
+| `spinslicer/vam_backend.py` | Adaptador opcional de VAMToolbox CAL y normalización del diseño del sinograma. |
+| `spinslicer/video_tab.py` | Reproducción de fotogramas y exportación a MP4. |
+| `spinslicer/frame_io.py` | Almacenamiento validado de conjuntos de fotogramas, metadatos y manifiestos. |
+| `spinslicer/profiles.py` | Ajustes validados de máquina y resina registrados con cada ejecución. |
+| `spinslicer/validation.py` | Comprobación previa de malla/recursos y presupuestos de carga. |
+| `spinslicer/model_node.py` | Malla original y estado de transformación apto para GPU. |
+| `spinslicer/viewport.py` | Visor 3D con PyVista/VTK. |
+| `spinslicer/workers.py` | Workers Qt en segundo plano para carga de modelos, generación y vídeo. |
+| `spinslicer/synthetic_shapes.py` | Fantomas canónicos para validación numérica. |
 | `tests/` | Pruebas de geometría, proyección, almacenamiento, seguridad y validación. |
 
 ## Validación y seguridad

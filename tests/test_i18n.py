@@ -1,4 +1,4 @@
-from i18n import language, set_language, tr
+from spinslicer.i18n import language, set_language, tr
 
 
 def test_russian_is_the_default_language() -> None:
@@ -24,9 +24,9 @@ def test_switching_back_and_forth_retranslates_every_label() -> None:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QAbstractButton, QApplication, QLabel
 
-    import SpinSlicer
-    from i18n import _EN
-    from ui_kit import NavButton
+    from spinslicer import app as SpinSlicer
+    from spinslicer.i18n import _EN
+    from spinslicer.ui_kit import NavButton
 
     app = QApplication.instance() or QApplication([])
     set_language("ru")

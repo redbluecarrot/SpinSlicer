@@ -1,7 +1,7 @@
 import numpy as np
 import trimesh
 
-from model_node import ModelNode
+from spinslicer.model_node import ModelNode
 
 
 def test_matrix_from_viewport_round_trips_to_model_transform() -> None:

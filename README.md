@@ -103,7 +103,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python build_sirt.py
+python tools/build_sirt.py
 ```
 
 Run the application with:
@@ -179,20 +179,20 @@ A run is published only after every PNG and the metadata pass validation.
 
 | File | Purpose |
 | --- | --- |
-| `SpinSlicer.py` | Main window: steps, header, log; also starts the compute process. |
-| `ui_panels.py` | The settings panel: printer, model, light and print pages. |
-| `ui_kit.py`, `theme.py` | Hand-drawn widgets, palettes and the day/night switch. |
-| `slicer_tab.py`, `viewport.py`, `sketch_scene.py` | 3D scene: the part plus a live sketch of the printer. |
-| `video_tab.py`, `projector_canvas.py` | Print screen, dose card, full-screen projector output, MP4 export. |
-| `engine_process.py`, `workers.py` | The compute process and background workers. |
-| `slicing_engine.py`, `voxelizer.py` | Voxelization, planning, frame export. |
-| `optics/fastcal.py` | FastCAL engine for round vials. |
-| `optics/optimization.py`, `optics/ray_tracing.py` | Sparse SIRT path (square cuvettes) and ray tracing. |
-| `optics/presharpen.py` | Compensation of the projector's row blur. |
-| `virtual_print.py`, `print_plan.py`, `calibration.py` | Virtual print, print time, exposure calibration. |
-| `pixel_game.py` | Mini-games shown while frames are computed. |
-| `frame_io.py`, `profiles.py`, `validation.py` | Frame storage and manifests, machine/resin profiles, preflight. |
-| `i18n.py` | English / Russian strings. |
+| `spinslicer/app.py` (started by `SpinSlicer.py`) | Main window: steps, header, log; also starts the compute process. |
+| `spinslicer/ui_panels.py` | The settings panel: printer, model, light and print pages. |
+| `spinslicer/ui_kit.py`, `spinslicer/theme.py` | Hand-drawn widgets, palettes and the day/night switch. |
+| `spinslicer/slicer_tab.py`, `spinslicer/viewport.py`, `spinslicer/sketch_scene.py` | 3D scene: the part plus a live sketch of the printer. |
+| `spinslicer/video_tab.py`, `spinslicer/projector_canvas.py` | Print screen, dose card, full-screen projector output, MP4 export. |
+| `spinslicer/engine_process.py`, `spinslicer/workers.py` | The compute process and background workers. |
+| `spinslicer/slicing_engine.py`, `spinslicer/voxelizer.py` | Voxelization, planning, frame export. |
+| `spinslicer/optics/fastcal.py` | FastCAL engine for round vials. |
+| `spinslicer/optics/optimization.py`, `spinslicer/optics/ray_tracing.py` | Sparse SIRT path (square cuvettes) and ray tracing. |
+| `spinslicer/optics/presharpen.py` | Compensation of the projector's row blur. |
+| `spinslicer/virtual_print.py`, `spinslicer/print_plan.py`, `spinslicer/calibration.py` | Virtual print, print time, exposure calibration. |
+| `spinslicer/pixel_game.py` | Mini-games shown while frames are computed. |
+| `spinslicer/frame_io.py`, `spinslicer/profiles.py`, `spinslicer/validation.py` | Frame storage and manifests, machine/resin profiles, preflight. |
+| `spinslicer/i18n.py` | English / Russian strings. |
 | `tests/` | Geometry, optics, engine, storage, interface and security tests. |
 
 ## Validation and safety

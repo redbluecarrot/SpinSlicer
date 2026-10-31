@@ -1,7 +1,7 @@
 import numpy as np
 import trimesh
 
-from voxelizer import voxelize
+from spinslicer.voxelizer import voxelize
 
 SPAN, N = 40.0, 80
 PIX = (SPAN / N) ** 2

@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_folder_opening_does_not_construct_shell_commands() -> None:
-    source = (ROOT / "slicer_tab.py").read_text(encoding="utf-8")
+    source = (ROOT / "spinslicer" / "slicer_tab.py").read_text(encoding="utf-8")
 
     assert "os.system" not in source
     assert "QDesktopServices.openUrl" in source
@@ -24,7 +24,7 @@ def test_folder_opening_does_not_construct_shell_commands() -> None:
 )
 def test_folder_opening_passes_special_paths_as_local_urls(monkeypatch, tmp_path, suffix) -> None:
     try:
-        import slicer_tab
+        from spinslicer import slicer_tab
     except (ImportError, OSError, Exception) as exc:
         pytest.skip(f"slicer_tab cannot be imported in headless/non-GUI environment: {exc}")
     captured = {}
@@ -43,7 +43,7 @@ def test_folder_opening_passes_special_paths_as_local_urls(monkeypatch, tmp_path
 
 
 def test_generation_no_longer_deletes_previous_frame_set() -> None:
-    source = (ROOT / "slicing_engine.py").read_text(encoding="utf-8")
+    source = (ROOT / "spinslicer" / "slicing_engine.py").read_text(encoding="utf-8")
 
     assert "glob.glob" not in source
     assert "os.remove(stale_path)" not in source

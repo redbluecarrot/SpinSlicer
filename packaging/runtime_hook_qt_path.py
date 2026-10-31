@@ -3,6 +3,6 @@
 import sys
 
 if sys.platform.startswith("win") and hasattr(sys, "_MEIPASS"):
-    from qt_runtime import configure_qt_dll_search_path
+    from spinslicer.qt_runtime import configure_qt_dll_search_path
 
     configure_qt_dll_search_path()

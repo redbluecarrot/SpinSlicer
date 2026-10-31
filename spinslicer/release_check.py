@@ -12,10 +12,10 @@ import cv2
 import trimesh
 from PyQt6.QtCore import QTimer
 
-from frame_io import FrameRepository, load_manifest
-from optics.optimization import _load_cpp_backend
-from slicing_engine import ResinSettings, SliceParams
-from workers import GenerationWorker, VideoExportWorker
+from spinslicer.frame_io import FrameRepository, load_manifest
+from spinslicer.optics.optimization import _load_cpp_backend
+from spinslicer.slicing_engine import ResinSettings, SliceParams
+from spinslicer.workers import GenerationWorker, VideoExportWorker
 
 
 def check_release(app, window, output: Path) -> int:

@@ -4,8 +4,8 @@ import pytest
 
 cv2 = pytest.importorskip("cv2")
 
-import workers  # noqa: E402
-from workers import VideoExportWorker, calibration_ramp  # noqa: E402
+from spinslicer import workers  # noqa: E402
+from spinslicer.workers import VideoExportWorker, calibration_ramp  # noqa: E402
 
 
 def _run(tmp_path, frames, **kwargs):

@@ -38,7 +38,7 @@ if sys.platform.startswith("win"):
                 if path.name.casefold().startswith(("msvcp140", "vcruntime140"))
             )
 
-hiddenimports = ["vtkmodules.qt.QVTKRenderWindowInteractor", "engine_process", "PyQt6.QtSvg"]
+hiddenimports = ["vtkmodules.qt.QVTKRenderWindowInteractor", "spinslicer.engine_process", "PyQt6.QtSvg"]
 for package in ("qdarktheme", "pyvista", "pyvistaqt", "vtkmodules"):
     collected_datas, collected_binaries, collected_hiddenimports = collect_all(package)
     datas += collected_datas
@@ -54,7 +54,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(PROJECT_ROOT / "runtime_hook_qt_path.py")],
+    runtime_hooks=[str(PROJECT_ROOT / "packaging" / "runtime_hook_qt_path.py")],
     # PyVista imports its lightweight runtime decorator from
     # ``pyvista.typing.mypy_plugin``.  When mypy is installed in the build
     # environment, that plugin conditionally imports mypy's compiled checker

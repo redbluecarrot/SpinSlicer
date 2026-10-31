@@ -26,13 +26,13 @@ from scipy.ndimage import binary_fill_holes
 from skimage.transform import radon
 from skimage.transform import resize as sk_resize
 
-from constants import (
+from spinslicer.constants import (
     ANTI_ALIAS_FACTOR,
     DEFAULT_ANGLE_OFFSET_DEG,
     DEFAULT_FRAME_RATE_HZ,
     VAT_HEIGHT_RATIO,
 )
-from frame_io import (
+from spinslicer.frame_io import (
     FrameRepository,
     GenerationManifest,
     SliceMeta,
@@ -40,22 +40,22 @@ from frame_io import (
     save_meta,
     sha256_file,
 )
-from optics.geometry import detector_span_mm
-from profiles import (
+from spinslicer.optics.geometry import detector_span_mm
+from spinslicer.profiles import (
     MachineProfile,
     ProfileValidationError,
     ProjectorProfile,
     ResinProfile,
     VatProfile,
 )
-from validation import (
+from spinslicer.validation import (
     ValidationError,
     ensure_directory,
     preflight_mesh,
     validate_slice_parameters,
     validate_stl_path,
 )
-from vam_backend import (
+from spinslicer.vam_backend import (
     DEFAULT_VAM_ENV_NAME,
     VAMToolboxUnavailable,
     optimize_sinograms,
@@ -231,7 +231,7 @@ class SliceParams:
         if 0 < self.projector_throw_mm <= max(self.cuvette_outer_mm, self.diameter_mm):
             raise ValidationError("projector_throw_mm must be larger than the vial (or 0).")
         if self.projection_backend == "physical":
-            from optics.optimization import _validate_geometry
+            from spinslicer.optics.optimization import _validate_geometry
             try:
                 _validate_geometry(
                     np.array([0.0]), self.grid_res, self.grid_res, self.diameter_mm,
@@ -261,8 +261,8 @@ def _build_print_plan(engine: Any, slices: np.ndarray, sinograms: np.ndarray, gl
     exposure ladder (calibration.py) the plan instead times the reference pillar to the
     gel dose and records every pillar's relative dose.
     """
-    from optics.fastcal import dose_statistics
-    from print_plan import compute_print_plan
+    from spinslicer.optics.fastcal import dose_statistics
+    from spinslicer.print_plan import compute_print_plan
 
     gamma = float(params.projector_gamma)
     contrast = float(params.projector_contrast)
@@ -275,7 +275,7 @@ def _build_print_plan(engine: Any, slices: np.ndarray, sinograms: np.ndarray, gl
         return light
 
     # What the projector shows: its row blur mixes neighbouring rows (layers).
-    from optics.presharpen import blurred_rows_getter, row_sigma
+    from spinslicer.optics.presharpen import blurred_rows_getter, row_sigma
     layer_pitch = float(np.median(np.diff(z_levels))) if z_levels is not None and len(z_levels) > 1 else engine.pitch
     displayed = blurred_rows_getter(light_of, sinograms.shape[0],
                                     row_sigma(float(params.projector_blur_mm), layer_pitch))
@@ -290,7 +290,7 @@ def _build_print_plan(engine: Any, slices: np.ndarray, sinograms: np.ndarray, gl
     if z_levels is not None and out_dir is not None and calibration is None:
         # Virtual print of the frames as displayed: it also finds the exposure that
         # reproduces the model best, which sets the recommended print time.
-        import virtual_print
+        from spinslicer import virtual_print
         virtual = virtual_print.simulate(engine, slices, displayed, stats["threshold"], z_levels,
                                          cancelled=cancelled)
         virtual_print.save(virtual, slices, out_dir)
@@ -539,7 +539,7 @@ class SlicingEngine:
         angles = (
             params.angle_offset_deg + params.angle_direction * base_angles
         ) % 360.0
-        from optics import fastcal as _fastcal
+        from spinslicer.optics import fastcal as _fastcal
         # FastCAL reads coverage as uint8 (0..255): a quarter of the float32 volume.
         compact = params.projection_backend == "physical" and _fastcal.supports(
             params.container_mode, np.deg2rad(angles))
@@ -547,7 +547,7 @@ class SlicingEngine:
         report(0.05, "Нарезка сечений...")
         # Exact-coverage vectorised voxelizer (non-zero winding). Layers where
         # the mesh is open fall back to the tolerant polygon/bitmap path.
-        from voxelizer import voxelize
+        from spinslicer.voxelizer import voxelize
         voxels = voxelize(
             mesh, z_levels, grid_res, diameter_mm, cancelled=cancelled,
             progress=lambda f: report(0.05 + 0.2 * f, "Нарезка сечений..."),
@@ -584,12 +584,12 @@ class SlicingEngine:
 
         if backend == "physical":
             report(0.30, "Физическая оптика: трассировка лучей и оптимизация...")
-            from optics.optimization import optimize_projections_sirt_volume
+            from spinslicer.optics.optimization import optimize_projections_sirt_volume
             angles_rad = np.deg2rad(angles)
             L_out = params.cuvette_outer_mm
             L_in = params.cuvette_inner_mm
 
-            from optics import fastcal
+            from spinslicer.optics import fastcal
             use_fastcal = fastcal.supports(params.container_mode, angles_rad)
             optimizer_name = "fastcal-band" if use_fastcal else "sirt"
             optimize = fastcal.optimize_projections_fast if use_fastcal else optimize_projections_sirt_volume
@@ -655,7 +655,7 @@ class SlicingEngine:
         if params.projector_blur_mm > 0 and nz > 1:
             # The projector blurs rows into each other: show it frames that it blurs back
             # into the planned ones (optics/presharpen.py).
-            from optics.presharpen import presharpen_rows, row_sigma
+            from spinslicer.optics.presharpen import presharpen_rows, row_sigma
             report(0.79, "Компенсация размытия проектора...")
 
             def stop() -> None:
@@ -729,7 +729,7 @@ class SlicingEngine:
             # full sparse system matrix is built just for the preview.
             dose_mid = fast_engines[0].layer_dose(exported_mid_sinograms)
         elif backend == "physical":
-            from optics.optimization import build_system_matrix
+            from spinslicer.optics.optimization import build_system_matrix
             _, adjoint = build_system_matrix(
                 angles_rad, num_s=grid_res, grid_res=grid_res, grid_span_mm=diameter_mm,
                 L_out=params.cuvette_outer_mm, L_in=params.cuvette_inner_mm,

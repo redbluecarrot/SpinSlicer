@@ -74,7 +74,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python build_sirt.py
+python tools/build_sirt.py
 ```
 
 运行应用：
@@ -133,23 +133,23 @@ output_frames/
 
 | 文件 | 用途 |
 | --- | --- |
-| `SpinSlicer.py` | 主窗口、语言选择器、共享状态栏和日志。 |
+| `spinslicer/app.py` (started by `SpinSlicer.py`) | 主窗口、语言选择器、共享状态栏和日志。 |
 | `assets/spinslicer.svg` | 桌面界面和安装包使用的应用图标。 |
-| `slicer_tab.py` | STL 加载、变换和投影生成界面。 |
-| `nut_dialog.py` | 为保持 API 兼容而保留的旧版螺母对话框。 |
-| `threaded_nut.py` | 为保持 API 兼容而保留的旧版参数化螺母生成器。 |
-| `ui_panels.py` | 打印机/工艺设置和紧凑的模型变换控件。 |
-| `slicing_engine.py` | 网格截面光栅化、投影规划和经验证的 PNG 导出。 |
-| `optics/` | 斯涅尔光线、精确体素路径积分和非负相对剂量 SIRT。 |
-| `vam_backend.py` | 可选的 VAMToolbox CAL 适配器和正弦图布局归一化。 |
-| `video_tab.py` | 帧播放和 MP4 导出。 |
-| `frame_io.py` | 经验证的帧集存储、元数据和清单。 |
-| `profiles.py` | 随每次投影运行记录的经验证的设备与树脂设置。 |
-| `validation.py` | 网格/资源预检和工作负载预算。 |
-| `model_node.py` | 原始网格及对 GPU 友好的变换状态。 |
-| `viewport.py` | PyVista/VTK 3D 视口。 |
-| `workers.py` | 用于模型加载、生成和视频的后台 Qt 工作线程。 |
-| `synthetic_shapes.py` | 标准数值验证体模。 |
+| `spinslicer/slicer_tab.py` | STL 加载、变换和投影生成界面。 |
+| `spinslicer/nut_dialog.py` | 为保持 API 兼容而保留的旧版螺母对话框。 |
+| `spinslicer/threaded_nut.py` | 为保持 API 兼容而保留的旧版参数化螺母生成器。 |
+| `spinslicer/ui_panels.py` | 打印机/工艺设置和紧凑的模型变换控件。 |
+| `spinslicer/slicing_engine.py` | 网格截面光栅化、投影规划和经验证的 PNG 导出。 |
+| `spinslicer/optics/` | 斯涅尔光线、精确体素路径积分和非负相对剂量 SIRT。 |
+| `spinslicer/vam_backend.py` | 可选的 VAMToolbox CAL 适配器和正弦图布局归一化。 |
+| `spinslicer/video_tab.py` | 帧播放和 MP4 导出。 |
+| `spinslicer/frame_io.py` | 经验证的帧集存储、元数据和清单。 |
+| `spinslicer/profiles.py` | 随每次投影运行记录的经验证的设备与树脂设置。 |
+| `spinslicer/validation.py` | 网格/资源预检和工作负载预算。 |
+| `spinslicer/model_node.py` | 原始网格及对 GPU 友好的变换状态。 |
+| `spinslicer/viewport.py` | PyVista/VTK 3D 视口。 |
+| `spinslicer/workers.py` | 用于模型加载、生成和视频的后台 Qt 工作线程。 |
+| `spinslicer/synthetic_shapes.py` | 标准数值验证体模。 |
 | `tests/` | 几何、投影、存储、安全和验证测试。 |
 
 ## 验证与安全

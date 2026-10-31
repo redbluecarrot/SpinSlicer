@@ -95,12 +95,12 @@ def format_print_plan(plan: dict[str, Any], english: Optional[bool] = None) -> s
     """Short human-readable summary for the log, in the interface language."""
     if english is None:
         try:
-            from i18n import language
+            from spinslicer.i18n import language
             english = language() == "en"
         except ImportError:  # pragma: no cover - i18n ships with the app
             english = False
     try:
-        from i18n import tr
+        from spinslicer.i18n import tr
     except ImportError:  # pragma: no cover
         def tr(text: str) -> str:
             return text

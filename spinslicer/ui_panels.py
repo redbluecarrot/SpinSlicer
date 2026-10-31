@@ -42,8 +42,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-import theme
-from constants import (
+from spinslicer import theme
+from spinslicer.constants import (
     APP_ORG,
     APP_TITLE,
     DEFAULT_DIAMETER_MM,
@@ -53,14 +53,19 @@ from constants import (
     FILL_FRACTION,
     VAT_HEIGHT_RATIO,
 )
-from i18n import num, tr
-from model_node import ModelNode
-from pixel_game import PixelGame
-from projector_canvas import RESOLUTIONS, CanvasGeometry, cone_smear_mm, throw_distance_mm
-from sketch_scene import SceneParams
-from theme import AXIS_X, AXIS_Y, AXIS_Z
-from ui_kit import Metric, Segmented, SettingRow, Stepper, Switch, section_head
-from vam_backend import (
+from spinslicer.i18n import num, tr
+from spinslicer.model_node import ModelNode
+from spinslicer.pixel_game import PixelGame
+from spinslicer.projector_canvas import (
+    RESOLUTIONS,
+    CanvasGeometry,
+    cone_smear_mm,
+    throw_distance_mm,
+)
+from spinslicer.sketch_scene import SceneParams
+from spinslicer.theme import AXIS_X, AXIS_Y, AXIS_Z
+from spinslicer.ui_kit import Metric, Segmented, SettingRow, Stepper, Switch, section_head
+from spinslicer.vam_backend import (
     DEFAULT_VAM_ENV_NAME,
     build_vam_install_command,
     build_vam_probe_command,
@@ -824,7 +829,7 @@ class ProcessSettingsPanel(QWidget):
         vm = 3.0 + 0.03 * layers * (grid / 256.0) ** 2 * (frames / 360.0) ** 0.65
         # Normal and Fine plan with 1.5 detector bins per voxel (optics.fastcal.detector_bins):
         # measured 1.45–1.6x the time of one bin (Benchy: 21 -> 34 s, 48 -> 69 s).
-        from optics.fastcal import detector_bins
+        from spinslicer.optics.fastcal import detector_bins
         vm *= detector_bins(grid, self.output_res.value_int()) / grid
         return 0.6 * vm
 

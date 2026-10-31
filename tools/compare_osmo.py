@@ -35,9 +35,13 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from optics.fastcal import LEGACY_OPTICS, FastVialEngine  # noqa: E402
-from optics.optimization import _load_cpp_backend, _project, build_system_matrix  # noqa: E402
-from voxelizer import voxelize  # noqa: E402
+from spinslicer.optics.fastcal import LEGACY_OPTICS, FastVialEngine  # noqa: E402
+from spinslicer.optics.optimization import (  # noqa: E402
+    _load_cpp_backend,
+    _project,
+    build_system_matrix,
+)
+from spinslicer.voxelizer import voxelize  # noqa: E402
 
 SPAN, L_OUT, L_IN, N_GLASS, N_LIQUID, N_RESIN = 60.0, 60.0, 56.0, 1.51, 1.45, 1.50
 FRAMES = 360
@@ -48,7 +52,7 @@ def load_mesh(path: str | None, scale: float):
     if path:
         mesh = trimesh.load(path, force="mesh")
     else:
-        from threaded_nut import ThreadedNutParameters, create_threaded_nut
+        from spinslicer.threaded_nut import ThreadedNutParameters, create_threaded_nut
         mesh = create_threaded_nut(ThreadedNutParameters(outer_diameter_mm=36, bore_diameter_mm=16, height_mm=24,
                                                          pitch_mm=3, thread_depth_mm=1.2))
     mesh.apply_scale(scale)

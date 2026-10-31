@@ -72,7 +72,7 @@ class Ladder:
 
     def measure(self, engine: Any, slices: np.ndarray, displayed: Any) -> dict[str, Any]:
         """Median delivered dose of every pillar, from the frames as displayed."""
-        from optics.fastcal import polar_to_cartesian_matrix
+        from spinslicer.optics.fastcal import polar_to_cartesian_matrix
         N, NZ = engine.N, slices.shape[2]
         H = polar_to_cartesian_matrix(engine.op.grid, N, engine.span)
         masks = self.pillar_masks(N, engine.span).reshape(PILLARS, -1)

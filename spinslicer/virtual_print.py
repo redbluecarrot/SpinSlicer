@@ -45,7 +45,7 @@ def simulate(engine: Any, target: np.ndarray, displayed: Callable[[list[int]], n
     (uint8 0..255 or float 0..1); displayed(layers) -> relative projector light
     [layers, detector, angle]; threshold: gel dose in engine dose units.
     """
-    from optics.fastcal import polar_to_cartesian_matrix
+    from spinslicer.optics.fastcal import polar_to_cartesian_matrix
 
     N, NZ = engine.N, target.shape[2]
     H = polar_to_cartesian_matrix(engine.op.grid, N, engine.span)
@@ -55,7 +55,7 @@ def simulate(engine: Any, target: np.ndarray, displayed: Callable[[list[int]], n
 
     def layer_batch(layers: list[int]) -> None:
         if cancelled is not None and cancelled():
-            from slicing_engine import SliceCancelled
+            from spinslicer.slicing_engine import SliceCancelled
             raise SliceCancelled()
         light = np.asarray(displayed(layers), np.float32)                # [l, s, angle]
         D = engine.planner.dose(np.ascontiguousarray(light.transpose(2, 1, 0)))
@@ -65,7 +65,7 @@ def simulate(engine: Any, target: np.ndarray, displayed: Callable[[list[int]], n
 
     # Batches are independent; the light conversion and the sparse polar → grid map
     # are single-threaded numpy, so a couple of batches at a time use the other cores.
-    from optics.fastcal import engine_threads, run_batches
+    from spinslicer.optics.fastcal import engine_threads, run_batches
     batches = [list(range(z0, min(NZ, z0 + step))) for z0 in range(0, NZ, step)]
     run_batches(layer_batch, batches, min(4, engine_threads()))
 

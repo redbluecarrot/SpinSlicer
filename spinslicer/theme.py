@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PyQt6.QtWidgets import QApplication
 
-from sketch_scene import ScenePalette
+from spinslicer.sketch_scene import ScenePalette
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,7 @@ def scene_palette(p: Palette | None = None) -> ScenePalette:
 
 
 def _assets_dir() -> str:
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(base, "assets", "fonts")
 
 
