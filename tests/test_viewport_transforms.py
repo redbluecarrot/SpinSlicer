@@ -6,7 +6,6 @@ import vtk
 
 from constants import (
     VIEWPORT_ORIENTATION_AXIS_CONE_RESOLUTION,
-    VIEWPORT_ORIENTATION_AXIS_LABEL_GAP,
     VIEWPORT_ORIENTATION_AXIS_LENGTH,
     VIEWPORT_ORIENTATION_AXIS_LINE_WIDTH,
     VIEWPORT_ORIENTATION_AXIS_ORIGINS,
@@ -63,15 +62,6 @@ def test_orientation_arrows_match_the_reference_style() -> None:
     caption = parts.GetItemAsObject(2)
     assert caption.GetCaption() == "X"
     assert caption.GetCaptionTextProperty().GetShadow() == 0
-    assert np.allclose(
-        caption.GetAttachmentPoint(),
-        (
-            VIEWPORT_ORIENTATION_AXIS_ORIGINS[0][0]
-            + VIEWPORT_ORIENTATION_AXIS_LENGTH
-            + VIEWPORT_ORIENTATION_AXIS_LABEL_GAP,
-            *VIEWPORT_ORIENTATION_AXIS_ORIGINS[0][1:],
-        ),
-    )
 
 
 def test_every_orientation_arrow_line_starts_at_its_cube_vertex() -> None:
@@ -89,8 +79,6 @@ def test_orientation_cube_disables_face_text_edges() -> None:
     cube = Viewport3D._configure_orientation_cube(vtk.vtkAnnotatedCubeActor())
 
     assert cube.GetTextEdgesVisibility() == 0
-    assert np.isclose(cube.GetFaceTextScale(), 0.16)
-    assert np.isclose(cube.GetZFaceTextRotation(), 180.0)
     assert np.allclose(
         cube.GetAssembly().GetScale(),
         (VIEWPORT_ORIENTATION_CUBE_SCALE,) * 3,

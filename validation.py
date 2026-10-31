@@ -16,7 +16,6 @@ import numpy as np
 
 from constants import (
     ANTI_ALIAS_FACTOR,
-    DEFAULT_FRAME_RATE_HZ,
     MAX_DIAMETER_MM,
     MAX_ESTIMATED_MEMORY_BYTES,
     MAX_FRAME_DIMENSION,
@@ -84,7 +83,7 @@ def validate_slice_parameters(
     projection_backend: Any = "internal",
     optimizer_iterations: Any = 8,
     preserve_internal_voids: Any = True,
-    frame_rate_hz: Any = DEFAULT_FRAME_RATE_HZ,
+    frame_rate_hz: Any = 24.0,
     angle_offset_deg: Any = 90.0,
     angle_direction: Any = 1,
 ) -> None:
@@ -108,10 +107,6 @@ def validate_slice_parameters(
         raise ValidationError(
             f"output_res must be between {MIN_OUTPUT_RESOLUTION} and {MAX_OUTPUT_RESOLUTION}."
         )
-    if output % 2:
-        # H.264 (yuv420p) needs even sides; an odd width would be padded on one side,
-        # moving the frame centre half a pixel off the rotation axis.
-        raise ValidationError("output_res must be even.")
 
     frames = _integer(num_frames, "num_frames")
     if not MIN_NUM_FRAMES <= frames <= MAX_NUM_FRAMES:
@@ -226,8 +221,13 @@ def estimate_slicing_memory(
     output_res: int | None = None,
     projection_backend: str = "internal",
     frame_height_px: int | None = None,
+    fastcal: bool = False,
 ) -> int:
-    """Estimate peak buffers used by forward slicing and PNG rendering."""
+    """Estimate peak buffers used by forward slicing and PNG rendering.
+
+    ``fastcal`` is the round-vial physical path: a uint8 target, a float16
+    frame store and one rotation-symmetric operator instead of sparse matrices.
+    """
 
     grid = max(1, int(grid_res))
     nz = max(1, int(layers))
@@ -245,12 +245,29 @@ def estimate_slicing_memory(
         # skimage.resize and the uint8 output coexist briefly during a frame
         # export, so count two output-sized buffers before adding headroom.
         output_buffers = output_pixels * (4 + 1)
+    workspace = 32 * 1024**2
+    if projection_backend == "physical" and fastcal:
+        # Operator M: (frames/2+1) x N bins x Q polar cells, complex64; Q was
+        # measured as ~0.33 N + 0.0012 N^2 for the default vial optics. The
+        # half-resolution start engine and solver temporaries double it.
+        # Measured peak RSS: 491 / 781 / 1421 MiB at grid 256 / 384 / 512.
+        polar = 0.33 * grid + 0.0012 * grid * grid
+        from optics.fastcal import detector_bins
+        bins = detector_bins(grid, int(output_res or grid))
+        operator = (frames // 2 + 1) * bins * polar * 8 * 2.0
+        target = grid * grid * nz                      # uint8 coverage
+        frames_store = nz * bins * frames * 2          # float16 frames
+        # Solver batches: the engine takes up to a fifth of the free RAM for wider batches and
+        # falls back to 160 MB when memory is short, so the guaranteed minimum is counted.
+        batch = 160 * 1024**2
+        runtime = 192 * 1024**2                        # interpreter, numpy, mesh, caches
+        return int((target + frames_store + anti_alias + output_buffers + workspace) * 1.5
+                   + operator + batch + runtime)
     matrices = 0
     if projection_backend == "physical":
         # Exact grid traversal crosses at most 2*N+1 segments per ray.
         # Three CSR payloads conservatively cover assembly and transposition.
         matrices = frames * grid * (2 * grid + 1) * 24
-    workspace = 32 * 1024**2
     return int((slices + sinograms + anti_alias + output_buffers + workspace) * 1.5 + matrices)
 
 
@@ -274,7 +291,7 @@ def preflight_mesh(
             getattr(params, "projection_backend", "internal"),
             getattr(params, "optimizer_iterations", 8),
             getattr(params, "preserve_internal_voids", True),
-            getattr(params, "frame_rate_hz", DEFAULT_FRAME_RATE_HZ),
+            getattr(params, "frame_rate_hz", 24.0),
             getattr(params, "angle_offset_deg", 90.0),
             getattr(params, "angle_direction", 1),
         )
@@ -351,12 +368,9 @@ def preflight_mesh(
         grid, estimated_layers, frames, output_res=int(params.output_res),
         projection_backend=getattr(params, "projection_backend", "internal"),
         frame_height_px=target_height,
+        # Frames are evenly spaced over a full turn, so a round vial runs FastCAL.
+        fastcal=getattr(params, "container_mode", 0) in (0, 2),
     )
-    if getattr(params, "projection_backend", "internal") == "physical" and getattr(
-        params, "save_bare_projection", False
-    ):
-        # The bare projection keeps a second float32 sinogram stack alive.
-        estimated_memory += grid * estimated_layers * frames * 4
     if estimated_memory > MAX_ESTIMATED_MEMORY_BYTES:
         errors.append(
             f"Estimated slicing memory is {estimated_memory / 1024**3:.2f} GiB; "

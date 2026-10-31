@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../assets/spinslicer.svg" alt="SpinSlicer" width="160">
+  <img src="assets/spinslicer.svg" alt="SpinSlicer" width="160">
 </p>
 
 <h1 align="center">SpinSlicer</h1>
@@ -9,34 +9,36 @@
 </p>
 
 <p align="center">
-  <a href="../../README.md"><img src="../../assets/lang-en.svg" alt="English" height="36"></a>
-  <a href="README.ru.md"><img src="../../assets/lang-ru.svg" alt="Русский" height="36"></a>
-  <a href="README.es.md"><img src="../../assets/lang-es.svg" alt="Español" height="36"></a>
-  <a href="README.zh-CN.md"><img src="../../assets/lang-zh.svg" alt="中文" height="36"></a>
+  <a href="README.md"><img src="assets/lang-en.svg" alt="English" height="36"></a>
+  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
+  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
+  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
-SpinSlicer es un prototipo de investigación local para la fabricación aditiva
-volumétrica tomográfica (VAM). Combina una interfaz de escritorio en PyQt6, un
-visor 3D con PyVista/VTK, un generador de proyecciones y un reproductor de
-fotogramas.
-
-La aplicación prepara proyecciones y previsualiza los fotogramas generados. No
-controla un proyector real, una cubeta de resina ni una platina giratoria.
+SpinSlicer prepara impresiones para la fabricación aditiva volumétrica tomográfica
+(VAM / CAL): un vial de resina gira frente a un proyector y la luz de cientos de
+ángulos se suma para curar la pieza entera a la vez. SpinSlicer calcula esos
+fotogramas a partir de un STL, muestra lo que curarán y los proyecta durante
+exactamente la exposición planificada.
 
 ## Características
 
-La versión estable v0.4.0 incluye **Slicer (3D)**, **Projector (Video)** y la barra lateral **Settings**.
-Consulta las [notas de la versión](../releases/v0.4.0.md).
+Versión 0.5.0 — consulta las [notas de la versión](docs/releases/v0.5.0.md) (en inglés y ruso).
 
-- **Óptica dispersa con memoria acotada:** las matrices CSR de rayos a resolución completa y la optimización por lotes en Z conservan la malla de 256×256 y 360 ángulos. Las condiciones medidas y el uso de recursos se recogen en el [informe de validación numérica](../validation/physical-optics-v0.3.1.md).
-- **Motor SIRT paralelo nativo con OpenMP:** el backend multihilo en C++ (`sirtsolver.dll` / `sirtsolver.so`) funciona en cualquier CPU estándar sin necesidad de GPU dedicadas costosas.
-- **Espacio de trabajo CAD ergonómico:** visor 3D interactivo amplio a la izquierda y parámetros de acceso rápido a la derecha.
-- **Visor 3D limpio:** órbita trackball, desplazamiento y zoom sin cubos de vista que estorben.
-- **Carga y transformación de modelos STL** en milímetros físicos.
-- **Pipeline de óptica física:** trazado de rayos para cubetas cilíndricas y rectangulares con adaptación de índices ($n_{glass}, n_{liquid}, n_{resin}$).
-- **Conserva taladros internos y relieve de rosca** en los modelos STL cargados por defecto.
-- **Previsualiza los fotogramas** como vídeo giratorio y expórtalos a MP4.
-- **Interfaz bilingüe:** cambio instantáneo entre ruso (Русский) e inglés.
+- **Tres pasos:** *Modelo* (cargar, colocar y comprobar el STL), *Luz* (calcular los
+  fotogramas) e *Impresión* (proyectar, guardar MP4 o PNG).
+- **Motor FastCAL:** en un vial redondo todos los ángulos son ópticamente iguales; los
+  rayos se trazan para un solo ángulo. El modelo incluye refracción, atenuación, pérdidas
+  de Fresnel, el perfil de píxel y el cono de rayos del proyector y el giro durante cada fotograma.
+- **Impresión virtual:** los fotogramas tal como los mostrará el proyector se convierten
+  de nuevo en dosis; la pieza curada se ve en 3D junto al modelo, con el ajuste (IoU) y
+  el margen de exposición.
+- **Plan de impresión** (tiempo y vueltas) y **mapa de dosis** cuyo deslizador es la exposición.
+- **Salida al proyector lista para imprimir:** fotogramas 1:1 en la pantalla nativa, una
+  fila por capa, fotograma elegido por el reloj (sin deriva), brillo en vivo y parada
+  automática al alcanzar la dosis.
+- **Fluido en equipos modestos:** el cálculo corre en un proceso aparte usando todos los núcleos.
+- **Interfaz en inglés y ruso**, temas claro y oscuro.
 
 ## Instalación y paquetes
 
@@ -45,19 +47,19 @@ Consulta las [notas de la versión](../releases/v0.4.0.md).
 Descarga los binarios desde [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Instalador:** descarga y ejecuta `SpinSlicer-Setup-0.4.0.exe`
+  - **Instalador:** descarga y ejecuta `SpinSlicer-Setup-0.5.0.exe`
   - **Portable:** descarga `SpinSlicer-windows-x64.zip`, extráelo y ejecuta `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.4.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.5.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.4.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.5.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.4.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.5.0-1.x86_64.rpm
   ```
 - **Linux portable genérico:**
   ```bash
@@ -77,7 +79,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python tools/build_sirt.py
+python build_sirt.py
 ```
 
 Ejecuta la aplicación con:
@@ -116,13 +118,13 @@ informa del RMSE de forma de la dosis relativa tras ajustar una escala común.
 No es una predicción de curado calibrada. La reflexión de Fresnel, la
 dispersión, la respuesta de curado del material y la dosis absoluta del hardware
 requieren calibración adicional. Consulta el [modelo y las comprobaciones
-reproducibles](../validation/physical-optics-v0.3.1.md).
+reproducibles](docs/validation/physical-optics-v0.3.1.md).
 
 Las cubetas cuadradas usan un campo de proyección fijo igual a la diagonal
 exterior en cada ángulo. Este valor y el paso físico de píxel se registran en el
 manifiesto; la calibración del proyector debe usar ese valor. Consulta la
 [corrección del campo cuadrado y las comprobaciones de cobertura de
-esquinas](../validation/square-detector-field.md).
+esquinas](docs/validation/square-detector-field.md).
 
 ## Formato de salida
 

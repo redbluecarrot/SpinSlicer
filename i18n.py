@@ -7,6 +7,7 @@ surface without requiring a Qt Linguist build step.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 LANGUAGES = {"en": "English", "ru": "Русский"}
@@ -91,63 +92,10 @@ _EN: dict[str, str] = {
     "🎬 Проектор (Видео)": "🎬 Projector (Video)",
     "Язык:": "Language:",
     "Готово к работе.": "Ready.",
-    "Производительность": "Performance",
-    "Авто": "Auto",
-    "Экономный (слабые устройства)": "Economy (low-power devices)",
-    "Максимальный (мощные устройства)": "Maximum (powerful devices)",
-    "Режим «{mode}» ({device}): {reason}": "Mode “{mode}” ({device}): {reason}",
-    "экономный": "economy",
-    "максимальный": "maximum",
-    "GPU {name}": "GPU {name}",
-    "CPU, потоков: {threads}": "CPU, threads: {threads}",
-    "минимум памяти и один поток, результат тот же": "minimum memory and one thread, same result",
-    "вычисления на видеокарте": "computation on the graphics card",
-    "все ядра процессора": "all processor cores",
-    "мало ядер или свободной памяти": "few cores or little free memory",
-    "найдена подходящая видеокарта": "a suitable graphics card was found",
-    "достаточно ядер и памяти, видеокарта не используется": "enough cores and memory, graphics card not used",
-    "видеокарты нет, ядер или памяти немного": "no graphics card, few cores or little memory",
-    "{value:.1f} ГиБ свободно": "{value:.1f} GiB free",
-    "память неизвестна": "memory unknown",
-    "видеокарта не определена": "graphics card not detected",
-    "Taichi установлен": "Taichi installed",
-    "Taichi не установлен": "Taichi not installed",
-    "{cores} ядер, {ram}; {gpu}; {taichi}": "{cores} cores, {ram}; {gpu}; {taichi}",
-    "Экономный режим: прямая проекция не создаётся.": "Economy mode: the direct projection is not created.",
-    "Гамма проектора {gamma:g}: {where}.": "Projector gamma {gamma:g}: {where}.",
-    "применена к кадрам при расчёте": "applied to the frames when they were computed",
-    "применена к 8-битным кадрам при экспорте": "applied to the 8-bit frames at export",
-    "Гамма проектора 1.0 (линейный вывод). Если гамма проектора около 2.2 и он не откалиброван, доза будет нелинейной.": "Projector gamma 1.0 (linear output). If the projector gamma is about 2.2 and it is not calibrated, the dose will be non-linear.",
-    "Дозовое окно (эксперимент)": "Dose window (experimental)",
-    "Дополнительные шаги по порогу дозы после линейной оптимизации. Это эвристика: время оптимизации растёт примерно вдвое, а результат отличается от проверенного в v0.3.1.": "Extra steps on a dose threshold after the linear optimisation. A heuristic: optimisation time roughly doubles and the result differs from the one validated in v0.3.1.",
-    "Меняет скорость и расход памяти, но не кадры для печати. Экономный: меньше памяти и один поток, без прямой проекции. Максимальный: все ядра и, если есть подходящая видеокарта и Taichi, вычисления на ней. Авто выбирает по вашему устройству.": "Changes speed and memory use, not the frames for printing. Economy: less memory and one thread, no direct projection. Maximum: all cores and, if a suitable graphics card and Taichi are present, computation on it. Auto picks for your device.",
-    "Диапазон яркости MP4:": "MP4 brightness range:",
-    "Полный 0–255 (256 уровней)": "Full 0–255 (256 levels)",
-    "Ограниченный 16–235 (если плеер игнорирует флаг диапазона)": "Limited 16–235 (if the player ignores the range flag)",
-    "Полный диапазон сохраняет все 256 уровней, но плеер, который считает поток ограниченным и игнорирует флаг, обрежет уровни 1–15 до 0 и 236–254 до 255 (тусклые серые уровни важны для дозового окна). Ограниченный диапазон безопаснее для большинства плееров и даёт 220 уровней, но плеер или HDMI-выход, которые считают всё полным диапазоном, покажут чёрный как 16/255: около 6 % света на весь оборот. Проверьте свою цепочку тестовой рампой.": "Full range keeps all 256 levels, but a player that treats the stream as limited and ignores the flag clips levels 1–15 to 0 and 236–254 to 255 (dim gray levels matter for the dose window). Limited range is safer for most players and gives 220 levels, but a player or HDMI output that treats everything as full range shows black as 16/255: about 6 % light all the way round. Check your own chain with the test ramp.",
-    "Тестовая рампа": "Test ramp",
-    "Сохранить MP4 из серых полос 0–255 с выбранным диапазоном, чтобы проверить цепочку проигрывания и проектор (например, фотометром). Число кадров и частота как у последнего прогона, поэтому скорость вращения в имени файла обычная.": "Save an MP4 of 0–255 gray bars with the chosen range, to check the playback chain and the projector (with a light meter, for example). Frame count and rate follow the last run, so the rotation speed in the file name is the usual one.",
-    "Тестовая рампа: гамма {gamma:g}, диапазон {video_range}.": "Test ramp: gamma {gamma:g}, range {video_range}.",
-    "Taichi не установлен (компонент «GPU-ускорение» установщика ускорит расчёт)": "Taichi not installed (the installer's “GPU acceleration” component would speed generation up)",
-    "С гаммой профиля": "With the profile gamma",
-    "Выключено: рампа линейная (гамма 1.0), по ней можно измерить гамму проектора с нуля. Включено: рампа с гаммой из профиля станка, чтобы проверить, что калибровка даёт линейный свет.": "Off: the ramp is linear (gamma 1.0), so the projector gamma can be measured from scratch. On: the ramp carries the machine profile's gamma, to check that the calibration gives linear light.",
-    "GPU недоступна, расчёт продолжен на процессоре: {error}": "The GPU is unavailable, the job continues on the processor: {error}",
-    "Taichi не запустился ({error}); все ядра процессора": "Taichi did not start ({error}); all processor cores",
-    "Тип проекции:": "Projection type:",
-    "ffmpeg недоступен: MP4 пишется кодеком mp4v с потерей качества.":
-        "ffmpeg is unavailable: the MP4 is written with the lossy mp4v codec.",
-    "Скорректированная": "Corrected",
-    "Прямая проекция": "Direct projection",
-    "Проекция для печати: оптимизирована SIRT с учётом преломления и поглощения в колбе":
-        "Projection for printing: optimised by SIRT with refraction and absorption in the vial taken into account",
-    "Прямая проекция детали: без оптимизации SIRT и без компенсации колбы. Разница с кадрами для печати складывается из оптимизации и компенсации, а не только из преломления":
-        "Direct projection of the part: no SIRT optimisation and no compensation for the vial. The difference from the frames for printing comes from the optimisation and the compensation together, not from refraction alone",
-    "Для этого прогона прямая проекция недоступна (не создаётся в экономном режиме)":
-        "The direct projection is not available for this run (it is not created in economy mode)",
-    "Прямая проекция не оптимизирована и не компенсирует преломление и поглощение в колбе. Для печати используйте скорректированную проекцию. Сохранить файл?":
-        "The direct projection is not optimised and does not compensate refraction or absorption in the vial. Use the corrected projection for printing. Save the file?",
     "Готово к работе. Загрузите STL-модель на вкладке «Слайсер», чтобы начать.":
         "Ready. Load an STL model on the Slicer tab to begin.",
+    "Папка кадров не выбрана — сначала сгенерируйте проекции на вкладке «Слайсер».":
+        "No frame folder selected — generate projections on the Slicer tab first.",
     "Нажмите «Собрать и воспроизвести»,\nчтобы увидеть анимацию проекций.":
         "Click “Assemble and play”\nto preview the projection animation.",
     "▶ Собрать и воспроизвести": "▶ Assemble and play",
@@ -227,6 +175,24 @@ _EN: dict[str, str] = {
     "Колба (без кюветы и жидкости)": "Flask (no cuvette/liquid)",
     "Виала (в иммерсионной ванне)": "Vial (in immersion bath)",
     "Движок проекций (Собственный C++ SIRT)": "Projection Engine (Native C++ SIRT)",
+    "Движок проекций (FastCAL)": "Projection Engine (FastCAL)",
+    "Проектор": "Projector",
+    "Доза гелеобразования, мДж/см³ (0 = неизвестно)": "Gel dose, mJ/cm³ (0 = unknown)",
+    "Поглощённая энергия на единицу объёма, при которой смола становится гелем. Вместе с затуханием и облучённостью даёт время печати.": "Absorbed energy per volume at which the resin gels. Together with attenuation and irradiance it gives the print time.",
+    "Гамма проектора (1.0 = линейный)": "Projector gamma (1.0 = linear)",
+    "Свет = (серый/255)^гамма. Обычный проектор в видеорежиме: около 2.2; DLP в режиме прямого вывода паттернов: 1.0.": "Light = (gray/255)^gamma. A typical projector in video mode: about 2.2; DLP in direct pattern mode: 1.0.",
+    "Облучённость на оси колбы, мВт/см² (0 = неизвестно)": "Irradiance at the vial axis, mW/cm² (0 = unknown)",
+    "Измеренная мощность белого кадра на месте колбы.": "Measured power of a white frame at the vial position.",
+    "Контраст проектора, :1 (0 = идеальный чёрный)": "Projector contrast, :1 (0 = ideal black)",
+    "Расстояние проектор → ось, мм (0 = телецентрический)": "Projector to axis distance, mm (0 = telecentric)",
+    "Для обычного объектива лучи расходятся. 0 — параллельный пучок. В иммерсионной ванне указывайте кажущееся расстояние в жидкости.": "With an ordinary lens the rays diverge. 0 means a parallel beam. In an immersion tank enter the apparent distance in the liquid.",
+    "FastCAL: лучи трассируются для одного ракурса, повороты считаются через FFT; "
+    "проекции подбираются под порог отверждения, а не под точную дозу. "
+    "Учитывает преломление света по закону Снеллиуса и поглощение по Бугеру-Ламберту.": (
+        "FastCAL: rays are traced for one view and rotations are computed with FFT; "
+        "projections are fitted to the cure threshold rather than to an exact dose. "
+        "Accounts for Snell refraction and Beer-Lambert attenuation."
+    ),
     "Итерации оптимизатора": "Optimizer iterations",
     "Реконструкция дозы (Tomo)": "Dose Reconstruction (Tomo)",
     "Реконструкция дозы": "Dose Reconstruction",
@@ -243,6 +209,20 @@ _EN: dict[str, str] = {
     "Движок: OpenCAL SIRT": "Engine: OpenCAL SIRT",
     "Загрузить STL": "Load STL",
     "Сгенерировать проекции": "Generate projections",
+    "Виртуальная печать": "Virtual print",
+    "Калибровка": "Calibrate",
+    "Калибровка экспозиции": "Exposure calibration",
+    "Пробная печать, которая подберёт экспозицию под вашу смолу": "A test print that finds the exposure for your resin",
+    "Сгенерировать калибровку": "Generate calibration",
+    "Самый короткий затвердевший столбик:": "Shortest pillar that cured:",
+    "Ни один не затвердел": "None cured",
+    "Применить": "Apply",
+    "мм": "mm",
+    "Сначала сгенерируйте калибровку.": "Generate the calibration first.",
+    "Калибровка работает с физическим движком и круглой колбой.": "Calibration needs the physical engine and a round vial.",
+    "Напечатайте эти кадры, затем откройте «Калибровка» и укажите самый короткий затвердевший столбик.": "Print these frames, then open “Calibrate” and pick the shortest pillar that cured.",
+    "Кнопка «Виртуальная печать» покажет деталь, которая затвердеет из этих кадров.": "The “Virtual print” button shows the part these frames would cure.",
+    "Показать, что затвердеет из этих кадров (без принтера)": "Show what these frames would cure (no printer needed)",
     "Модель загружена.": "Model loaded.",
     "Сохранять внутренние полости (отверстия / резьба)": "Preserve internal cavities (holes / threads)",
     "Встроенный сверхбыстрый физический движок (SIRT + C++ OpenMP). ": "High-performance native physical engine (SIRT + C++ OpenMP). ",
@@ -386,6 +366,7 @@ for ru_str, en_str in _EN.items():
         _RU[en_str] = ru_str
 
 _PREFIX_EN: tuple[tuple[str, str], ...] = (
+    ("Папка кадров: ", "Frames folder: "),
     ("Загружено: ", "Loaded: "),
     ("Сохранено ", "Saved "),
     ("Собрано ", "Assembled "),
@@ -405,6 +386,7 @@ _PREFIX_EN: tuple[tuple[str, str], ...] = (
 )
 
 _PREFIX_RU: tuple[tuple[str, str], ...] = (
+    ("Frames folder: ", "Папка кадров: "),
     ("Loaded: ", "Загружено: "),
     ("Saved ", "Сохранено "),
     ("Assembled ", "Собрано "),
@@ -422,6 +404,227 @@ _PREFIX_RU: tuple[tuple[str, str], ...] = (
 )
 
 
+# --- New interface (2026-10): exact strings -------------------------------------------
+_EN.update({
+    "Принтер и смола": "Printer and resin", "Свет": "Light", "Печать": "Print", "Модель": "Model",
+    "НАСТРОЙКА · ОДИН РАЗ": "SETUP · ONCE",
+    "показать ▾": "show ▾", "скрыть ▴": "hide ▴", "мм": "mm", "мВт/см²": "mW/cm²", "мм⁻¹": "mm⁻¹",
+    "мДж/см³": "mJ/cm³", "°/с": "°/s",
+    "Диаметр колбы": "Vial diameter", "Стенка": "Wall", "Колба стоит": "The vial sits",
+    "Высота поля": "Field height", "Разрешение проектора": "Projector resolution",
+    "Колба на экране": "Vial on screen", "Лучи проектора": "Projector rays", "Размытие пятна": "Spot blur",
+    "Поглощение смолы": "Resin absorption", "Преломление смолы": "Resin refraction", "Доза геля": "Gel dose",
+    "Калибровка": "Calibration", "Сдвиг картинки по X": "Picture shift X", "Сдвиг картинки по Y": "Picture shift Y",
+    "Гамма": "Gamma", "Контраст": "Contrast", "Облучённость": "Irradiance", "n стекла": "Glass n",
+    "n жидкости ванны": "Bath liquid n", "Подсказки маркером": "Marker hints",
+    "для тех, кто печатает впервые": "for first-time printers", "Язык": "Language",
+    "загрузить STL": "load STL", "Модель не загружена": "No model loaded", "STL-файл детали": "the part's STL file",
+    "Масштаб": "Scale", "Ориентация": "Orientation", "Отверстия и резьба": "Holes and threads",
+    "Положение": "Position", "Точная позиция": "Exact position", "Качество": "Quality",
+    "Кадров на оборот": "Frames per turn", "Компенсация размытия": "Blur compensation",
+    "Виртуальная печать": "Virtual print", "показать на сцене, что затвердеет": "show on the scene what will cure",
+    "совпадение": "match", "запас экспоз.": "exposure margin", "печать": "print",
+    "Пока считается — засветите деталь сами": "While it computes — cure the part yourself",
+    "Свет готов. Доиграйте или идите печатать": "Light is ready. Finish the round or go print",
+    "Куда выводить": "Output to", "Скорость вращения": "Rotation speed", "Настроить проектор": "Set up the projector",
+    "разметка покажет, где должны быть стенки колбы; тест серого — все уровни яркости":
+        "the pattern shows where the vial walls must be; the gray test shows every brightness level",
+    "Сначала рассчитайте свет.": "Compute the light first.",
+    "двигает картинку вверх/вниз, чтобы деталь попала в колбу": "moves the picture up/down so the part lands in the vial",
+    "преломление на стенке колбы": "refraction at the vial wall", "преломление на стенке ванны": "refraction at the bath wall",
+    "Опишите свой принтер и смолу. Это делается один раз — дальше только детали.":
+        "Describe your printer and resin. You do this once — after that, just parts.",
+    "Покрутите деталь мышью и проверьте, как она стоит. Если всё ок — дальше.":
+        "Turn the part with the mouse and check how it sits. If it looks right — next.",
+    "Выберите качество и нажмите «Рассчитать свет».": "Pick the quality and press “Compute light”.",
+    "Загрузите STL: перетащите файл на сцену слева или нажмите кнопку внизу.":
+        "Load an STL: drop the file on the scene or press the button below.",
+    "Деталь не помещается — уменьшите масштаб или нажмите «вписать в колбу».":
+        "The part does not fit — scale it down or press “fit into vial”.",
+    "Считаю кадры для каждого угла. Можно пока поиграть ↓": "Computing frames for every angle. Play meanwhile ↓",
+    "Готово. Посмотрите совпадение и запас — и переходите к печати.":
+        "Done. Check the match and the margin — then go to printing.",
+    "Проверьте разметку колбы на проекторе и запускайте.": "Check the vial pattern on the projector and start.",
+    "сколько пикселей проектора по ширине занимает колба — проверьте разметкой":
+        "how many projector pixels the vial spans — check with the pattern",
+    "не знаете? напечатайте шкалу ↓": "not sure? print the ladder ↓", "напечатать шкалу →": "print the ladder →",
+    "ниже деталь — меньше слоёв и точнее": "a lower part means fewer layers and more accuracy",
+    "в центр": "to centre", "вписать в колбу": "fit into vial", "для первой печати хватит «Норма»": "“Normal” is enough for a first print",
+    "разметка колбы": "vial pattern", "тест серого": "gray test",
+    "движок трассирует расходящиеся лучи (как у обычного объектива)": "the engine traces diverging rays (a normal lens)",
+    "телецентрический объектив или проектор далеко": "telecentric lens or a far-away projector",
+    "проектор резкий — кадры как есть": "sharp projector — frames as they are",
+    "время печати считается из неё": "print time is computed from it",
+    "из неё и мощности проектора считается время печати": "print time comes from it and the projector power",
+    "без подрезки мелкие детали размоет": "without sharpening fine details blur",
+    "Готово — к модели": "Done — to the model", "всё сохраняется само": "everything saves itself",
+    "нет": "none", "ошибиться сложно": "hard to get wrong", "нужны доза и мощность": "needs dose and power",
+    "почти идеально": "nearly perfect", "можно точнее": "could be sharper", "нужна калибровка": "calibrate",
+    "увеличьте сетку": "raise the grid", "Время засветки": "Exposure time", "Обороты": "Revolutions",
+    "Время": "Time", "задайте поглощение, облучённость и дозу": "set absorption, irradiance and dose",
+    "Запас экспозиции": "Exposure margin", "Частота кадров": "Frame rate", "заменить": "replace",
+    "или перетащите файл на сцену": "or drop the file on the scene", "Сначала уместите деталь": "Make the part fit first",
+    "уменьшите масштаб или возьмите колбу шире": "scale it down or use a wider vial", "Дальше — свет →": "Next — light →",
+    "проверка модели пройдена": "model check passed", "Остановить": "Stop", "считаю кадры…": "computing frames…",
+    "сначала рассчитайте свет": "compute the light first", "Дальше — печать →": "Next — print →",
+    "Рассчитать свет": "Compute light", "Показать на проекторе": "Show on projector", "Сохранить видео": "Save video",
+    "Открыть папку кадров": "Open frames folder", "Esc на проекторе — остановить": "Esc on the projector stops it",
+    "кадры готовы": "frames ready", "сначала загрузите модель": "load a model first",
+    "полноэкранно на второй экран, пиксель в пиксель": "full screen on the second display, pixel for pixel",
+    "папка PNG для своего софта показа": "a PNG folder for your own player",
+    "в ванне": "in a bath", "в воздухе": "in air", "параллельные": "parallel", "конусом": "cone",
+    "Колба": "Vial", "Проектор": "Projector", "Смола": "Resin", "Ещё": "More", "Для специалистов": "For experts",
+    "как в файле": "as in file", "на бок": "on its side", "на торец": "on its end",
+    "Быстро": "Fast", "Норма": "Normal", "Точно": "Fine",
+    "на проектор": "projector", "видео MP4": "MP4 video", "кадры PNG": "PNG frames",
+    "Мини-игра «Засветка»": "Mini-games", "Мини-игры": "Mini-games",
+    "Новый проект": "New project", "модель не загружена": "no model loaded",
+    "Принтер и смола — настраиваются один раз": "Printer and resin — set up once",
+    "журнал ▴": "log ▴", "журнал ▾": "log ▾", "Принтер": "Printer", "зона": "zone", "воксель": "voxel",
+    "кадров": "frames", "запас": "margin", "День / ночь": "Day / night",
+    "Перетащите STL сюда": "Drop an STL here", "файл детали в формате STL, в миллиметрах": "the part as an STL file, in millimetres",
+    "Выбрать файл": "Choose file", "Кадры появятся после расчёта света": "Frames appear after the light is computed",
+    "Загрузка кадров...": "Loading frames...", "Экспорт в MP4...": "Exporting MP4...",
+    "Экспорт тестовой шкалы...": "Exporting the gray test...", "Видео сохранено.": "Video saved.",
+    "Экспорт не удался.": "Export failed.", "Экспорт не удался": "Export failed", "Экран проектора": "Projector screen",
+    "Загружаю кадры…": "Loading frames…", "Не удалось прочитать кадры": "Could not read the frames",
+    "Кадры выводятся на второй экран. Esc — остановить.": "Frames go to the second screen. Esc stops.",
+    "Готово": "Done", "Видео сохранено": "Video saved", "Сохранить видео ": "Save video",
+    "Второй экран не найден. Подключите проектор как второй монитор (расширенный рабочий стол) или сохраните видео.":
+        "No second screen found. Connect the projector as a second monitor (extended desktop) or save a video.",
+    "Показывайте его на проекторе во весь экран, без масштабирования.": "Play it full screen on the projector, without scaling.",
+    "Сначала рассчитайте свет.": "Compute the light first.", "Проектор": "Projector",
+    "Создаю тестовую гайку M20...": "Building the M20 test nut...", "модель": "model",
+    "мышь — двигать, клик — старт": "mouse — move, click — start",
+    "Засветка": "Cure", "Слои": "Layers", "Фотон": "Photon",
+    "кирпичи — силуэт вашей детали; фотон засвечивает воксели": "bricks are your part's silhouette; the photon cures voxels",
+    "укладывайте воксели в колбу без щелей": "stack voxels in the vial without gaps",
+    "проведите фотон через стенки, не задев стекло": "guide the photon through the walls without touching the glass",
+    "←/→ — двигать, ↑ — повернуть, ↓ — быстрее": "←/→ move, ↑ rotate, ↓ drop",
+    "клик или пробел — подлететь вверх": "click or Space — fly up",
+    "появится после расчёта света": "appears after the light is computed",
+    "результат устарел — пересчитайте свет": "result is out of date — compute the light again",
+    "показать в 3D, что затвердеет": "show in 3D what will cure",
+})
+
+# Phrases with numbers: the numbers are matched in any form and put back in place.
+_EN_TEMPLATES: dict[str, str] = {
+    "ШАГ {} ИЗ {}": "STEP {} OF {}",
+    "зона печати Ø {} мм · воксель {} мм": "print zone Ø {} mm · voxel {} mm",
+    "внутри Ø {} мм — столько занимает смола": "inside Ø {} mm — that much is resin",
+    "в жидкости n = {} луч почти не гнётся: кадры без искажений": "in liquid n = {} the beam hardly bends: frames are undistorted",
+    "в воздухе колба работает как линза: кадры специально растянуты, печатается только центр Ø {} мм. Ванна лучше.":
+        "in air the vial acts as a lens: frames are stretched on purpose and only the centre Ø {} mm prints. A bath is better.",
+    "печатать можно до {} мм в высоту": "parts up to {} mm tall",
+    "печатать можно до {} мм в высоту (ограничивает колба {} мм)": "parts up to {} mm tall (the vial limits it to {} mm)",
+    "видео и вывод на проектор — {}×{}, пиксель в пиксель": "video and projector output — {}×{}, pixel for pixel",
+    "пиксель {} мм на оси колбы": "pixel {} mm at the vial axis",
+    "пиксель {} мм на оси колбы — шире экрана проектора!": "pixel {} mm at the vial axis — wider than the projector screen!",
+    "до оси ≈ {} мм · по высоте у краёв детали размытие до {} мм": "to the axis ≈ {} mm · top and bottom of the part blur up to {} mm",
+    "до оси ≈ {} мм · по высоте у краёв детали размытие до {} мм — поставьте проектор дальше":
+        "to the axis ≈ {} mm · top and bottom of the part blur up to {} mm — move the projector farther",
+    "до оси {} мм — ближе колбы, так не бывает: проверьте числа": "to the axis {} mm — closer than the vial, impossible: check the numbers",
+    "кадры подрезкиваются под размытие {} мм": "frames are pre-sharpened for {} mm blur",
+    "картинка на экране: x = {} px": "picture on screen: x = {} px",
+    "серый → свет по степени {}; кадры пересчитываются": "gray → light with power {}; frames are converted",
+    "{} — идеальный чёрный": "{} — ideal black",
+    "чёрный пиксель светит {} % от белого": "a black pixel gives {} % of white",
+    "{} — время печати не считается": "{} — print time is not computed",
+    "{} — свет не слабеет, время печати не считается": "{} — light does not fade, print time is not computed",
+    "до дальней стенки доходит {} % света": "{} % of the light reaches the far wall",
+    "луч гнётся на стенке на {}° (с ванной)": "the beam bends {}° at the wall (with bath)",
+    "луч гнётся на стенке на {}° (без ванны)": "the beam bends {}° at the wall (no bath)",
+    "колба в воздухе — луч гнётся на стенке на {}°, движок это учтёт": "vial in air — the beam bends {}° at the wall, the engine accounts for it",
+    "{} — неизвестно, время печати не считается": "{} — unknown, print time is not computed",
+    "сетка {} · воксель {} мм · расчёт ≈ {} с": "grid {} · voxel {} mm · compute ≈ {} s",
+    "сетка {} · воксель {} мм · расчёт ≈ {}:{}": "grid {} · voxel {} mm · compute ≈ {}:{}",
+    "шаг {}° между кадрами": "{}° between frames",
+    "подрезка кадров под {} мм": "frames pre-sharpened for {} mm",
+    "кадр каждые {} мс · проектор {} Гц": "a frame every {} ms · projector {} Hz",
+    "кадр каждые {} мс · проектор {} Гц — больше {} Гц, проверьте проектор": "a frame every {} ms · projector {} Hz — over {} Hz, check the projector",
+    "файл {}×{} — показывать во весь экран без масштабирования": "a {}×{} file — play full screen without scaling",
+    "{} с": "{} s", "{} оборота": "{} revolutions", "{} Гц": "{} Hz", "{} мм": "{} mm",
+    "{} × {} × {} мм": "{} × {} × {} mm",
+    "{} × {} × {} мм · {} треугольников": "{} × {} × {} mm · {} triangles",
+    "по высоте {} мм из {}": "height {} mm of {}",
+    "готово · {} кадров": "done · {} frames",
+    "≈ {} с на обычном компьютере": "≈ {} s on an ordinary computer",
+    "≈ {}:{} на обычном компьютере": "≈ {}:{} on an ordinary computer",
+    "Ø {} × {} мм": "Ø {} × {} mm", "{} · шаг {}°": "{} · step {}°",
+    "Ø {} мм · {}×{}": "Ø {} mm · {}×{}", "Ø {} мм · {}×{} · ✓": "Ø {} mm · {}×{} · ✓",
+    "{}×{} · кадр {}×{} · {} Гц": "{}×{} · frame {}×{} · {} Hz",
+    "{}×{} · кадр {}×{} — не помещается! · {} Гц": "{}×{} · frame {}×{} — does not fit! · {} Hz",
+    "{}×{} · {} Гц": "{}×{} · {} Hz",
+    "Влезает: {} мм из {}, по высоте {} из {}": "Fits: {} mm of {}, height {} of {}",
+    "Влезает: {} мм из {}, по высоте {} из {} — у самой стенки, лучше ближе к оси":
+        "Fits: {} mm of {}, height {} of {} — right at the wall, better closer to the axis",
+    "Шире колбы: деталь уходит на {} мм от оси, внутри {}": "Wider than the vial: the part reaches {} mm from the axis, inside is {}",
+    "Выше поля: {} мм при доступных {}": "Taller than the field: {} mm, available {}",
+    "{} столбиков с дозой {}–{} %: выбираете лучший, доза обновится сама": "{} pillars at {}–{} % dose: pick the best one, the dose updates itself",
+    "или открыть тестовую гайку M{}": "or open the M{} test nut",
+    "есть в паспорте проектора, обычно {},{}–{},{}": "in the projector datasheet, usually {}.{}–{}.{}",
+    "есть в паспорте проектора, обычно {}–{}": "in the projector datasheet, usually {}–{}",
+    "не знаете? оставьте {}": "not sure? leave {}",
+    "Сначала рассчитайте свет на шаге {}.": "Compute the light in step {} first.",
+    "BEST {}": "BEST {}",
+}
+_EN.update({
+    "Готово.": "Done.", "Компенсация размытия проектора...": "Pre-sharpening for projector blur...",
+    "Нарезка сечений...": "Slicing layers...", "План печати...": "Print plan...", "Подготовка модели...": "Preparing the model...",
+    "Сохранение кадров...": "Saving frames...", "Физическая оптика: трассировка лучей и оптимизация...":
+        "Physical optics: ray tracing and optimisation...",
+    "FastCAL: трассировка лучей одного ракурса...": "FastCAL: tracing rays for one view...",
+    "ffmpeg недоступен: MP4 пишется кодеком mp4v с потерей качества.": "ffmpeg missing: MP4 is written with the lossy mp4v codec.",
+    "Видео сохранено.": "Video saved.", "Загрузка кадров...": "Loading frames...", "Модель загружена.": "Model loaded.",
+    "Загрузка модели...": "Loading model...", "Создаю тестовую гайку M20...": "Building the M20 test nut...",
+    "Ошибка загрузки.": "Loading failed.", "Ошибка генерации.": "Computation failed.", "Видео собрано.": "Frames loaded.",
+    "Процесс расчёта завершился с кодом": "The compute process exited with code",
+    "Время печати не рассчитано: задайте поглощение смолы (затухание), облучённость проектора и дозу гелеобразования смолы.":
+        "Print time not computed: set resin absorption, projector irradiance and the resin gel dose.",
+    "Нет экспозиции, при которой вся деталь печатается чисто (окно процесса отрицательное). Увеличьте число кадров или сетку либо используйте иммерсию.":
+        "No exposure prints the whole part cleanly (negative process window). Use more frames, a finer grid or immersion.",
+})
+_EN_TEMPLATES.update({
+    "Меньше {} оборотов: ошибки старта/остановки и синхронизации станут заметными. Уменьшите яркость или мощность проектора.":
+        "Fewer than {} revolutions: start/stop and sync errors become visible. Lower the projector brightness or power.",
+    "{}% детали лежит дальше r = {} мм от оси: из-за преломления туда приходят лучи не со всех сторон. "
+    "Сдвиньте деталь к оси или используйте иммерсию.":
+        "{}% of the part lies beyond r = {} mm from the axis: refraction keeps some directions from reaching it. "
+        "Move the part towards the axis or use immersion.",
+    "Чёрный уровень проектора даёт больше {}% дозы гелеобразования по всему объёму.":
+        "The projector's black level gives over {}% of the gel dose everywhere.",
+    "Загрузка кадра {}/{}...": "Loading frame {}/{}...", "Кодирование кадра {}/{}...": "Encoding frame {}/{}...",
+    "Открытая сетка: {} сечений восстановлено.": "Open mesh: {} layers repaired.",
+    "Сохранено {} кадров в: ": "Saved {} frames to: ",
+})
+_EN.update({
+    "Доза в смоле": "Dose in the resin", "средний слой детали": "middle layer of the part",
+    "розовое — затвердеет · пунктир — модель": "bright — will cure · dashed — the model",
+    "экспозиция по плану": "exposure as planned", "нет данных": "no data",
+    "летите сквозь свет вашей печати": "fly through the light of your print",
+})
+_EN_TEMPLATES.update({
+    "экспозиция +{} %": "exposure +{} %", "экспозиция -{} %": "exposure -{} %",
+    "не досвечено {} % · лишнее {} %": "under-cured {} % · extra {} %",
+    "ошибка формы дозы {}": "dose shape error {}",
+})
+_EN.update({"Сдвиг, мм": "Move, mm", "Поворот, °": "Rotate, °", "Размер, мм": "Size, mm", "Центр": "Centre",
+            "Вписать": "Fit", "Сброс": "Reset"})
+
+_NUMBER = re.compile(r"\d+(?:[  ]\d{3})*(?:[.,]\d+)?")
+
+
+def _template_en(text: str) -> str | None:
+    key = _NUMBER.sub("{}", text)
+    if key == text or key not in _EN_TEMPLATES:
+        return None
+    numbers = [n.replace(",", ".") for n in _NUMBER.findall(text)]
+    try:
+        return _EN_TEMPLATES[key].format(*numbers)
+    except (IndexError, KeyError):
+        return None
+
+
 def set_language(language: str) -> None:
     """Select ``en`` or ``ru`` for subsequently created/updated UI text."""
 
@@ -435,9 +638,27 @@ def language() -> str:
     return _language
 
 
-def tr(text: str) -> str:
-    """Translate a source string between Russian and English seamlessly."""
+_SOURCE: dict[str, str] = {}      # shown text -> the source string it was translated from
 
+
+def remember(shown: str, source: str) -> None:
+    """Record that `shown` on screen came from `source` (for switching language later)."""
+    if shown and shown != source and _SOURCE.get(source) != shown:
+        if len(_SOURCE) > 50_000:          # numbers make templated strings unique; keep it bounded
+            _SOURCE.clear()
+        _SOURCE[shown] = source
+
+
+def source_of(text: str) -> str:
+    """The source string behind a text currently on screen (itself if unknown)."""
+    seen = 0
+    while text in _SOURCE and seen < 3:     # a translation of a translation, at worst
+        text = _SOURCE[text]
+        seen += 1
+    return text
+
+
+def _translate(text: str) -> str:
     if _language == "ru":
         if text in _RU:
             return _RU[text]
@@ -447,15 +668,43 @@ def tr(text: str) -> str:
         return text
     if text in _EN:
         return _EN[text]
+    templated = _template_en(text)
+    if templated is not None:
+        return templated
     for source, translated in _PREFIX_EN:
         if text.startswith(source):
             return translated + text[len(source):]
     return text
 
 
-def apply_translations(root: Any) -> None:
-    """Translate static Qt widget text after a window has been built."""
+def tr(text: str) -> str:
+    """Translate a source string between Russian and English seamlessly.
 
+    Every translation is remembered, so a text already on screen can be traced back
+    to its source and translated again when the language changes.
+    """
+    if not text:
+        return text
+    source = source_of(text)
+    out = _translate(source)
+    remember(out, source)
+    return out
+
+
+def _retranslated(text: str) -> str:
+    if not text or "<" in text:          # rich text is rebuilt by its owner (chips, plan table)
+        return text
+    return tr(source_of(text))
+
+
+def apply_translations(root: Any) -> None:
+    """Translate every text of a window into the current language.
+
+    Works from whatever is on screen now: each text is traced back to its source
+    (see remember/source_of) and translated again, so switching back and forth any
+    number of times never leaves a stale or half-translated label. Dynamic texts
+    (effects, plans, chips) are additionally rebuilt by their owners afterwards.
+    """
     from PyQt6.QtCore import QObject
     from PyQt6.QtWidgets import QAbstractButton, QComboBox, QGroupBox, QLabel, QTabWidget
 
@@ -463,61 +712,78 @@ def apply_translations(root: Any) -> None:
     for widget in widgets:
         if not hasattr(widget, "property"):
             continue
-
         if isinstance(widget, QLabel):
-            if widget.property("_spinslicer_skip_text_translation") or (widget.pixmap() is not None and not widget.pixmap().isNull()):
+            if widget.pixmap() is not None and not widget.pixmap().isNull():
                 continue
-            source = widget.property("_spinslicer_i18n_text")
-            if source is None:
-                source = widget.text()
-                widget.setProperty("_spinslicer_i18n_text", source)
-            widget.setText(tr(str(source)))
+            if widget.property("_spinslicer_fixed_text"):
+                continue
+            new = _retranslated(widget.text())
+            if widget.property("_i18n_upper"):
+                new = tr(str(widget.property("_i18n_upper"))).upper()
+            if new != widget.text():
+                widget.setText(new)
         elif isinstance(widget, QAbstractButton):
-            source = widget.property("_spinslicer_i18n_text")
-            if source is None:
-                source = widget.text()
-                widget.setProperty("_spinslicer_i18n_text", source)
-            widget.setText(tr(str(source)))
+            new = _retranslated(widget.text())
+            if new != widget.text():
+                widget.setText(new)
         elif isinstance(widget, QGroupBox):
-            source = widget.property("_spinslicer_i18n_title")
-            if source is None:
-                source = widget.title()
-                widget.setProperty("_spinslicer_i18n_title", source)
-            widget.setTitle(tr(str(source)))
+            widget.setTitle(_retranslated(widget.title()))
 
         for prop in ("windowTitle", "toolTip", "statusTip", "whatsThis"):
             getter = getattr(widget, prop, None)
             setter = getattr(widget, f"set{prop[0].upper()}{prop[1:]}", None)
             if not callable(getter) or not callable(setter):
                 continue
-            property_name = f"_spinslicer_i18n_{prop}"
-            source = widget.property(property_name)
-            if source is None:
-                source = getter()
-                widget.setProperty(property_name, source)
-            if source:
-                setter(tr(str(source)))
+            current = getter()
+            if current:
+                new = _retranslated(str(current))
+                if new != current:
+                    setter(new)
 
         if isinstance(widget, QComboBox):
-            sources = widget.property("_spinslicer_i18n_items")
-            if sources is None:
-                sources = [widget.itemText(i) for i in range(widget.count())]
-                widget.setProperty("_spinslicer_i18n_items", sources)
-            for index, source in enumerate(sources):
-                widget.setItemText(index, tr(str(source)))
+            for index in range(widget.count()):
+                widget.setItemText(index, _retranslated(widget.itemText(index)))
 
         if isinstance(widget, QTabWidget):
-            sources = widget.property("_spinslicer_i18n_tabs")
-            if sources is None:
-                sources = [widget.tabText(i) for i in range(widget.count())]
-                widget.setProperty("_spinslicer_i18n_tabs", sources)
-            for index, source in enumerate(sources):
-                widget.setTabText(index, tr(str(source)))
+            for index in range(widget.count()):
+                widget.setTabText(index, _retranslated(widget.tabText(index)))
+                tip = widget.tabToolTip(index)
+                if tip:
+                    widget.setTabToolTip(index, _retranslated(tip))
 
-            tooltip_sources = widget.property("_spinslicer_i18n_tab_tooltips")
-            if tooltip_sources is None:
-                tooltip_sources = [widget.tabToolTip(i) for i in range(widget.count())]
-                widget.setProperty("_spinslicer_i18n_tab_tooltips", tooltip_sources)
-            for index, source in enumerate(tooltip_sources):
-                if source:
-                    widget.setTabToolTip(index, tr(str(source)))
+
+# Print page: brightness, exposure, timed projection; log details (2026-10-31).
+_EN.update({
+    "Яркость проектора": "Projector brightness",
+    "полная яркость — самая короткая печать": "full brightness — the shortest print",
+    "Остановить засветку": "Stop exposure",
+    "идёт засветка · Esc на проекторе — стоп": "exposing · Esc on the projector stops",
+    "Экспозиция": "Exposure", "Яркость": "Brightness",
+    "Засветка завершена: доза набрана.": "Exposure finished: the dose is delivered.",
+    "Загружено:": "Loaded:", "верш.": "vertices", "гран.": "faces",
+    "Preflight отчёт:": "Preflight report:",
+    "Сохранено": "Saved", "кадров в:": "frames to:",
+})
+_EN_TEMPLATES.update({
+    "кадры в {} раза тусклее, засветка во столько же раз дольше — доза та же; полезно для быстрой смолы":
+        "frames {}× dimmer, exposure that much longer — same dose; useful for fast resin",
+    "идёт засветка {} с из {}:{}": "exposing {} s of {}:{}",
+    "идёт засветка {}:{} из {}:{}": "exposing {}:{} of {}:{}",
+    "идёт засветка {} с из {} с": "exposing {} s of {} s",
+    "идёт засветка {}:{} из {} с": "exposing {}:{} of {} s",
+    "{} % от плана": "{} % of plan",
+    "Сохранение кадра {}/{}...": "Saving frame {}/{}...",
+})
+
+
+def num(value: float, digits: int = 1) -> str:
+    """A number with the interface's decimal separator (comma in Russian, point in English)."""
+    text = f"{value:.{digits}f}"
+    return text.replace(".", ",") if _language == "ru" else text
+
+_EN.update({
+    "Настройки или деталь изменились — кадры устарели. Пересчитайте свет.":
+        "Settings or the part changed — the frames are out of date. Compute the light again.",
+    "Пересчитать свет": "Compute light again",
+    "старые кадры не подходят к новым настройкам": "the old frames do not match the new settings",
+})

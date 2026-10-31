@@ -17,16 +17,11 @@ from PyInstaller.utils.hooks import collect_all
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 
 datas = [(str(PROJECT_ROOT / "assets"), "assets")]
-# Taichi compiles a kernel from the *source text* of its function (through inspect), and
-# PyInstaller keeps only bytecode. Without this file the GPU add-on fails on the first
-# kernel call with "OSError: Cannot find source code", and the program falls back to the
-# CPU. release_check.py runs a real kernel to catch exactly that.
-datas += [(str(PROJECT_ROOT / "optics" / "gpu_operator.py"), "optics")]
 binaries: list[tuple[str, str]] = []
 native_name = "sirtsolver.dll" if sys.platform.startswith("win") else "sirtsolver.so"
 native_path = PROJECT_ROOT / "cpp_backend" / native_name
 if not native_path.is_file():
-    raise FileNotFoundError("Build the native backend with python tools/build_sirt.py before packaging.")
+    raise FileNotFoundError("Build the native backend with python build_sirt.py before packaging.")
 # BINARY collection makes PyInstaller resolve OpenMP runtime dependencies.
 # Copying the folder as DATA can silently omit vcomp140/libgomp on clean PCs.
 binaries.append((str(native_path), "cpp_backend"))
@@ -43,11 +38,8 @@ if sys.platform.startswith("win"):
                 if path.name.casefold().startswith(("msvcp140", "vcruntime140"))
             )
 
-hiddenimports = ["vtkmodules.qt.QVTKRenderWindowInteractor", "optics.gpu_operator"]
-# imageio_ffmpeg carries the ffmpeg binary that encodes the H.264 export. Taichi is
-# deliberately absent: it is the installer's optional "GPU acceleration" component, a
-# ``gpu`` folder next to the program built by packaging/build_gpu_addon.py.
-for package in ("qdarktheme", "pyvista", "pyvistaqt", "vtkmodules", "imageio_ffmpeg"):
+hiddenimports = ["vtkmodules.qt.QVTKRenderWindowInteractor", "engine_process", "PyQt6.QtSvg"]
+for package in ("qdarktheme", "pyvista", "pyvistaqt", "vtkmodules"):
     collected_datas, collected_binaries, collected_hiddenimports = collect_all(package)
     datas += collected_datas
     binaries += collected_binaries
@@ -62,13 +54,13 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(PROJECT_ROOT / "packaging" / "runtime_hook_qt_path.py")],
+    runtime_hooks=[str(PROJECT_ROOT / "runtime_hook_qt_path.py")],
     # PyVista imports its lightweight runtime decorator from
     # ``pyvista.typing.mypy_plugin``.  When mypy is installed in the build
     # environment, that plugin conditionally imports mypy's compiled checker
     # modules, which are not application dependencies and can fail in a frozen
     # build due to an incomplete ``__mypyc`` module graph.
-    excludes=["mypy", "mypy_extensions", "taichi"],
+    excludes=["mypy", "mypy_extensions"],
     noarchive=False,
     optimize=0,
 )
@@ -115,4 +107,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(PROJECT_ROOT / "assets" / "spinslicer.ico"),
 )

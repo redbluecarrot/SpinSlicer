@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../assets/spinslicer.svg" alt="SpinSlicer" width="160">
+  <img src="assets/spinslicer.svg" alt="SpinSlicer" width="160">
 </p>
 
 <h1 align="center">SpinSlicer</h1>
@@ -9,31 +9,31 @@
 </p>
 
 <p align="center">
-  <a href="../../README.md"><img src="../../assets/lang-en.svg" alt="English" height="36"></a>
-  <a href="README.ru.md"><img src="../../assets/lang-ru.svg" alt="Русский" height="36"></a>
-  <a href="README.es.md"><img src="../../assets/lang-es.svg" alt="Español" height="36"></a>
-  <a href="README.zh-CN.md"><img src="../../assets/lang-zh.svg" alt="中文" height="36"></a>
+  <a href="README.md"><img src="assets/lang-en.svg" alt="English" height="36"></a>
+  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
+  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
+  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
-SpinSlicer 是一个用于断层扫描式体积增材制造（VAM）的本地研究原型。它集成了
-PyQt6 桌面界面、PyVista/VTK 视口、投影生成器和帧播放器。
-
-本应用负责准备投影并预览生成的帧，不会驱动真实的投影仪、树脂槽或旋转台。
+SpinSlicer 为断层扫描式体积增材制造（VAM / CAL）准备打印：装有树脂的
+样品瓶在投影仪前旋转，数百个角度的光叠加起来，使整个零件同时固化。SpinSlicer
+根据 STL 计算这些投影帧，显示它们将固化出什么，并按计划的曝光时间精确地投射。
 
 ## 功能
 
-稳定版 v0.4.0 包含 **Slicer (3D)**、**Projector (Video)** 和 **Settings** 侧边栏。
-详见[发布说明](../releases/v0.4.0.md)。
+版本 0.5.0 —— 详见[发布说明](docs/releases/v0.5.0.md)（英文和俄文）。
 
-- **稀疏、内存受限的光学计算：** 全分辨率 CSR 光线矩阵和按 Z 分批的优化保持 256×256 网格与 360 个角度。测量条件与资源占用记录在[数值验证报告](../validation/physical-optics-v0.3.1.md)中。
-- **原生 OpenMP 并行 SIRT 引擎：** 多线程 C++ 后端（`sirtsolver.dll` / `sirtsolver.so`）可在任何常规 CPU 上运行，无需昂贵的独立显卡。
-- **人体工学 CAD 工作区：** 左侧为宽大的交互式 3D 视口，右侧为快捷参数面板。
-- **简洁的 3D 视口：** 流畅的轨迹球旋转、平移和缩放，不被视图立方体遮挡。
-- **加载并变换 STL 模型**，单位为物理毫米。
-- **物理光学流程：** 支持圆柱形和矩形树脂槽的光线追踪，并考虑折射率匹配（$n_{glass}, n_{liquid}, n_{resin}$）。
-- **默认保留已加载 STL 模型的内孔和螺纹退刀槽。**
-- **将生成的帧预览为旋转视频**，并可导出为 MP4。
-- **双语界面：** 可在俄语（Русский）和英语之间即时切换。
+- **三个步骤：** *模型*（加载、摆放并检查 STL）、*光*（计算投影帧）、*打印*
+  （投射到投影仪、保存 MP4 或 PNG）。
+- **FastCAL 引擎：** 圆形样品瓶中所有角度在光学上相同，只需追踪一个角度的光线。
+  模型包含折射、衰减、菲涅耳损耗、投影仪像素轮廓与光锥，以及每帧期间的旋转。
+- **虚拟打印：** 将投影仪实际显示的帧重新换算为剂量，在 3D 中与模型并排显示固化结果，
+  并给出吻合度（IoU）和曝光余量。
+- **打印计划**（时间与圈数）和**剂量图**，其滑块即打印曝光。
+- **可直接用于打印的投影输出：** 帧以 1:1 放置在投影仪原生屏幕上，每层一行，
+  按时钟选帧（无漂移），实时亮度调节，剂量达标后自动停止。
+- **在普通硬件上也流畅：** 计算在独立进程中运行，并使用所有 CPU 核心。
+- **英文和俄文界面**，日间与夜间主题。
 
 ## 安装与软件包
 
@@ -42,19 +42,19 @@ PyQt6 桌面界面、PyVista/VTK 视口、投影生成器和帧播放器。
 可直接从 [Releases](https://github.com/redbluecarrot/SpinSlicer/releases) 下载预编译程序：
 
 - **Windows 10 / 11：**
-  - **安装程序：** 下载并运行 `SpinSlicer-Setup-0.4.0.exe`
+  - **安装程序：** 下载并运行 `SpinSlicer-Setup-0.5.0.exe`
   - **便携版：** 下载 `SpinSlicer-windows-x64.zip`，解压后运行 `SpinSlicer.exe`
 - **Arch Linux / Manjaro：**
   ```bash
-  sudo pacman -U SpinSlicer-0.4.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.5.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint：**
   ```bash
-  sudo apt install ./SpinSlicer-0.4.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.5.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE：**
   ```bash
-  sudo dnf install ./SpinSlicer-0.4.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.5.0-1.x86_64.rpm
   ```
 - **通用 Linux 便携版：**
   ```bash
@@ -74,7 +74,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python tools/build_sirt.py
+python build_sirt.py
 ```
 
 运行应用：
@@ -103,10 +103,10 @@ C++/OpenMP 加速同一计算。Python API 还保留了内部 Radon 路径和可
 
 预览会根据导出的 PNG 灰度值重建，并在拟合统一缩放后报告相对剂量形状 RMSE。
 这不是经过校准的固化预测。菲涅耳反射、散射、材料固化响应和硬件绝对剂量都需要额外校准。
-参见[模型与可复现检查](../validation/physical-optics-v0.3.1.md)。
+参见[模型与可复现检查](docs/validation/physical-optics-v0.3.1.md)。
 
 方形比色皿在每个角度都使用等于外部对角线的固定投影视场。该跨度和物理像素间距会记录在
-清单中；投影仪校准必须使用该跨度。参见[方形视场校正与角部覆盖检查](../validation/square-detector-field.md)。
+清单中；投影仪校准必须使用该跨度。参见[方形视场校正与角部覆盖检查](docs/validation/square-detector-field.md)。
 
 ## 输出格式
 

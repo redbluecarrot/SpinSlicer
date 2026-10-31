@@ -9,32 +9,60 @@
 </p>
 
 <p align="center">
-  <a href="docs/translations/README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
-  <a href="docs/translations/README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
-  <a href="docs/translations/README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
+  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
+  <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
+  <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
-SpinSlicer is a local research prototype for tomographic volumetric additive
-manufacturing (VAM). It combines a PyQt6 desktop interface, a PyVista/VTK
-viewport, a projection generator, and a frame player.
+SpinSlicer prepares prints for tomographic volumetric additive manufacturing
+(VAM / CAL): a vial of resin turns in front of a projector, and the light from
+hundreds of angles adds up to cure the whole part at once. SpinSlicer computes
+those projector frames from an STL file, shows what they will cure, and plays
+them on the projector for exactly the planned exposure.
 
-The application prepares projections and previews generated frames. It does
-not drive a real projector, resin vat, or rotation stage.
+It is built for both CAL researchers and people building their own printer:
+every setting shows what it physically changes, and every number comes from a
+model of the optics, not from a rule of thumb.
 
 ## Features
 
-Stable v0.4.0 includes **Slicer (3D)**, **Projector (Video)**, and **Settings** sidebar.
-See [release notes](docs/releases/v0.4.0.md).
+Version 0.5.0 — see the [release notes](docs/releases/v0.5.0.md).
 
-- **Sparse, bounded-memory optics:** Full-resolution CSR ray matrices and Z-batched optimization retain the 256×256 grid and 360 angles. Measured conditions and resource use are recorded in the [numerical validation report](docs/validation/physical-optics-v0.3.1.md).
-- **Native OpenMP Parallel SIRT Engine:** Multi-threaded C++ backend (`sirtsolver.dll` / `sirtsolver.so`) runs on all standard CPUs without requiring expensive discrete GPUs.
-- **Ergonomic CAD Workspace:** Side-by-side layout with wide interactive 3D viewport on the left and quick-access parameters on the right.
-- **Clean 3D Viewport:** Streamlined trackball orbit, pan, and zoom without obstructing viewport cubes.
-- **Load and transform STL models** in physical millimetres.
-- **Physical Optics Pipeline:** Ray-tracing support for cylindrical and rectangular vats with index-matching ($n_{glass}, n_{liquid}, n_{resin}$).
-- **Preserve internal bores and thread relief** in loaded STL models by default.
-- **Preview generated frames** as a rotating video and export to MP4.
-- **Bilingual Interface:** Instant language switching between Russian (Русский) and English.
+- **Three steps:** *Model* (load, place and check the STL), *Light* (compute the
+  frames), *Print* (show them on the projector, save an MP4 or PNG frames).
+  The printer itself is described once under *Printer*.
+- **FastCAL engine:** the round vial makes every projection angle optically the
+  same, so rays are traced for one angle and the problem splits into small
+  per-frequency systems. Refraction (Snell), attenuation (Beer–Lambert), Fresnel
+  losses, the projector's pixel profile and cone of rays (throw ratio) and the
+  rotation during a frame are all in the model. Typical parts take seconds to a
+  minute, not hours ([benchmarks](docs/validation/resources-2026-10-31.md),
+  [comparison with OSMO, PM, BCLP and classic CAL](docs/validation/engine-judge-2026-10-31.md)).
+- **Virtual print:** the frames as the projector will really show them (8-bit,
+  gamma, contrast, row blur) are turned back into dose; the cured part is shown in
+  3D next to the model, with the match (IoU) and the exposure margin.
+- **Print plan:** print time and number of turns from the resin's gel dose,
+  absorption and the projector's irradiance; exposure calibration print for a new resin.
+- **Dose card:** the light dose in the middle layer and what cures at the chosen
+  exposure; its slider is the print exposure.
+- **Projector output, ready to print:** frames placed 1:1 on the projector's
+  native screen (no stretching), one frame row per layer, the frame shown chosen
+  from the clock (no drift against the turning vial), frames held in memory, live
+  brightness, and an automatic stop when the planned dose is delivered.
+- **Smooth on modest hardware:** the computation runs in its own process at low
+  priority and uses all CPU cores; the window stays responsive and uses no CPU when idle.
+- **English and Russian**, day and night themes.
+
+## Workflow
+
+1. **Printer** — vial diameter and wall, immersion bath, projector resolution,
+   throw ratio, gamma and irradiance; resin absorption and gel dose.
+2. **Model** — drop an STL on the scene; move, rotate and scale it. Parts that do
+   not fit the printable zone are flagged before anything is computed.
+3. **Light** — pick the quality (grid 128 / 256 / 384) and compute. A mini-game
+   keeps you company meanwhile. Check the virtual print and the exposure margin.
+4. **Print** — check the vial alignment pattern on the projector, set the exposure
+   on the dose card and press *Show on projector*. The projector stops by itself.
 
 ## Installation & Packages
 
@@ -43,19 +71,19 @@ See [release notes](docs/releases/v0.4.0.md).
 Download pre-built binaries directly from [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Installer:** Download and run `SpinSlicer-Setup-0.4.0.exe`
+  - **Installer:** Download and run `SpinSlicer-Setup-0.5.0.exe`
   - **Portable:** Download `SpinSlicer-windows-x64.zip`, extract and run `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.4.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.5.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.4.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.5.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.4.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.5.0-1.x86_64.rpm
   ```
 - **Generic Linux Portable:**
   ```bash
@@ -75,7 +103,7 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python tools/build_sirt.py
+python build_sirt.py
 ```
 
 Run the application with:
@@ -84,95 +112,96 @@ Run the application with:
 python SpinSlicer.py
 ```
 
-## Threaded STL models
+## Projection engine
 
-Load the nut as a regular STL through **Load STL**. Internal bores and thread
-relief are preserved by default during section rasterization, including when
-the mesh-repair option is enabled. Keep the thread pitch and depth several
-voxels wide at the selected grid resolution; very small features cannot be
-represented reliably by any voxel-based projector.
+The engine follows the usual stages of Tomo and VAMToolbox:
 
-## Projection backends
+1. voxelize the part (exact coverage, non-zero winding; open meshes are repaired
+   layer by layer), with layers at the projector's row pitch;
+2. plan nonnegative projections that put the dose above the gel threshold inside
+   the part and below it outside (a band objective with a soft cap), solved by a
+   projected L-BFGS with angular smoothing (no frame flicker), coarse-to-fine
+   across layers and two-grid across resolution;
+3. apply one common gain, encode gray levels for the projector's gamma once, and
+   export the frames; then run the virtual print and the print plan.
 
-The projection engine follows the same conceptual stages as Tomo and
-VAMToolbox:
+FastCAL needs a round vial and equally spaced angles over a full turn. Square
+cuvettes use the sparse SIRT path (`optics/optimization.py`, optional C++/OpenMP
+library); the Python API also keeps the Radon and VAMToolbox paths.
 
-1. voxelize the target geometry;
-2. generate or optimize a projection sequence over evenly spaced angles;
-3. apply a common projection scale and export a frame sequence for playback.
-
-The default UI backend traces Snell-refracted rays through the vial or cuvette,
-integrates voxel crossings and Beer–Lambert attenuation, then fits nonnegative
-relative-dose projections with SIRT. The optional native library accelerates the
-same calculation with C++/OpenMP. The Python API also retains internal Radon
-and optional VAMToolbox compatibility paths.
-
-The preview reconstructs the exported PNG gray values and reports the relative
-dose shape RMSE after fitting a common scale. This is not a calibrated curing
-prediction. Fresnel reflection, scattering, material cure response and absolute
-hardware dose require additional calibration. See the [model and reproducible
-checks](docs/validation/physical-optics-v0.3.1.md).
+The dose model is relative: the absolute print time depends on the resin data
+and the projector's irradiance you enter, and on how well they are measured. The
+exposure calibration print is the way to pin it down for a new resin.
 
 Square cuvettes use a fixed projection field equal to the outer diagonal at
-every angle. This span and the physical pixel pitch are recorded in the manifest;
-projector calibration must use that span. See the [square-field correction and
-corner-coverage checks](docs/validation/square-detector-field.md).
+every angle. See the [square-field correction and corner-coverage
+checks](docs/validation/square-detector-field.md).
+
+## Performance
+
+Measured on purpose on a weak machine (2 cores at 2.1 GHz, no GPU); a typical
+desktop CPU is faster. Details: [resources report](docs/validation/resources-2026-10-31.md).
+
+| Quality | Frames | Time | Peak RAM (compute) |
+| --- | --- | --- | --- |
+| Fast (grid 128) | 360 | ~10 s | 0.5 GB |
+| Normal (grid 256) | 360 | ~34 s | 1.1 GB |
+| Fine (grid 384) | 360 | ~69 s | 1.7 GB |
+
+The engine adapts to the machine: it uses every core (`SPINSLICER_THREADS` to
+limit it) and up to a fifth of the free memory for wider batches
+(`SPINSLICER_ENGINE_MB` to set it).
 
 ## Output format
 
-Each completed generation creates a unique run directory:
+Each completed computation creates a unique run directory:
 
 ```text
 output_frames/
-└── run-20260903T120000Z-a1b2c3d4/
-    ├── frame_0000.png
-    ├── frame_0001.png
-    ├── slice_meta.json
-    ├── dose_stats.txt
-    ├── reconstruction_dose.npy
+└── run-20261031T120000Z-a1b2c3d4/
+    ├── frame_0000.png …          one frame per angle, 8-bit, one row per layer
+    ├── print_plan.json           print time, exposure margin, virtual-print metrics
+    ├── virtual_print.stl         the part the frames would cure
+    ├── virtual_print_slices.png  a few layers: cured / extra / missing
+    ├── reconstruction_dose.npy   dose of the middle layer from the saved PNGs
     ├── reconstruction_target.npy
     ├── reconstruction_preview.png
+    ├── dose_stats.txt
+    ├── slice_meta.json
     └── manifest.json
 ```
 
-`manifest.json` stores the source identity (when the source is an STL), model
-type and parameters, transform matrix, projection backend, resin settings,
-frame dimensions, and `complete: true`. The frame repository validates image
-counts, dimensions, metadata, byte budgets, and completion status before a
-player can consume a run. Legacy flat folders containing
-`frame_*.png` remain readable.
+`manifest.json` stores the source identity, parameters, transform matrix,
+engine, frame geometry (detector span, pixel pitch, Z pitch) and `complete: true`.
+A run is published only after every PNG and the metadata pass validation.
 
 ## Project layout
 
 | File | Purpose |
 | --- | --- |
-| `SpinSlicer.py` | Main window, language selector, shared status bar, and log. |
-| `assets/spinslicer.svg` | Application icon used by the desktop UI and packages. |
-| `slicer_tab.py` | STL loading, transformation, and projection generation UI. |
-| `nut_dialog.py` | Legacy threaded-nut dialog kept for API compatibility. |
-| `threaded_nut.py` | Legacy parametric nut generator kept for API compatibility. |
-| `ui_panels.py` | Printer/process settings and compact model transform controls. |
-| `slicing_engine.py` | Mesh-section rasterization, projection planning, and verified PNG export. |
-| `optics/` | Snell rays, exact voxel path integrals, and nonnegative relative-dose SIRT. |
-| `vam_backend.py` | Optional VAMToolbox CAL adapter and sinogram layout normalization. |
-| `video_tab.py` | Frame playback and MP4 export. |
-| `frame_io.py` | Validated frame-set storage, metadata, and manifests. |
-| `profiles.py` | Validated machine and resin settings recorded with each projection run. |
-| `validation.py` | Mesh/resource preflight and workload budgets. |
-| `model_node.py` | Original mesh plus GPU-friendly transform state. |
-| `viewport.py` | PyVista/VTK 3D viewport. |
-| `workers.py` | Background Qt workers for model loading, generation, and video. |
-| `synthetic_shapes.py` | Canonical numerical-validation phantoms. |
-| `tests/` | Geometry, projection, storage, security, and validation tests. |
+| `SpinSlicer.py` | Main window: steps, header, log; also starts the compute process. |
+| `ui_panels.py` | The settings panel: printer, model, light and print pages. |
+| `ui_kit.py`, `theme.py` | Hand-drawn widgets, palettes and the day/night switch. |
+| `slicer_tab.py`, `viewport.py`, `sketch_scene.py` | 3D scene: the part plus a live sketch of the printer. |
+| `video_tab.py`, `projector_canvas.py` | Print screen, dose card, full-screen projector output, MP4 export. |
+| `engine_process.py`, `workers.py` | The compute process and background workers. |
+| `slicing_engine.py`, `voxelizer.py` | Voxelization, planning, frame export. |
+| `optics/fastcal.py` | FastCAL engine for round vials. |
+| `optics/optimization.py`, `optics/ray_tracing.py` | Sparse SIRT path (square cuvettes) and ray tracing. |
+| `optics/presharpen.py` | Compensation of the projector's row blur. |
+| `virtual_print.py`, `print_plan.py`, `calibration.py` | Virtual print, print time, exposure calibration. |
+| `pixel_game.py` | Mini-games shown while frames are computed. |
+| `frame_io.py`, `profiles.py`, `validation.py` | Frame storage and manifests, machine/resin profiles, preflight. |
+| `i18n.py` | English / Russian strings. |
+| `tests/` | Geometry, optics, engine, storage, interface and security tests. |
 
 ## Validation and safety
 
-Before generation, SpinSlicer checks mesh finiteness, triangle count, bounds,
-vat fit, layer count, estimated memory, frame dimensions, and output budgets.
-Long-running work executes in `QThread` workers and supports cancellation.
-Output directories are committed only after all PNG files and metadata pass
-validation. Local paths are opened through Qt's desktop API rather than a
-shell command.
+Before computing, SpinSlicer checks mesh finiteness, triangle count, bounds, fit
+in the vial, layer count, memory and output budgets. The computation runs in a
+separate process and can be cancelled at any time. Output directories are
+committed only after all PNG files and metadata pass validation. Local paths are
+opened through Qt's desktop API rather than a shell command.
 
 ## Development checks
 
@@ -218,6 +247,5 @@ or `sudo dnf install ./SpinSlicer-<version>-1.x86_64.rpm`. Both packages add
 - [Automatic Exposure Volumetric Additive Manufacturing](https://doi.org/10.1002/admt.202402168)
 
 The DOI paper describes tomographic VAM and automatic exposure control through
-real-time scattered-light feedback. SpinSlicer currently implements projection
-generation and frame preview only; automatic exposure hardware feedback is
-outside the scope of this desktop prototype.
+real-time scattered-light feedback. SpinSlicer times the exposure from the planned
+dose and stops the projector by itself; camera-based feedback is not implemented yet.

@@ -16,13 +16,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, TypeVar
 
-from constants import (
-    DEFAULT_FRAME_RATE_HZ,
-    DEFAULT_PROJECTOR_GAMMA,
-    MAX_FRAME_DIMENSION,
-    MAX_PROJECTOR_GAMMA,
-    MIN_PROJECTOR_GAMMA,
-)
+from constants import MAX_FRAME_DIMENSION
 
 PROFILE_SCHEMA_VERSION = 1
 MIN_PROFILE_FPS = 0.1
@@ -70,8 +64,8 @@ class ProjectorProfile:
     width_px: int = 720
     height_px: int = 720
     bit_depth: int = 8
-    fps: float = DEFAULT_FRAME_RATE_HZ
-    gamma: float = DEFAULT_PROJECTOR_GAMMA
+    fps: float = 24.0
+    gamma: float = 1.0
     rotate_deg: int = 0
     mirror_x: bool = False
     mirror_y: bool = False
@@ -91,8 +85,8 @@ class ProjectorProfile:
         fps = _finite(self.fps, "projector fps")
         if not MIN_PROFILE_FPS <= fps <= MAX_PROFILE_FPS:
             raise ProfileValidationError("projector fps is outside the supported range.")
-        gamma = _finite(self.gamma, "projector gamma")
-        if not MIN_PROJECTOR_GAMMA <= gamma <= MAX_PROJECTOR_GAMMA:
+        gamma = _positive(self.gamma, "projector gamma")
+        if gamma > 10.0:
             raise ProfileValidationError("projector gamma is outside the supported range.")
         rotation = _integer(self.rotate_deg, "projector rotate_deg")
         if rotation not in {0, 90, 180, 270}:

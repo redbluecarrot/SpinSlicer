@@ -11,8 +11,6 @@ import cv2
 import trimesh
 from PyQt6.QtCore import QTimer
 
-import compute
-from compute import selftest_gpu_kernels
 from frame_io import FrameRepository, load_manifest
 from optics.optimization import _load_cpp_backend
 from slicing_engine import ResinSettings, SliceParams
@@ -25,19 +23,6 @@ def check_release(app, window, output: Path) -> int:
               "simulation_loaded": any(name in sys.modules for name in
                                        ("simulator_tab", "simulation_workbench_tab", "guided_simulation_tab", "printer_search"))}
     report["native_backend"] = _load_cpp_backend() is not None
-    # The optional GPU add-on (the installer's component): is it importable from here?
-    try:
-        import taichi
-
-        report["taichi_version"] = ".".join(str(part) for part in taichi.__version__)
-    except Exception as exc:
-        report["taichi_version"] = None
-        # Present but unusable (the add-on was built for another Python, a DLL is missing).
-        report["taichi_error"] = f"{type(exc).__name__}: {exc}"[:300] if compute.gpu_addon_directory() else None
-    # Importing is not enough: run a kernel (on the CPU, so it works without a graphics card).
-    # SPINSLICER_SELFTEST_ARCH=gpu runs it on the graphics card instead (a local check).
-    arch = "gpu" if os.environ.get("SPINSLICER_SELFTEST_ARCH") == "gpu" else "cpu"
-    report["gpu_kernels"] = selftest_gpu_kernels(arch) if report["taichi_version"] else None
     workers = []  # Keep all QThreads alive until the controller has joined them.
 
     def finish(error=None):
@@ -80,9 +65,6 @@ def check_release(app, window, output: Path) -> int:
             info = FrameRepository.validate(path)
             manifest = load_manifest(info.resolved_dir)
             report["frame_count"] = info.frame_count
-            ran = ((manifest.slice_parameters if manifest else {}).get("compute") or {})
-            report["device_used"] = ran.get("device_used")
-            report["gpu_error"] = ran.get("gpu_error")
             report["manifest_complete"] = bool(manifest and manifest.complete)
             statistics = dict(line.split("=", 1) for line in (Path(path) / "dose_stats.txt").read_text().splitlines())
             report["dose_rmse"] = float(statistics["rmse"])

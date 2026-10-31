@@ -52,20 +52,32 @@ def test_preview_and_rmse_are_computed_from_actual_exported_pngs(tmp_path):
     params = parameters(tmp_path)
     _, directory = SlicingEngine.run(mesh, params)
     directory = Path(directory)
+    manifest = load_manifest(str(directory))
+    assert manifest is not None
+    # FastCAL plans with up to 2x finer detector bins than voxels (optics.fastcal.detector_bins).
+    bins = int(manifest.slice_parameters["optics"].get("detector_bins", params.grid_res))
     columns = []
     for file in sorted(directory.glob("frame_*.png")):
         gray = np.asarray(Image.open(file))
         # Constant rectangular section in Z: either middle row is the target.
-        columns.append(_exported_detector_row(gray, gray.shape[0] // 2, params.grid_res))
+        columns.append(_exported_detector_row(gray, gray.shape[0] // 2, bins))
     sinogram = np.stack(columns, axis=1)
     angles = np.deg2rad((params.angle_offset_deg + np.arange(params.num_frames) * 360 / params.num_frames) % 360)
     _, adjoint = build_system_matrix(
-        angles, params.grid_res, params.grid_res, params.diameter_mm,
+        angles, bins, params.grid_res, params.diameter_mm,
         params.cuvette_outer_mm, params.cuvette_inner_mm,
         n_air=1., n_glass=1., n_liquid=1., n_resin=1.,
     )
-    dose = (adjoint @ sinogram.T.ravel()).reshape(params.grid_res, params.grid_res)
-    np.testing.assert_allclose(np.load(directory / "reconstruction_dose.npy"), dose, atol=2e-6)
+    exact = (adjoint @ sinogram.T.ravel()).reshape(params.grid_res, params.grid_res)
+    dose = np.load(directory / "reconstruction_dose.npy")
+    if manifest.slice_parameters["optics"]["optimizer"] == "fastcal-band":
+        # FastCAL previews with its own polar operator; it must agree with the
+        # exact pixel-basis operator applied to the same exported PNG values.
+        # The two discretisations differ most at very few angles (16 here:
+        # ~14 % relative L2; ~7 % at 72 angles), where streaks are sharp.
+        assert np.linalg.norm(dose - exact) / np.linalg.norm(exact) < 0.2
+    else:
+        np.testing.assert_allclose(dose, exact, atol=2e-6)
     target = np.load(directory / "reconstruction_target.npy")
     fitted, expected_rmse, _ = _relative_dose_fit(dose, target)
     stats = dict(line.split("=", 1) for line in (directory / "dose_stats.txt").read_text().splitlines())
@@ -121,3 +133,17 @@ def test_square_corner_export_has_diagonal_field_and_correct_physical_aspect(tmp
         expected_position = 21 * np.cos(theta) + 21 * np.sin(theta)
         expected_column = (expected_position / field + 0.5) * params.output_res - 0.5
         assert abs(peak_column - expected_column) < 4
+
+
+@pytest.mark.parametrize("height", [6.0, 8.8542, 9.8958])
+def test_one_layer_is_exactly_one_projector_row(tmp_path, height):
+    """Layers are sliced at the projector row pitch, so frames must have exactly one
+    row per layer: rounding the part height instead stretched every frame by a row
+    for some heights (10.25 mm here: 49.2 rows of 0.2 mm, 50 layers)."""
+    mesh = trimesh.creation.box(extents=(5, 7, height))
+    params = parameters(tmp_path)
+    pitch = params.diameter_mm / params.output_res
+    _, directory = SlicingEngine.run(mesh, params)
+    layers = len(np.arange(-height / 2 + pitch / 2, height / 2, pitch))
+    frame = np.asarray(Image.open(sorted(Path(directory).glob("frame_*.png"))[0]))
+    assert frame.shape == (layers, params.output_res)

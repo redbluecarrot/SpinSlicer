@@ -13,12 +13,8 @@ DEFAULT_GRID_RESOLUTION = 256
 DEFAULT_OUTPUT_RESOLUTION = 720
 DEFAULT_NUM_FRAMES = 360
 DEFAULT_DIAMETER_MM = 60.0
-DEFAULT_FRAME_RATE_HZ = 30.0  # divides the 60 Hz projector refresh evenly
+DEFAULT_FRAME_RATE_HZ = 24.0
 DEFAULT_ANGLE_OFFSET_DEG = 90.0
-# Projector gamma accepted by machine profiles and applied by the MP4 export.
-DEFAULT_PROJECTOR_GAMMA = 1.0
-MIN_PROJECTOR_GAMMA = 0.5
-MAX_PROJECTOR_GAMMA = 4.0
 FILL_FRACTION = 0.92
 ANTI_ALIAS_FACTOR = 4
 
@@ -55,18 +51,14 @@ VAT_RESOLUTION = 96
 VIEWPORT_WORKPLANE_SPAN_RATIO = 3.0
 VIEWPORT_WORKPLANE_MIN_SPAN_MM = 120.0
 VIEWPORT_WORKPLANE_RESOLUTION = 32
-# Size of the last-resort native marker when the custom marker is unavailable.
-VIEWPORT_ORIENTATION_WIDGET_SIZE = 120
-# Keep the custom orientation marker a fixed pixel size as the log splitter
-# changes the viewport height. The reset button occupies the small row above it.
-VIEWPORT_ORIENTATION_MARKER_PIXELS = 220
-VIEWPORT_ORIENTATION_MARKER_TOP_OFFSET = 48
-VIEWPORT_ORIENTATION_MARKER_EDGE_MARGIN = 8
-# Initial marker bounds are replaced with a fixed-pixel viewport on resize.
-VIEWPORT_ORIENTATION_VIEWPORT = (0.83, 0.68, 1.0, 0.995)
-VIEWPORT_ORIENTATION_CUBE_SCALE = 1.8
+# Size of the last-resort native marker; the smaller footprint keeps it tight
+# to the upper-left corner when the custom marker is unavailable.
+VIEWPORT_ORIENTATION_WIDGET_SIZE = 96
+# Normalized VTK viewport for the custom ViewCube: tight to the upper-right
+# corner while still leaving room for the three edge-continuation arrows.
+VIEWPORT_ORIENTATION_VIEWPORT = (0.85, 0.72, 1.0, 0.995)
+VIEWPORT_ORIENTATION_CUBE_SCALE = 1.35
 VIEWPORT_ORIENTATION_AXIS_LENGTH = 0.90
-VIEWPORT_ORIENTATION_AXIS_LABEL_GAP = 0.015
 # Each positive axis starts at its own outer cube vertex. This keeps the
 # arrowhead visibly attached to the vertex instead of emerging from a face.
 VIEWPORT_ORIENTATION_AXIS_ORIGINS = (
@@ -112,8 +104,3 @@ VIEWPORT_BG_BOTTOM = "#121319"
 
 PANEL_RADIUS = 12
 BUTTON_RADIUS = 8
-
-# Sub-folders of a run: the projection without vial compensation, and the frames
-# already encoded for the projector gamma (written only when gamma is not 1).
-BARE_PROJECTION_DIR = "bare_projection"
-PROJECTOR_FRAMES_DIR = "projector_frames"

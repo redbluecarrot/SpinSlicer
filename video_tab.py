@@ -1,658 +1,793 @@
 """
 video_tab.py
 ============
-Вкладка "Проектор (Видео)": собирает кадры-проекции из output_frames в
-последовательность numpy-массивов в памяти (через OpenCV) и проигрывает
-её прямо во вкладке через QTimer, с регулировкой скорости и экспортом
-в MP4 (тот же набор кадров, без повторного чтения с диска).
+The "Print" screen: the projector's whole screen as it will really look.
+
+Frames are shown placed 1:1 on the projector canvas (projector_canvas.py), at
+the real frame rate of the print. From here they go to a second screen (the
+projector) full screen, to an H.264 video of the projector's native size, or
+stay as PNG files. A vial-alignment pattern and a gray ramp help set the
+projector up.
 """
 from __future__ import annotations
 
-import glob
 import os
 from typing import List, Optional
 
 import numpy as np
-from PyQt6.QtCore import QSettings, QSignalBlocker, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QImage, QPainter, QPixmap
+from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QGuiApplication, QImage, QKeyEvent, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
-    QButtonGroup,
-    QCheckBox,
-    QComboBox,
     QFileDialog,
-    QFrame,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
-from constants import (
-    APP_ORG,
-    APP_TITLE,
-    BARE_PROJECTION_DIR,
-    DEFAULT_FRAME_RATE_HZ,
-    DEFAULT_PROJECTOR_GAMMA,
-    PROJECTOR_FRAMES_DIR,
-)
-from frame_io import FrameRepository
-from i18n import language, tr
+import theme
+from i18n import tr
 from job_controller import JobController
-from widgets import LabeledSlider
+from projector_canvas import CanvasGeometry, compose
 from workers import VideoAssembleWorker, VideoExportWorker, calibration_ramp
 
-BASE_FPS = DEFAULT_FRAME_RATE_HZ
+BASE_FPS = 24.0
 
 
-class VideoPreviewWidget(QLabel):
-    """Отображает кадры видео без изменения геометрии родительского окна."""
+def _qimage(frame: np.ndarray) -> QImage:
+    frame = np.ascontiguousarray(frame, dtype=np.uint8)
+    h, w = frame.shape[:2]
+    return QImage(frame.data, w, h, w, QImage.Format.Format_Grayscale8).copy()
 
-    def __init__(self, text: str = "", parent: Optional[QWidget] = None) -> None:
-        super().__init__(text, parent)
-        self._pixmap: Optional[QPixmap] = None
-        self._intensity: float = 1.0
-        self._current_raw_frame: Optional[np.ndarray] = None
 
-    def set_intensity(self, val: float) -> None:
-        self._intensity = max(0.1, float(val))
-        if self._current_raw_frame is not None:
-            self._render_frame(self._current_raw_frame)
+def alignment_pattern(geometry: CanvasGeometry, vial_px: int, height_px: int) -> np.ndarray:
+    """White marks where the vial must be: its two walls, the axis and the frame height."""
+    canvas = np.zeros((geometry.height, geometry.width), dtype=np.uint8)
+    x, y = geometry.placement(vial_px, height_px)
+    cx = x + vial_px // 2
+    for col, value in ((x, 255), (x + vial_px - 1, 255), (cx, 140)):
+        if 0 <= col < geometry.width:
+            canvas[max(y, 0):min(y + height_px, geometry.height), col] = value
+    for row in (y, y + height_px - 1):
+        if 0 <= row < geometry.height:
+            canvas[row, max(x, 0):min(x + vial_px, geometry.width)] = 255
+    return canvas
 
-    def set_frame(self, frame: np.ndarray) -> None:
-        self._current_raw_frame = frame
-        self._render_frame(frame)
 
-    def _render_frame(self, frame: np.ndarray) -> None:
-        if self._intensity != 1.0:
-            frame_adj = np.clip(frame.astype(np.float32) * self._intensity, 0, 255).astype(np.uint8)
-        else:
-            frame_adj = frame
-        h, w = frame_adj.shape[:2]
-        qimg = QImage(frame_adj.tobytes(), w, h, w, QImage.Format.Format_Grayscale8).copy()
-        self._pixmap = QPixmap.fromImage(qimg)
+class ScreenPreview(QWidget):
+    """The projector screen in miniature: black canvas, the frame where it really lands."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMinimumSize(240, 140)
+        self._image: Optional[QImage] = None
+        self._geometry = CanvasGeometry()
+        self._true_size: Optional[tuple[int, int]] = None
+        self._message = tr("Кадры появятся после расчёта света")
+
+    def set_true_size(self, size: Optional[tuple[int, int]]) -> None:
+        """Real frame size in projector pixels (the preview copy may be smaller)."""
+        self._true_size = size
         self.update()
 
-    def clear_frame(self) -> None:
-        self._pixmap = None
-        self._current_raw_frame = None
+    def set_geometry(self, geometry: CanvasGeometry) -> None:
+        self._geometry = geometry
         self.update()
 
-    def paintEvent(self, event) -> None:
-        if self._pixmap is not None and not self._pixmap.isNull():
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-            scaled = self._pixmap.scaled(
-                self.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            x = (self.width() - scaled.width()) // 2
-            y = (self.height() - scaled.height()) // 2
-            painter.drawPixmap(x, y, scaled)
+    def set_frame(self, frame: Optional[np.ndarray]) -> None:
+        self._image = None if frame is None else _qimage(frame)
+        self.update()
+
+    def set_message(self, text: str) -> None:
+        self._message = text
+        self.update()
+
+    def screen_rect(self) -> QRectF:
+        g = self._geometry
+        avail_w, avail_h = self.width() - 2.0, self.height() - 2.0
+        k = min(avail_w / g.width, avail_h / g.height)
+        w, h = g.width * k, g.height * k
+        return QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
+
+    def paintEvent(self, _event: object) -> None:  # noqa: N802
+        p = theme.current()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.screen_rect()
+        painter.setPen(QPen(QColor(p.border), 1.0))
+        painter.setBrush(QColor("#000000"))
+        painter.drawRoundedRect(rect.adjusted(-1, -1, 1, 1), 6, 6)
+        k = rect.width() / self._geometry.width
+        if self._image is not None:
+            # Where the vial walls are on the screen (the frame is exactly as wide as the vial).
+            fw, fh = self._true_size or (self._image.width(), self._image.height())
+            vx, _vy = self._geometry.placement(fw, fh)
+            painter.setPen(QPen(QColor(p.dim), 1.0, Qt.PenStyle.DashLine))
+            for wall in (vx, vx + fw):
+                xw = rect.x() + wall * k
+                painter.drawLine(QPointF(xw, rect.top() + 6), QPointF(xw, rect.bottom() - 6))
+            x, y = self._geometry.placement(fw, fh)
+            target = QRectF(rect.x() + x * k, rect.y() + y * k, fw * k, fh * k)
+            painter.save()
+            painter.setClipRect(rect)
+            # Enlarging: keep the pixels crisp; shrinking: smooth (no aliasing).
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, k < 1.0)
+            painter.drawImage(target, self._image)
+            painter.restore()
         else:
-            super().paintEvent(event)
+            painter.setPen(QColor(p.dim))
+            painter.setFont(theme.mono_font(12))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, tr(self._message))
+        # Vial axis: a faint tick above and below the screen.
+        cx = rect.center().x() + self._geometry.offset_x * k
+        painter.setPen(QPen(QColor(p.accent), 1.4))
+        painter.drawLine(QPointF(cx, rect.top() - 7), QPointF(cx, rect.top() - 2))
+        painter.drawLine(QPointF(cx, rect.bottom() + 2), QPointF(cx, rect.bottom() + 7))
+        painter.end()
+
+
+class _DoseMap(QWidget):
+    """The round map of the middle layer (painted by DoseCard's data)."""
+
+    SIDE = 156
+
+    def __init__(self, card: "DoseCard") -> None:
+        super().__init__(card)
+        self._card = card
+        self.setFixedSize(self.SIDE, self.SIDE)
+
+    def paintEvent(self, _event: object) -> None:  # noqa: N802
+        p = theme.current()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(0.5, 0.5, self.width() - 1.0, self.height() - 1.0)
+        painter.setPen(QPen(QColor(p.border), 1.0))
+        painter.setBrush(QColor(p.view))
+        painter.drawRoundedRect(rect, 10, 10)
+        image = self._card._image
+        if image is not None:
+            side = min(rect.width(), rect.height()) - 14
+            target = QRectF(rect.center().x() - side / 2, rect.center().y() - side / 2, side, side)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+            clip = QPainterPath()
+            clip.addEllipse(target)
+            painter.setClipPath(clip)          # the vial is round
+            painter.drawImage(target, image)
+            painter.setClipping(False)
+            painter.setPen(QPen(QColor(p.sketch), 1.4))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(target)
+        else:
+            painter.setPen(QColor(p.dim))
+            painter.setFont(theme.mono_font(10))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, tr("нет данных"))
+        painter.end()
+
+
+class DoseCard(QWidget):
+    """Light dose in the middle layer: what cures, what stays liquid — and the exposure.
+
+    The slider is the print's exposure (100 % = the plan): the map shows what cures at
+    that exposure, and the print time follows it (exposureChanged).
+    """
+
+    exposureChanged = pyqtSignal(float)
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._dose: Optional[np.ndarray] = None
+        self._target: Optional[np.ndarray] = None
+        self._threshold = 1.0
+        self._exposure = 1.0
+        self._rmse: Optional[float] = None
+        self._image: Optional[QImage] = None
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 4, 0, 4)
+        row.setSpacing(14)
+        self.map = _DoseMap(self)
+        row.addWidget(self.map, 0, Qt.AlignmentFlag.AlignTop)
+        col = QVBoxLayout()
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(5)
+        self.title = QLabel(tr("Доза в смоле"))
+        self.title.setObjectName("rowLabel")
+        self.sub = QLabel(tr("средний слой детали"))
+        self.sub.setObjectName("rowEffect")
+        self.exposure_label = QLabel()
+        self.exposure_label.setObjectName("rowLabel")
+        self.exposure_label.setProperty("_spinslicer_skip_text_translation", True)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(70, 130)
+        self.slider.setValue(100)
+        self.slider.setPageStep(5)
+        self.slider.valueChanged.connect(self._on_exposure)
+        self.stats = QLabel()
+        self.stats.setObjectName("rowEffect")
+        self.stats.setWordWrap(True)
+        self.stats.setProperty("_spinslicer_skip_text_translation", True)
+        self.legend = QLabel(tr("розовое — затвердеет · пунктир — модель"))
+        self.legend.setObjectName("rowEffect")
+        self.legend.setWordWrap(True)
+        for widget in (self.title, self.sub):
+            col.addWidget(widget)
+        col.addSpacing(4)
+        col.addWidget(self.exposure_label)
+        col.addWidget(self.slider)
+        col.addWidget(self.stats)
+        col.addWidget(self.legend)
+        col.addStretch(1)
+        row.addLayout(col, 1)
+        self._refresh_text()
+
+    # ------------------------------------------------------------------ exposure
+    def exposure(self) -> float:
+        return self._exposure
+
+    def set_exposure(self, value: float) -> None:
+        self.slider.setValue(int(round(max(0.7, min(1.3, float(value))) * 100)))
+
+    def load(self, out_dir: Optional[str]) -> None:
+        self._dose = self._target = None
+        self._rmse = None
+        if out_dir:
+            try:
+                self._dose = np.load(os.path.join(out_dir, "reconstruction_dose.npy"))
+                self._target = np.load(os.path.join(out_dir, "reconstruction_target.npy"))
+                import json
+                plan_path = os.path.join(out_dir, "print_plan.json")
+                self._threshold = 1.0
+                if os.path.isfile(plan_path):
+                    with open(plan_path, encoding="utf-8") as handle:
+                        self._threshold = float(json.load(handle).get("relative_threshold_dose", 0)) or 0.0
+                if self._threshold <= 0 and self._target is not None and (self._target > 0.5).any():
+                    inside = self._dose[self._target > 0.5]
+                    self._threshold = float(np.percentile(inside, 5))
+                with open(os.path.join(out_dir, "dose_stats.txt"), encoding="utf-8") as handle:
+                    stats = dict(line.split("=", 1) for line in handle.read().splitlines() if "=" in line)
+                self._rmse = float(stats["rmse"]) if "rmse" in stats else None
+            except (OSError, ValueError, KeyError):
+                self._dose = self._target = None
+        self._render()
+
+    def _on_exposure(self, value: int) -> None:
+        self._exposure = value / 100.0
+        self._render()
+        self.exposureChanged.emit(self._exposure)
+
+    def _refresh_text(self) -> None:
+        pct = round((self._exposure - 1.0) * 100)
+        self.exposure_label.setText(tr(f"экспозиция {'+' if pct > 0 else ''}{pct} %") if pct else tr("экспозиция по плану"))
+        if self._dose is None or self._target is None:
+            self.stats.setText(tr("появится после расчёта света"))
+            return
+        part = self._target > 0.5
+        cured = self._dose * self._exposure >= self._threshold
+        missing = float((part & ~cured).sum()) / max(int(part.sum()), 1)
+        extra = float((~part & cured).sum()) / max(int(part.sum()), 1)
+        line = tr(f"не досвечено {missing * 100:.1f} % · лишнее {extra * 100:.1f} %".replace(".", ","))
+        if self._rmse is not None:
+            line += "\n" + tr(f"ошибка формы дозы {self._rmse:.3f}".replace(".", ","))
+        self.stats.setText(line)
+
+    def _render(self) -> None:
+        self._image = None
+        if self._dose is not None and self._target is not None:
+            p = theme.current()
+            bg, acc, hi = (np.array(QColor(c).getRgb()[:3], dtype=np.float32) for c in (p.view, p.accent, p.text))
+            ratio = np.clip(self._dose * self._exposure / max(self._threshold, 1e-9), 0.0, 1.6)
+            low = np.clip(ratio, 0, 1)[..., None]
+            rgb = bg * (1 - low * 0.55) + acc * (low * 0.55)
+            over = (ratio >= 1.0)[..., None]
+            glow = np.clip((ratio - 1.0) / 0.6, 0, 1)[..., None]
+            rgb = np.where(over, acc * (1 - glow * 0.5) + hi * (glow * 0.5), rgb)
+            part = self._target > 0.5
+            edge = part & ~(np.roll(part, 1, 0) & np.roll(part, -1, 0) & np.roll(part, 1, 1) & np.roll(part, -1, 1))
+            yy, xx = np.nonzero(edge)
+            dashed = ((yy + xx) // 2) % 2 == 0
+            rgb[yy[dashed], xx[dashed]] = np.array(QColor(p.sketch).getRgb()[:3], dtype=np.float32)
+            img8 = np.ascontiguousarray(np.clip(rgb, 0, 255).astype(np.uint8))
+            h, w = img8.shape[:2]
+            self._image = QImage(img8.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
+        self._refresh_text()
+        self.map.update()
+
+    def refresh_theme(self) -> None:
+        self._render()
+
+    def refresh_language(self) -> None:
+        self._refresh_text()
+
+
+def brightness_lut(brightness: float, gamma: float) -> np.ndarray:
+    """Gray → gray that shows `brightness` × the light on a projector with this gamma.
+
+    Light ∝ (g/255)^γ, so scaling the light by b scales the gray code by b^(1/γ).
+    """
+    b = max(0.0, min(1.0, float(brightness)))
+    g = np.arange(256, dtype=np.float64) * b ** (1.0 / max(float(gamma), 0.1))
+    return np.clip(np.rint(g), 0, 255).astype(np.uint8)
+
+
+class _FrameCache:
+    """The print frames in memory, decoded in the background before they are needed.
+
+    Reading a PNG from disk in the middle of a print can be late by a frame when the
+    disk is busy; a late frame is a wrong angle. Frames are decoded once (with the
+    brightness table applied) on a background thread; if they would not fit in
+    memory they are read from disk as they come.
+    """
+
+    MAX_BYTES = 1_500_000_000
+
+    def __init__(self, frames: list, lut: Optional[np.ndarray]) -> None:
+        import threading
+        self._frames = frames
+        self._lut = lut
+        self._images: list[Optional[QImage]] = [None] * len(frames)
+        self._stop = False
+        self._thread: Optional[threading.Thread] = None
+        first = self._decode(0) if frames else None
+        if first is not None:
+            self._images[0] = first
+            if first.sizeInBytes() * len(frames) <= self.MAX_BYTES:
+                self._thread = threading.Thread(target=self._fill, daemon=True)
+                self._thread.start()
+
+    def _decode(self, index: int) -> Optional[QImage]:
+        item = self._frames[index]
+        if isinstance(item, str):
+            import cv2
+            item = cv2.imread(item, cv2.IMREAD_GRAYSCALE)
+            if item is None:
+                return None
+        array = np.asarray(item, dtype=np.uint8)
+        if self._lut is not None:
+            array = self._lut[array]
+        return _qimage(array)
+
+    def _fill(self) -> None:
+        for i in range(1, len(self._frames)):
+            if self._stop:
+                return
+            if self._images[i] is None:
+                self._images[i] = self._decode(i)
+
+    def get(self, index: int) -> Optional[QImage]:
+        image = self._images[index]
+        if image is None:
+            image = self._decode(index)
+            if self._thread is not None:
+                self._images[index] = image
+        return image
+
+    def ready(self) -> bool:
+        return self._thread is None or not self._thread.is_alive()
+
+    def close(self) -> None:
+        self._stop = True
+
+
+class ProjectorOutputWindow(QWidget):
+    """Full-screen window on the projector: frames 1:1 at the print frame rate. Esc stops.
+
+    The frame shown is computed from the elapsed time (frame = ⌊t · fps⌋), never by
+    counting timer ticks: a 24 Hz timer ticks every 42 ms instead of 41.67, which would
+    let the picture fall behind the turning vial by 0.8 % — over a print of 200 turns
+    more than a whole turn. With `duration_s` the window stops by itself when the
+    planned dose has been delivered.
+    """
+
+    tick = pyqtSignal(float, float)          # elapsed s, total s (0 = no limit)
+    finished = pyqtSignal(bool)              # True = the planned exposure was completed
+
+    def __init__(self, frames: list, geometry: CanvasGeometry, fps: float, screen: object,
+                 static: Optional[np.ndarray] = None, duration_s: float = 0.0,
+                 lut: Optional[np.ndarray] = None) -> None:
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        from PyQt6.QtCore import QElapsedTimer
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self.setCursor(Qt.CursorShape.BlankCursor)
+        self._geometry = geometry
+        self._fps = max(0.1, float(fps))
+        self._duration = max(0.0, float(duration_s))
+        self._static = None if static is None else _qimage(static if lut is None else lut[static])
+        self._cache = _FrameCache(frames, lut) if static is None and frames else None
+        self._count = len(frames)
+        self._shown = -1
+        self._image: Optional[QImage] = None
+        self._completed = False
+        self._clock = QElapsedTimer()
+        self._timer = QTimer(self)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._timer.timeout.connect(self._next)
+        self._last_tick = -1.0
+        self.setScreen(screen)  # type: ignore[arg-type]
+        self.setGeometry(screen.geometry())  # type: ignore[attr-defined]
+        self.showFullScreen()
+        if self._cache is not None:
+            self._clock.start()
+            self._next()
+            # Poll faster than the frame rate; only a new frame index repaints.
+            self._timer.start(max(2, min(10, int(500.0 / self._fps))))
+
+    def elapsed_s(self) -> float:
+        return self._clock.nsecsElapsed() / 1e9 if self._clock.isValid() else 0.0
+
+    def _next(self) -> None:
+        t = self.elapsed_s()
+        if self._duration and t >= self._duration:
+            self._completed = True
+            self.tick.emit(self._duration, self._duration)
+            self.close()
+            return
+        index = int(t * self._fps) % self._count
+        if index != self._shown and self._cache is not None:
+            image = self._cache.get(index)
+            if image is not None:
+                self._image = image
+            self._shown = index
+            self.update()
+        if t - self._last_tick >= 0.5:
+            self._last_tick = t
+            self.tick.emit(t, self._duration)
+
+    def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802
+        if event is not None and event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Space):
+            self.close()
+
+    def closeEvent(self, event: object) -> None:  # noqa: N802
+        self._timer.stop()
+        if self._cache is not None:
+            self._cache.close()
+        self.finished.emit(self._completed)
+        super().closeEvent(event)  # type: ignore[arg-type]
+
+    def paintEvent(self, _event: object) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#000000"))
+        dpr = self.devicePixelRatioF() or 1.0
+        image = self._static or self._image
+        if image is not None:
+            if self._static is not None:
+                painter.drawImage(QRectF(0, 0, image.width() / dpr, image.height() / dpr), image)
+            else:
+                x, y = self._geometry.placement(image.width(), image.height())
+                painter.drawImage(QRectF(x / dpr, y / dpr, image.width() / dpr, image.height() / dpr), image)
+        painter.end()
 
 
 class ProjectorTab(QWidget):
     progress = pyqtSignal(float, str)
     logMessage = pyqtSignal(str)
+    framesReady = pyqtSignal(int)
+    projectionTick = pyqtSignal(float, float)      # elapsed s, planned s (0 = endless)
+    projectionFinished = pyqtSignal(bool)          # True = planned exposure completed
 
-    def __init__(
-        self,
-        parent: Optional[QWidget] = None,
-        job_controller: Optional[JobController] = None,
-    ):
+    def __init__(self, parent: Optional[QWidget] = None, job_controller: Optional[JobController] = None):
         super().__init__(parent)
-
         self._job_controller = job_controller or JobController()
         self._output_dir: Optional[str] = None
         self._frames: List[np.ndarray] = []
         self._frame_index = 0
         self._assemble_worker: Optional[VideoAssembleWorker] = None
         self._export_worker: Optional[VideoExportWorker] = None
-
+        self._output_window: Optional[ProjectorOutputWindow] = None
+        self._geometry = CanvasGeometry()
+        self._true_size: Optional[tuple[int, int]] = None
+        self._fps = BASE_FPS
+        self._brightness = 1.0
+        self._gamma = 2.2
+        self._one_turn = False
         self._timer = QTimer(self)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._advance_frame)
-
         self._build_ui()
 
-    # =======================================================================
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 12, 16, 12)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(10)
+        top = QHBoxLayout()
+        title = QLabel(tr("Экран проектора"))
+        title.setObjectName("rowLabel")
+        self.info_label = QLabel()
+        self.info_label.setObjectName("rowEffect")
+        self.info_label.setProperty("_spinslicer_skip_text_translation", True)
+        top.addWidget(title)
+        top.addStretch(1)
+        top.addWidget(self.info_label)
+        root.addLayout(top)
 
-        # Which frames to play: compensated for the vial, or the bare projection.
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(6)
-        self.mode_label = QLabel("Тип проекции:")
-        mode_row.addWidget(self.mode_label)
-        self.mode_corrected_btn = QPushButton("Скорректированная")
-        self.mode_corrected_btn.setObjectName("secondaryButton")
-        self.mode_corrected_btn.setCheckable(True)
-        self.mode_corrected_btn.setChecked(True)
-        self.mode_corrected_btn.setToolTip(
-            "Проекция для печати: оптимизирована SIRT с учётом преломления и поглощения в колбе"
-        )
-        self.mode_bare_btn = QPushButton("Прямая проекция")
-        self.mode_bare_btn.setObjectName("secondaryButton")
-        self.mode_bare_btn.setCheckable(True)
-        self.mode_bare_btn.setEnabled(False)
-        self.mode_bare_btn.setToolTip(
-            "Прямая проекция детали: без оптимизации SIRT и без компенсации колбы. Разница с кадрами для печати складывается из оптимизации и компенсации, а не только из преломления"
-        )
-        self._mode_group = QButtonGroup(self)
-        self._mode_group.setExclusive(True)
-        self._mode_group.addButton(self.mode_corrected_btn)
-        self._mode_group.addButton(self.mode_bare_btn)
-        self.mode_bare_btn.toggled.connect(self._on_mode_changed)
-        mode_row.addWidget(self.mode_corrected_btn)
-        mode_row.addWidget(self.mode_bare_btn)
-        mode_row.addStretch(1)
-        root.addLayout(mode_row)
+        self.preview = ScreenPreview()
+        # The dose card lives in the print panel (SpinSlicer puts it there); the
+        # screen keeps the whole width for the projector picture.
+        self.dose = DoseCard()
+        root.addWidget(self.preview, 1)
 
-        # Content row: Video Preview on left, Tomo Dose Reconstruction card on right
-        content_row = QHBoxLayout()
-        content_row.setSpacing(14)
-
-        self.preview = VideoPreviewWidget("Нажмите «Собрать и воспроизвести»,\nчтобы увидеть анимацию проекций.")
-        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setObjectName("videoPreview")
-        self.preview.setMinimumHeight(120)
-        self.preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        content_row.addWidget(self.preview, 3)
-
-        # Side column on right: Dose Reconstruction + CyberPepe Meme
-        # The column scrolls instead of imposing a tall minimum on the window,
-        # so the log pane below can be dragged as tall as the user likes.
-        side_widget = QWidget()
-        side_col = QVBoxLayout(side_widget)
-        side_col.setContentsMargins(0, 0, 0, 0)
-        side_col.setSpacing(8)
-
-        # Dose Reconstruction Card
-        recon_box = QGroupBox("Реконструкция дозы")
-        recon_box.setObjectName("reconBox")
-        recon_box.setFixedWidth(265)
-        recon_layout = QVBoxLayout(recon_box)
-        recon_layout.setContentsMargins(10, 8, 10, 8)
-        recon_layout.setSpacing(4)
-
-        recon_title = QLabel("Средний срез (Mid-Slice)")
-        recon_title.setStyleSheet("font-weight: bold; color: #00A8FF;")
-        recon_layout.addWidget(recon_title)
-
-        self.recon_label = QLabel("Нет данных\n(Сгенерируйте срез)")
-        self.recon_label.setProperty("_spinslicer_skip_text_translation", True)
-        self.recon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.recon_label.setStyleSheet("background-color: #1A1A1A; border: 1px solid #333333; border-radius: 6px; color: #888888;")
-        self.recon_label.setFixedSize(160, 160)
-        recon_layout.addWidget(self.recon_label, 0, Qt.AlignmentFlag.AlignCenter)
-
-        self.recon_stats = QLabel("RMSE относительной дозы: —")
-        self.recon_stats.setToolTip("Ошибка формы дозы после подбора общего масштаба. Не прогноз отверждения смолы.")
-        self.recon_stats.setWordWrap(True)
-        self.recon_stats.setMinimumHeight(32)
-        self.recon_stats.setStyleSheet("color: #CCCCCC; font-size: 11px; margin-top: 2px;")
-        recon_layout.addWidget(self.recon_stats)
-
-        side_col.addWidget(recon_box)
-
-        # CyberPepe CAL Lab Easter Egg Card
-        pepe_box = QGroupBox("Лаборатория Пепе 🐸")
-        pepe_box.setObjectName("pepeBox")
-        pepe_box.setFixedWidth(265)
-        pepe_layout = QVBoxLayout(pepe_box)
-        pepe_layout.setContentsMargins(10, 8, 10, 8)
-        pepe_layout.setSpacing(4)
-
-        pepe_img_label = QLabel()
-        pepe_img_label.setProperty("_spinslicer_skip_text_translation", True)
-        pepe_img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pepe_img_label.setFixedSize(160, 160)
-        pepe_img_label.setStyleSheet("border-radius: 8px; border: none; background-color: #0d0d0d;")
-        pepe_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "pepe_meme.jpg")
-        if os.path.exists(pepe_path):
-            pix = QPixmap(pepe_path)
-            if not pix.isNull():
-                pepe_img_label.setPixmap(pix.scaled(160, 160, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-        pepe_layout.addWidget(pepe_img_label, 0, Qt.AlignmentFlag.AlignCenter)
-
-        self._pepe_quotes_ru = [
-            "«Кайф, когда доза сошлась» 🐸⚡",
-            "«Нельзя просто так напечатать без OpenCAL» 🐸🧪",
-            "«Когда Бугер-Ламберт лёг как надо» 🐸🔬",
-            "«0% поддержек, 100% объёмная скорость» 🐸🚀",
-            "«Фотонное превосходство в действии» 🐸✨",
-            "«Томография за 30 секунд — это база» 🐸⏱",
-            "«Свет пронзает смолу, деталь растёт» 🐸💡",
-        ]
-        self._pepe_quotes_en = [
-            "“Feels good when dose converges” 🐸⚡",
-            "“One does not simply print without OpenCAL” 🐸🧪",
-            "“When Beer-Lambert hits just right” 🐸🔬",
-            "“0% supports, 100% volumetric speed” 🐸🚀",
-            "“Photon supremacy in full effect” 🐸✨",
-            "“30-second tomography is the standard” 🐸⏱",
-            "“Light penetrates resin, structure rises” 🐸💡",
-        ]
-        self._pepe_quote_idx = 0
-        self.pepe_caption = QLabel(self._current_quotes()[0])
-        self.pepe_caption.setProperty("_spinslicer_skip_text_translation", True)
-        self.pepe_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.pepe_caption.setWordWrap(True)
-        self.pepe_caption.setMinimumHeight(34)
-        self.pepe_caption.setStyleSheet("color: #00FF88; font-weight: bold; font-size: 10px; margin-top: 2px; margin-bottom: 2px;")
-        pepe_layout.addWidget(self.pepe_caption)
-
-        quote_btn = QPushButton("🎲 Другая цитата")
-        quote_btn.setObjectName("secondaryButton")
-        quote_btn.setMinimumHeight(28)
-        quote_btn.clicked.connect(self._cycle_pepe_quote)
-        pepe_layout.addWidget(quote_btn)
-
-        side_col.addWidget(pepe_box)
-        side_col.addStretch(1)
-
-        side_scroll = QScrollArea()
-        side_scroll.setWidgetResizable(True)
-        side_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        side_scroll.setFixedWidth(285)
-        side_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollArea > QWidget > QWidget { background: transparent; }"
-        )
-        side_scroll.setWidget(side_widget)
-        content_row.addWidget(side_scroll)
-        root.addLayout(content_row, 1)
-
-        buttons = QHBoxLayout()
-        self.assemble_btn = QPushButton("▶ Собрать и воспроизвести")
-        self.assemble_btn.setObjectName("generateButton")
-        self.assemble_btn.setToolTip("Прочитать все кадры из папки и запустить проигрывание")
-        self.assemble_btn.clicked.connect(self._on_assemble_clicked)
-        buttons.addWidget(self.assemble_btn)
-
-        self.play_pause_btn = QPushButton("⏸ Пауза")
+        transport = QHBoxLayout()
+        transport.setSpacing(10)
+        self.play_pause_btn = QPushButton("▶")
+        self.play_pause_btn.setObjectName("stepButton")
         self.play_pause_btn.setEnabled(False)
+        self.play_pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_pause_btn.clicked.connect(self._on_play_pause_clicked)
-        buttons.addWidget(self.play_pause_btn)
+        self.scrubber = QSlider(Qt.Orientation.Horizontal)
+        self.scrubber.setEnabled(False)
+        self.scrubber.valueChanged.connect(self._on_scrub)
+        self.frame_label = QLabel("— / —")
+        self.frame_label.setObjectName("rowEffect")
+        self.frame_label.setProperty("_spinslicer_skip_text_translation", True)
+        self.frame_label.setMinimumWidth(96)
+        transport.addWidget(self.play_pause_btn)
+        transport.addWidget(self.scrubber, 1)
+        transport.addWidget(self.frame_label)
+        root.addLayout(transport)
 
-        self.save_btn = QPushButton("💾 Сохранить в MP4")
-        self.save_btn.setEnabled(False)
-        self.save_btn.setToolTip("Экспортировать уже собранные кадры в видеофайл")
+        # Programmatic surface kept from the old screen (release check, panel actions).
+        self.dir_label = QLabel()
+        self.dir_label.setVisible(False)
+        self.assemble_btn = QPushButton()
+        self.assemble_btn.clicked.connect(self._on_assemble_clicked)
+        self.save_btn = QPushButton()
         self.save_btn.clicked.connect(self._on_save_clicked)
-        buttons.addWidget(self.save_btn)
-        root.addLayout(buttons)
-
-        # How the gray levels are stored in the MP4, and a pattern to check the playback chain.
-        export_row = QHBoxLayout()
-        export_row.setSpacing(6)
-        export_row.addWidget(QLabel("Диапазон яркости MP4:"))
-        self.range_combo = QComboBox()
-        self.range_combo.addItem("Полный 0–255 (256 уровней)", "full")
-        self.range_combo.addItem("Ограниченный 16–235 (если плеер игнорирует флаг диапазона)", "limited")
-        self.range_combo.setToolTip(
-            "Полный диапазон сохраняет все 256 уровней, но плеер, который считает поток ограниченным "
-            "и игнорирует флаг, обрежет уровни 1–15 до 0 и 236–254 до 255 (тусклые серые уровни важны "
-            "для дозового окна). Ограниченный диапазон безопаснее для большинства плееров и даёт 220 "
-            "уровней, но плеер или HDMI-выход, которые считают всё полным диапазоном, покажут чёрный "
-            "как 16/255: около 6 % света на весь оборот. Проверьте свою цепочку тестовой рампой."
-        )
-        stored = str(QSettings(APP_ORG, APP_TITLE).value("video_range", "full"))
-        self.range_combo.setCurrentIndex(max(0, self.range_combo.findData(stored)))
-        self.range_combo.currentIndexChanged.connect(
-            lambda _i: QSettings(APP_ORG, APP_TITLE).setValue("video_range", self._video_range())
-        )
-        export_row.addWidget(self.range_combo, 1)
-        self.ramp_btn = QPushButton("Тестовая рампа")
-        self.ramp_btn.setObjectName("secondaryButton")
-        self.ramp_btn.setToolTip(
-            "Сохранить MP4 из серых полос 0–255 с выбранным диапазоном, чтобы проверить цепочку "
-            "проигрывания и проектор (например, фотометром). Число кадров и частота как у последнего "
-            "прогона, поэтому скорость вращения в имени файла обычная."
-        )
+        self.ramp_btn = QPushButton()
         self.ramp_btn.clicked.connect(self._on_ramp_clicked)
-        export_row.addWidget(self.ramp_btn)
-        self.ramp_gamma_box = QCheckBox("С гаммой профиля")
-        self.ramp_gamma_box.setToolTip(
-            "Выключено: рампа линейная (гамма 1.0), по ней можно измерить гамму проектора с нуля. "
-            "Включено: рампа с гаммой из профиля станка, чтобы проверить, что калибровка даёт "
-            "линейный свет."
-        )
-        export_row.addWidget(self.ramp_gamma_box)
-        root.addLayout(export_row)
+        for hidden in (self.assemble_btn, self.save_btn, self.ramp_btn):
+            hidden.setVisible(False)
+        self._refresh_info()
 
-        sliders_row = QHBoxLayout()
-        self.speed_slider = LabeledSlider(
-            "Скорость воспроизведения", 0.1, 4.0, 1.0, decimals=2, suffix="×",
-        )
-        self.speed_slider.valueChanged.connect(self._on_speed_changed)
-        sliders_row.addWidget(self.speed_slider)
+    # ------------------------------------------------------------------ setup from the panel
+    def set_canvas(self, geometry: CanvasGeometry) -> None:
+        self._geometry = geometry
+        self.preview.set_geometry(geometry)
+        self._refresh_info()
 
-        self.live_intensity_slider = LabeledSlider(
-            "Яркость проекции (Live Intensity)", 0.2, 5.0, 1.0, decimals=2, suffix="×",
-        )
-        self.live_intensity_slider.valueChanged.connect(self._on_live_intensity_changed)
-        sliders_row.addWidget(self.live_intensity_slider)
+    def set_fps(self, fps: float) -> None:
+        self._fps = max(0.1, float(fps))
+        if self._timer.isActive():
+            self._timer.start(self._interval())
+        self._refresh_info()
 
-        root.addLayout(sliders_row)
+    def set_output_light(self, brightness: float, gamma: float) -> None:
+        """Projector brightness (0.1…1 of full light) used for the projector and the video."""
+        self._brightness = max(0.05, min(1.0, float(brightness)))
+        self._gamma = float(gamma)
 
-    def _on_live_intensity_changed(self, val: float) -> None:
-        self.preview.set_intensity(val)
+    def _lut(self) -> Optional[np.ndarray]:
+        return None if self._brightness >= 0.999 else brightness_lut(self._brightness, self._gamma)
 
-    def _current_quotes(self) -> list[str]:
-        if language() == "ru":
-            return self._pepe_quotes_ru
-        return self._pepe_quotes_en
+    def is_projecting(self) -> bool:
+        return self._output_window is not None
 
-    def _cycle_pepe_quote(self) -> None:
-        quotes = self._current_quotes()
-        self._pepe_quote_idx = (self._pepe_quote_idx + 1) % len(quotes)
-        self.pepe_caption.setText(quotes[self._pepe_quote_idx])
+    def _interval(self) -> int:
+        return max(5, int(round(1000.0 / self._fps)))
 
-    def update_language(self) -> None:
-        quotes = self._current_quotes()
-        self._pepe_quote_idx = self._pepe_quote_idx % len(quotes)
-        self.pepe_caption.setText(quotes[self._pepe_quote_idx])
-        if self._output_dir and os.path.exists(os.path.join(self._output_dir, "reconstruction_preview.png")):
-            self._load_dose_preview(self._output_dir)
-        else:
-            self.recon_label.setText(tr("Нет данных\n(Сгенерируйте срез)"))
-            self.recon_stats.setText(tr("RMSE относительной дозы: —"))
+    def _refresh_info(self) -> None:
+        g = self._geometry
+        size = ""
+        if self._frames:
+            w, h = self._true_size or (self._frames[0].shape[1], self._frames[0].shape[0])
+            size = f" · кадр {w}×{h}"
+            if not g.fits(w, h):
+                size += " — не помещается!"
+        self.info_label.setText(tr(f"{g.width}×{g.height}{size} · {self._fps:.1f} Гц".replace(".", ",")))
 
-    def _load_dose_preview(self, path: str) -> None:
-        if not path or not os.path.isdir(path):
-            return
-        preview_path = os.path.join(path, "reconstruction_preview.png")
-        if os.path.exists(preview_path):
-            pix = QPixmap(preview_path)
-            if not pix.isNull():
-                scaled_pix = pix.scaled(160, 160, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                self.recon_label.setPixmap(scaled_pix)
+    def has_frames(self) -> bool:
+        return bool(self._frames)
 
-        stats_path = os.path.join(path, "dose_stats.txt")
-        if os.path.exists(stats_path):
-            try:
-                with open(stats_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                statistics = dict(line.split("=", 1) for line in content.splitlines() if "=" in line)
-                if "rmse" in statistics:
-                    value = float(statistics["rmse"])
-                    self.recon_stats.setText(f"{tr('RMSE относительной дозы:')} {value:.4f}")
-                else:
-                    value = float(statistics["loss"])
-                    self.recon_stats.setText(f"{tr('Потери дозы (L2 Loss):')} {value:.4f}")
-            except (OSError, ValueError, KeyError):
-                self.recon_stats.setText(tr("Не удалось прочитать статистику реконструкции."))
-
-    # --- общая папка вывода (устанавливается из вкладки "Слайсер") -------------
+    # ------------------------------------------------------------------ frames
     def set_output_dir(self, path: str) -> None:
         if path != self._output_dir:
             self._timer.stop()
             self._frames = []
             self._frame_index = 0
             self.play_pause_btn.setEnabled(False)
-            self.save_btn.setEnabled(False)
-            self.preview.clear_frame()
+            self.scrubber.setEnabled(False)
+            self.preview.set_frame(None)
         self._output_dir = path
-        self._load_dose_preview(path)
-        self._refresh_modes()
+        self.dir_label.setText(f"{tr('Папка кадров: ')}{path}")
+        self.dose.load(path)
 
-    def _run_dir(self) -> Optional[str]:
-        if not self._output_dir:
-            return None
-        try:
-            return FrameRepository.validate(self._output_dir).resolved_dir
-        except Exception:
-            return None
-
-    def _bare_available(self) -> bool:
-        run_dir = self._run_dir()
-        return bool(run_dir) and os.path.isdir(os.path.join(run_dir or "", BARE_PROJECTION_DIR))
-
-    def _bare_selected(self) -> bool:
-        return self.mode_bare_btn.isChecked()
-
-    def _refresh_modes(self) -> None:
-        """Enable the bare view only for runs that actually contain it."""
-        available = self._bare_available()
-        self.mode_bare_btn.setEnabled(available)
-        if not available and self.mode_bare_btn.isChecked():
-            blocker = QSignalBlocker(self.mode_bare_btn)
-            self.mode_corrected_btn.setChecked(True)
-            del blocker
-        if not available:
-            self.mode_bare_btn.setToolTip(
-                "Для этого прогона прямая проекция недоступна (не создаётся в экономном режиме)"
-            )
-
-    def _on_mode_changed(self, _checked: bool) -> None:
-        # Frames of the other mode have to be loaded; replay from the start.
-        if self._frames or self._timer.isActive():
-            self._on_assemble_clicked()
-
-    # --- сборка и проигрывание ---------------------------------------------------
     def _on_assemble_clicked(self) -> None:
         if not self._output_dir or not os.path.isdir(self._output_dir):
-            QMessageBox.warning(
-                self, tr("Внимание"), "Select a frame folder first (output_frames)."
-            )
+            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитайте свет."))
             return
-
         self._timer.stop()
-        self.assemble_btn.setEnabled(False)
-        self.progress.emit(0.0, "Сборка видео из кадров...")
-
-        self._assemble_worker = VideoAssembleWorker(
-            self._output_dir, self,
-            subdir=BARE_PROJECTION_DIR if self._bare_selected() else "",
-        )
+        self.preview.set_message(tr("Загружаю кадры…"))
+        self.progress.emit(0.0, "Загрузка кадров...")
+        self._assemble_worker = VideoAssembleWorker(self._output_dir, self)
         self._job_controller.register(self._assemble_worker)
         self._assemble_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
         self._assemble_worker.finished_ok.connect(self._on_assembled)
         self._assemble_worker.failed.connect(self._on_assemble_failed)
-        self._assemble_worker.cancelled.connect(
-            lambda: self.progress.emit(0.0, "Video assembly cancelled.")
-        )
-        self._assemble_worker.finished.connect(lambda: self.assemble_btn.setEnabled(True))
         self._assemble_worker.start()
 
     def _on_assembled(self, frames: List[np.ndarray]) -> None:
         self._frames = frames
+        self._true_size = None
+        try:
+            from frame_io import FrameRepository
+            frame_set = FrameRepository.validate(self._output_dir or "")
+            self._true_size = (int(frame_set.width), int(frame_set.height))
+        except Exception:
+            pass
+        self.preview.set_true_size(self._true_size)
         self._frame_index = 0
         self.play_pause_btn.setEnabled(True)
-        self.save_btn.setEnabled(True)
-        self.play_pause_btn.setText(tr("⏸ Пауза"))
+        self.scrubber.setEnabled(True)
+        self.scrubber.setRange(0, max(0, len(frames) - 1))
         self.progress.emit(1.0, tr("Видео собрано."))
         self.logMessage.emit(f"{tr('Собрано')} {len(frames)} {tr('кадров для воспроизведения.')}")
-        if frames:
-            self.preview.set_frame(frames[0])
-        self._start_playback()
+        self._show(0)
+        self._refresh_info()
+        self.framesReady.emit(len(frames))
+        # Show one full turn, then hold still: an idle print screen costs nothing.
+        # ▶ plays in a loop.
+        self._start_playback(one_turn=True)
 
     def _on_assemble_failed(self, msg: str) -> None:
         self.progress.emit(0.0, tr("Сборка видео не удалась."))
+        self.preview.set_message(tr("Не удалось прочитать кадры"))
         QMessageBox.critical(self, tr("Ошибка"), msg)
 
-    def _start_playback(self) -> None:
+    def _show(self, index: int) -> None:
         if not self._frames:
             return
-        interval_ms = max(int(1000 / (BASE_FPS * self.speed_slider.value())), 5)
-        self._timer.start(interval_ms)
+        self._frame_index = index % len(self._frames)
+        self.preview.set_frame(self._frames[self._frame_index])
+        self.frame_label.setText(f"{self._frame_index + 1} / {len(self._frames)}")
+        if self.scrubber.value() != self._frame_index:
+            self.scrubber.blockSignals(True)
+            self.scrubber.setValue(self._frame_index)
+            self.scrubber.blockSignals(False)
+
+    def _start_playback(self, one_turn: bool = False) -> None:
+        self._one_turn = one_turn
+        if self._frames:
+            self._timer.start(self._interval())
+            self.play_pause_btn.setText("❚❚")
 
     def _on_play_pause_clicked(self) -> None:
         if not self._frames:
             return
         if self._timer.isActive():
             self._timer.stop()
-            self.play_pause_btn.setText(tr("▶ Воспроизведение"))
+            self.play_pause_btn.setText("▶")
         else:
             self._start_playback()
-            self.play_pause_btn.setText(tr("⏸ Пауза"))
 
-    def _on_speed_changed(self, _v: float) -> None:
-        if self._timer.isActive():
-            self._start_playback()
+    def _on_scrub(self, value: int) -> None:
+        self._show(value)
 
     def _advance_frame(self) -> None:
-        if not self._frames:
+        if not self.isVisible():
             return
-        frame = self._frames[self._frame_index]
-        self._frame_index = (self._frame_index + 1) % len(self._frames)
-        self.preview.set_frame(frame)
+        if self._one_turn and self._frame_index + 1 >= len(self._frames):
+            self._timer.stop()
+            self.play_pause_btn.setText("▶")
+            self._show(0)
+            return
+        self._show(self._frame_index + 1)
 
-    # --- экспорт в MP4 -----------------------------------------------------------
-    def _export_settings(self) -> tuple[float, float]:
-        """FPS and projector gamma of the printed file, taken from the run manifest.
+    def hideEvent(self, event: object) -> None:  # noqa: N802
+        self._timer.stop()
+        self.play_pause_btn.setText("▶")
+        super().hideEvent(event)  # type: ignore[arg-type]
 
-        FPS follows the generation schedule, never the preview speed; gamma is
-        the machine profile's projector gamma (1.0 keeps the frames linear).
-        """
-        from frame_io import FrameRepository, load_manifest
-
-        rate, gamma = 0.0, DEFAULT_PROJECTOR_GAMMA
-        try:
-            directory = FrameRepository.validate(self._output_dir or "").resolved_dir
-            manifest = load_manifest(directory)
-            if manifest:
-                rate = float((manifest.frame_schedule or {}).get("frame_rate_hz", 0.0))
-                projector = (manifest.machine_profile or {}).get("projector") or {}
-                gamma = float(projector.get("gamma", DEFAULT_PROJECTOR_GAMMA))
-        except Exception:
-            pass
-        return (rate if rate > 0 else DEFAULT_FRAME_RATE_HZ), gamma
-
-    def _export_source(self) -> tuple[list[str], bool]:
-        """PNG files for the printer at their original resolution, and whether the
-        projector gamma still has to be applied to them (False: already encoded)."""
-        run_dir = self._run_dir()
-        if not run_dir:
-            return [], True
-        if self._bare_selected():
-            folder = os.path.join(run_dir, BARE_PROJECTION_DIR)
-            return sorted(glob.glob(os.path.join(folder, "frame_*.png"))), True
-        encoded = os.path.join(run_dir, PROJECTOR_FRAMES_DIR)
-        if os.path.isdir(encoded):
-            paths = sorted(glob.glob(os.path.join(encoded, "frame_*.png")))
-            if paths:
-                return paths, False
-        return list(FrameRepository.validate(run_dir).paths), True
+    # ------------------------------------------------------------------ output
+    def _printer_frames(self) -> list:
+        """The saved PNG frames at full resolution when available (the preview may be downscaled)."""
+        if self._output_dir:
+            try:
+                from frame_io import FrameRepository
+                return list(FrameRepository.validate(self._output_dir).paths)
+            except Exception:
+                pass
+        return list(self._frames)
 
     @staticmethod
-    def _format_rpm(rpm: float) -> str:
-        """Rotation speed for the file name: 5, 4.17 (never 4.16667)."""
-        return f"{rpm:.2f}".rstrip("0").rstrip(".")
+    def projector_screens() -> list:
+        """Screens other than the one the window is on (candidates for the projector)."""
+        screens = QGuiApplication.screens()
+        primary = QGuiApplication.primaryScreen()
+        return [s for s in screens if s is not primary]
+
+    def show_on_projector(self, pattern: bool = False, duration_s: float = 0.0) -> bool:
+        """Frames full screen on the second display; stops by itself after duration_s (0 = never)."""
+        screens = self.projector_screens()
+        if not screens:
+            QMessageBox.information(self, tr("Проектор"), tr(
+                "Второй экран не найден. Подключите проектор как второй монитор "
+                "(расширенный рабочий стол) или сохраните видео."))
+            return False
+        self.stop_projector()
+        if pattern:
+            w, h = self._true_size or ((self._frames[0].shape[1], self._frames[0].shape[0]) if self._frames
+                                       else (self._geometry.height // 2, self._geometry.height // 3))
+            static = alignment_pattern(self._geometry, w, h)
+            self._output_window = ProjectorOutputWindow([], self._geometry, self._fps, screens[0], static)
+        else:
+            frames = self._printer_frames()
+            if not frames:
+                return False
+            self._output_window = ProjectorOutputWindow(frames, self._geometry, self._fps, screens[0],
+                                                        duration_s=duration_s, lut=self._lut())
+        window = self._output_window
+        window.tick.connect(self.projectionTick.emit)
+        window.finished.connect(lambda done, w=window: self._on_projection_finished(w, done))
+        self.logMessage.emit(tr("Кадры выводятся на второй экран. Esc — остановить."))
+        return True
+
+    def _on_projection_finished(self, window: object, completed: bool) -> None:
+        if self._output_window is window:
+            self._output_window = None
+        self.projectionFinished.emit(completed)
+        if completed:
+            self.logMessage.emit(tr("Засветка завершена: доза набрана."))
+
+    def stop_projector(self) -> None:
+        if self._output_window is not None:
+            try:
+                self._output_window.close()
+            except RuntimeError:
+                pass
+            self._output_window = None
 
     def _on_save_clicked(self) -> None:
-        paths, gamma_pending = self._export_source()
-        if not paths:
-            QMessageBox.warning(self, "Warning", "No frames to export.")
+        frames = self._printer_frames()
+        if not frames:
+            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитайте свет."))
             return
-
-        if self._bare_selected():
-            answer = QMessageBox.question(
-                self,
-                tr("Внимание"),
-                tr("Прямая проекция не оптимизирована и не компенсирует преломление и поглощение в колбе. "
-                   "Для печати используйте скорректированную проекцию. Сохранить файл?"),
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-        fps, gamma = self._export_settings()
-        # The count of frames on disk, not of the (possibly smaller) preview.
-        rpm = 60.0 * fps / len(paths)
-        name = "projection_direct" if self._bare_selected() else "projection"
-        # OpenCAL reads the rotation speed from the file name: <name>_<rpm>rpm.mp4
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save video", f"{name}_{self._format_rpm(rpm)}rpm.mp4", "MP4 (*.mp4)"
-        )
+        g = self._geometry
+        path, _ = QFileDialog.getSaveFileName(self, tr("Сохранить видео"), f"print_{g.width}x{g.height}.mp4", "MP4 (*.mp4)")
         if not path:
             return
-
-        # The PNG files and the preview are linear; gamma only reaches the MP4.
-        if abs(gamma - 1.0) > 1e-9:
-            self.logMessage.emit(
-                tr("Гамма проектора {gamma:g}: {where}.").format(
-                    gamma=gamma,
-                    where=tr("применена к кадрам при расчёте") if not gamma_pending
-                    else tr("применена к 8-битным кадрам при экспорте"),
-                )
-            )
-        else:
-            self.logMessage.emit(
-                tr("Гамма проектора 1.0 (линейный вывод). Если гамма проектора около 2.2 и он не "
-                   "откалиброван, доза будет нелинейной.")
-            )
-
-        self._start_export(paths, fps, path, gamma if gamma_pending else 1.0)
-
-    def _video_range(self) -> str:
-        return str(self.range_combo.currentData())
-
-    def _start_export(self, frames, fps: float, path: str, gamma: float) -> None:
-        self.save_btn.setEnabled(False)
-        self.ramp_btn.setEnabled(False)
         self.progress.emit(0.0, "Экспорт в MP4...")
+        self._start_export(frames, self._fps, path, g, self._lut())
 
-        self._export_worker = VideoExportWorker(
-            frames, fps, path, self, projector_gamma=gamma, video_range=self._video_range()
-        )
+    def _on_ramp_clicked(self) -> None:
+        g = self._geometry
+        path, _ = QFileDialog.getSaveFileName(self, tr("Сохранить видео"), "gray_ramp.mp4", "MP4 (*.mp4)")
+        if not path:
+            return
+        ramp = calibration_ramp(g.width, g.height)
+        self.progress.emit(0.0, "Экспорт тестовой шкалы...")
+        self._start_export([ramp] * int(BASE_FPS * 10), BASE_FPS, path, None)
+
+    def _start_export(self, frames: list, fps: float, path: str, canvas: Optional[CanvasGeometry],
+                      lut: Optional[np.ndarray] = None) -> None:
+        self._export_worker = VideoExportWorker(frames, fps, path, self, canvas=canvas, lut=lut)
         self._job_controller.register(self._export_worker)
         self._export_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
         self._export_worker.finished_ok.connect(self._on_export_done)
         self._export_worker.failed.connect(self._on_export_failed)
-        self._export_worker.cancelled.connect(
-            lambda: self.progress.emit(0.0, "Video export cancelled.")
-        )
-        self._export_worker.finished.connect(lambda: self.save_btn.setEnabled(True))
-        self._export_worker.finished.connect(lambda: self.ramp_btn.setEnabled(True))
         self._export_worker.start()
 
-    def _on_ramp_clicked(self) -> None:
-        """A static gray-bar video: the last run's frame size, rate and frame count (so the
-        rotation speed in the name is the usual one), the chosen range, linear unless asked."""
-        from PIL import Image
-
-        width, height = 1280, 720
-        paths, _gamma_pending = self._export_source()
-        if paths:
-            with Image.open(paths[0]) as picture:
-                width, height = picture.size
-        width += width % 2
-        height += height % 2
-        fps, profile_gamma = self._export_settings()
-        count = len(paths) if paths else 360
-        gamma = profile_gamma if self.ramp_gamma_box.isChecked() else 1.0
-        rpm = 60.0 * fps / count
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save video", f"ramp_{self._format_rpm(rpm)}rpm.mp4", "MP4 (*.mp4)"
-        )
-        if not path:
-            return
-        self.logMessage.emit(
-            tr("Тестовая рампа: гамма {gamma:g}, диапазон {video_range}.").format(
-                gamma=gamma, video_range=self._video_range()
-            )
-        )
-        # One array repeated: the export counts its memory once.
-        self._start_export([calibration_ramp(width, height)] * count, fps, path, gamma)
-
     def _on_export_done(self, path: str) -> None:
-        self.progress.emit(1.0, "Video saved.")
-        self.logMessage.emit(f"MP4 saved: {path}")
-        QMessageBox.information(self, "Success", f"Video saved:\n{path}")
+        self.progress.emit(1.0, "Видео сохранено.")
+        self.logMessage.emit(f"MP4: {path}")
+        QMessageBox.information(self, tr("Готово"), f"{tr('Видео сохранено')}:\n{path}\n\n"
+                                + tr("Показывайте его на проекторе во весь экран, без масштабирования."))
 
     def _on_export_failed(self, msg: str) -> None:
-        self.progress.emit(0.0, "Video export failed.")
-        QMessageBox.critical(self, "Video export failed", msg)
+        self.progress.emit(0.0, "Экспорт не удался.")
+        QMessageBox.critical(self, tr("Экспорт не удался"), msg)
+
+    def composed_frame(self, index: int = 0) -> Optional[np.ndarray]:
+        if not self._frames:
+            return None
+        return compose(self._frames[index % len(self._frames)], self._geometry)
+
+    def update_language(self) -> None:
+        self._refresh_info()
 
     def closeEvent(self, event) -> None:  # noqa: N802 (имя метода задано Qt)
+        self.stop_projector()
         if self._job_controller.shutdown():
             event.accept()
         else:

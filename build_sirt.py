@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 def build() -> bool:
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parent
     cpp_dir = root / "cpp_backend"
     src = cpp_dir / "sirt_engine.cpp"
     if not src.is_file():

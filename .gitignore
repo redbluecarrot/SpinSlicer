@@ -241,6 +241,3 @@ cpp_backend/*.obj
 cpp_backend/*.o
 cpp_backend/*.lib
 cpp_backend/*.exp
-
-# Local agent instructions
-AGENTS.md

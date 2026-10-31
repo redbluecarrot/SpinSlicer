@@ -30,6 +30,17 @@ def test_physical_memory_budget_counts_sparse_matrices() -> None:
     assert physical > basic + 300 * 1024**2
 
 
+def test_fastcal_memory_budget_allows_fine_grids() -> None:
+    from constants import MAX_ESTIMATED_MEMORY_BYTES
+    sirt = estimate_slicing_memory(384, 432, 360, output_res=720, projection_backend="physical")
+    fast = estimate_slicing_memory(384, 432, 360, output_res=720, projection_backend="physical",
+                                   fastcal=True)
+    assert fast < sirt / 2
+    # A 512 grid on a round vial stays inside the preflight limit.
+    assert estimate_slicing_memory(512, 576, 360, output_res=1080, projection_backend="physical",
+                                   fastcal=True) < MAX_ESTIMATED_MEMORY_BYTES
+
+
 def test_physical_params_reject_invalid_absorption_before_slicing() -> None:
     params = valid_params()
     params.projection_backend = "physical"

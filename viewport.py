@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import math
 import os
+import time
 from typing import Any, Optional, cast
 
 import numpy as np
@@ -30,86 +31,59 @@ import pyvista as pv
 import trimesh
 import trimesh.transformations as tf
 import vtk
-from PyQt6.QtCore import (
-    QEasingCurve,
-    QEvent,
-    QRect,
-    Qt,
-    QTimer,
-    QVariantAnimation,
-    pyqtSignal,
-)
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtCore import QEasingCurve, QEvent, QRect, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 
+import theme
 from constants import (
     MAX_VIEWPORT_TRIANGLES,
-    MODEL_COLOR,
     VAT_HEIGHT_RATIO,
-    VIEWPORT_BG_BOTTOM,
-    VIEWPORT_BG_TOP,
     VIEWPORT_ORIENTATION_AXIS_CONE_RADIUS,
     VIEWPORT_ORIENTATION_AXIS_CONE_RESOLUTION,
-    VIEWPORT_ORIENTATION_AXIS_LABEL_GAP,
     VIEWPORT_ORIENTATION_AXIS_LENGTH,
     VIEWPORT_ORIENTATION_AXIS_LINE_WIDTH,
     VIEWPORT_ORIENTATION_AXIS_ORIGINS,
     VIEWPORT_ORIENTATION_AXIS_TIP_LENGTH,
     VIEWPORT_ORIENTATION_CUBE_SCALE,
     VIEWPORT_ORIENTATION_DRAG_SENSITIVITY,
-    VIEWPORT_ORIENTATION_MARKER_EDGE_MARGIN,
-    VIEWPORT_ORIENTATION_MARKER_PIXELS,
-    VIEWPORT_ORIENTATION_MARKER_TOP_OFFSET,
     VIEWPORT_ORIENTATION_VIEWPORT,
     VIEWPORT_ORIENTATION_WIDGET_SIZE,
 )
+from sketch_scene import SceneParams, SketchScene, apply_dither, scene_bounds
+
+# How long the drawing keeps "boiling" after the last change before it holds still.
+BOIL_SETTLE_S = 4.0
+_WAKE_EVENTS = (QEvent.Type.MouseButtonPress, QEvent.Type.MouseMove, QEvent.Type.Wheel,
+                QEvent.Type.KeyPress, QEvent.Type.Resize)
 
 CameraPose = tuple[np.ndarray, np.ndarray, np.ndarray, float]
-
-CAMERA_NAVIGATION_BINDINGS = {
-    "left": "rotate",
-    "shift_left": "rotate",
-    "control_left": "rotate",
-    "middle": "pan",
-    "shift_middle": "pan",
-    "control_middle": "pan",
-    "right": "pan",
-    "shift_right": "pan",
-    "control_right": "pan",
-}
-
-
-def _orientation_marker_viewport(width: int, height: int) -> tuple[float, float, float, float]:
-    """Return normalized VTK bounds for a fixed-size marker at upper right."""
-
-    if width <= 0 or height <= 0:
-        raise ValueError("Viewport dimensions must be positive.")
-
-    margin = min(VIEWPORT_ORIENTATION_MARKER_EDGE_MARGIN, max(0, (width - 1) // 2))
-    top = min(VIEWPORT_ORIENTATION_MARKER_TOP_OFFSET, max(0, height - margin - 1))
-    available_width = max(1, width - margin * 2)
-    available_height = max(1, height - top - margin)
-    marker_size = min(
-        VIEWPORT_ORIENTATION_MARKER_PIXELS,
-        available_width,
-        available_height,
-    )
-    left = width - margin - marker_size
-    right = width - margin
-    bottom = top + marker_size
-    return (
-        left / width,
-        1.0 - bottom / height,
-        right / width,
-        1.0 - top / height,
-    )
+VIRTUAL_PRINT_COLOR = "#F2A541"
 
 
 def _trimesh_to_pyvista(mesh: trimesh.Trimesh) -> pv.PolyData:
     faces = mesh.faces
     padded = np.hstack([np.full((len(faces), 1), 3, dtype=np.int64), faces.astype(np.int64)])
     return pv.PolyData(mesh.vertices.astype(np.float64), padded.ravel())
+
+
+def prepare_display_mesh(mesh: trimesh.Trimesh) -> pv.PolyData:
+    """Viewport copy of a mesh: decimated when huge, with crease-aware normals.
+
+    Pure VTK data work, safe in a worker thread (the loader does it so the UI
+    never freezes on a 200k-triangle STL). Normals are split at sharp edges
+    (feature angle 30°) so engraving and threads keep their contrast.
+    """
+    display = _trimesh_to_pyvista(mesh)
+    if display.n_faces > MAX_VIEWPORT_TRIANGLES:
+        try:
+            display = display.decimate_pro(1.0 - MAX_VIEWPORT_TRIANGLES / display.n_faces, preserve_topology=True)
+        except Exception:
+            pass
+    return display.compute_normals(
+        cell_normals=False, point_normals=True, split_vertices=True, feature_angle=30.0,
+        consistent_normals=True, auto_orient_normals=True,
+    )
 
 
 def _numpy_to_vtk_transform(matrix: np.ndarray) -> vtk.vtkTransform:
@@ -128,39 +102,6 @@ def _vtk_transform_to_numpy(transform: vtk.vtkTransform) -> np.ndarray:
         [[vtk_matrix.GetElement(row, column) for column in range(4)] for row in range(4)],
         dtype=np.float64,
     )
-
-
-def _home_camera_icon() -> QIcon:
-    """Draw a small, high-contrast home glyph for the camera reset button."""
-
-    pixmap = QPixmap(24, 24)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(
-        QPen(
-            QColor("#E8E8E8"),
-            2.0,
-            Qt.PenStyle.SolidLine,
-            Qt.PenCapStyle.RoundCap,
-            Qt.PenJoinStyle.RoundJoin,
-        )
-    )
-    path = QPainterPath()
-    path.moveTo(3.0, 11.0)
-    path.lineTo(12.0, 3.0)
-    path.lineTo(21.0, 11.0)
-    path.moveTo(6.0, 9.5)
-    path.lineTo(6.0, 21.0)
-    path.lineTo(18.0, 21.0)
-    path.lineTo(18.0, 9.5)
-    path.moveTo(10.0, 21.0)
-    path.lineTo(10.0, 15.0)
-    path.lineTo(14.0, 15.0)
-    path.lineTo(14.0, 21.0)
-    painter.drawPath(path)
-    painter.end()
-    return QIcon(pixmap)
 
 
 def _transformed_bounds(
@@ -225,7 +166,7 @@ def _camera_up_vector(direction: np.ndarray) -> np.ndarray:
     length = float(np.linalg.norm(view_direction))
     if length <= 1e-9:
         return np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    view_direction = view_direction / length
+    view_direction = np.asarray(view_direction / length, dtype=np.float64)
 
     world_up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
     up = world_up - np.dot(world_up, view_direction) * view_direction
@@ -262,8 +203,8 @@ def _slerp_unit_vectors(
     target_length = float(np.linalg.norm(target_vector))
     if start_length <= 1e-9 or target_length <= 1e-9:
         raise ValueError("Cannot interpolate a zero-length vector.")
-    start_vector = start_vector / start_length
-    target_vector = target_vector / target_length
+    start_vector = np.asarray(start_vector / start_length, dtype=np.float64)
+    target_vector = np.asarray(target_vector / target_length, dtype=np.float64)
 
     fraction = float(np.clip(progress, 0.0, 1.0))
     dot = float(np.clip(np.dot(start_vector, target_vector), -1.0, 1.0))
@@ -411,12 +352,16 @@ class Viewport3D(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.plotter: Any = QtInteractor(self)
+        # auto_update=False: pyvistaqt otherwise redraws the scene 5×/s forever even
+        # when nothing changed. Every change here asks for its own frame (request_render).
+        self.plotter: Any = QtInteractor(self, auto_update=False)
         layout.addWidget(self.plotter.interactor)
 
         plotter = cast(Any, self.plotter)
-        plotter.set_background(VIEWPORT_BG_BOTTOM, top=VIEWPORT_BG_TOP)
-        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        plotter.set_background(theme.current().view)
+        self._offscreen = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
+        self._boil_until = 0.0
+        if self._offscreen:
             setattr(self.plotter, "render", lambda *args, **kwargs: None)
             if hasattr(self.plotter, "_render"):
                 setattr(self.plotter, "_render", lambda *args, **kwargs: None)
@@ -434,6 +379,7 @@ class Viewport3D(QWidget):
         self._vat_actor: Any = None
         self._bottom_plane_actor: Any = None
         self._model_actor: Any = None
+        self._virtual_actor: Any = None
         self._affine_widget: Any = None
         self._scale_widget: Any = None
         self._scale_representation: Any = None
@@ -458,8 +404,27 @@ class Viewport3D(QWidget):
         self._navigation_style: Any = None
         self._scale_handle_actors: list[Any] = []
 
+        self._scene_params = SceneParams()
+        self._sketch = SketchScene(self.plotter, theme.scene_palette())
+        self._sketch_ok = True
+        self._last_render_ms = 0.0
+        self._render_started = 0.0
+        self._render_cpu_started = 0.0
+        self._render_started = time.perf_counter()
+        try:
+            self.plotter.renderer.AddObserver("StartEvent", self._on_render_start)
+            self.plotter.renderer.AddObserver("EndEvent", self._on_render_end)
+        except Exception:
+            pass
+        # "Line boil": three jittered copies of the drawing swapped ~7 times a second.
+        self._boil_timer = QTimer(self)
+        self._boil_timer.setInterval(140)
+        self._boil_timer.timeout.connect(self._on_boil_tick)
+        self._poke_boil()
+
         self.plotter.interactor.installEventFilter(self)
         self._install_navigation_style()
+        # self._create_orientation_cube(plotter)
 
         self._reset_camera_view()
 
@@ -528,8 +493,7 @@ class Viewport3D(QWidget):
         cube.SetYMinusFaceText("BACK")
         cube.SetZPlusFaceText("TOP")
         cube.SetZMinusFaceText("BOTTOM")
-        cube.SetFaceTextScale(0.16)
-        cube.SetZFaceTextRotation(180.0)
+        cube.SetFaceTextScale(0.14)
         cube.SetFaceTextVisibility(True)
         cube.SetTextEdgesVisibility(False)
         cube.SetCubeVisibility(True)
@@ -619,8 +583,7 @@ class Viewport3D(QWidget):
         )
         label_position = tuple(
             origin[index]
-            + direction[index]
-            * (VIEWPORT_ORIENTATION_AXIS_LENGTH + VIEWPORT_ORIENTATION_AXIS_LABEL_GAP)
+            + direction[index] * (VIEWPORT_ORIENTATION_AXIS_LENGTH + 0.04)
             for index in range(3)
         )
 
@@ -752,44 +715,6 @@ class Viewport3D(QWidget):
         bottom = int(round((1.0 - y_min) * height))
         return QRect(left, top, max(right - left, 1), max(bottom - top, 1))
 
-    def _position_camera_home_button(self) -> None:
-        """Place the home button in the viewport's upper-right corner."""
-
-        button = getattr(self, "_camera_home_button", None)
-        interactor = getattr(self.plotter, "interactor", None)
-        if button is None or interactor is None:
-            return
-
-        x = max(
-            6,
-            interactor.width() - button.width() - VIEWPORT_ORIENTATION_MARKER_EDGE_MARGIN,
-        )
-        y = max(6, min(8, interactor.height() - button.height() - 6))
-        button.move(x, y)
-        button.raise_()
-
-    def _update_orientation_widget_viewport(self) -> None:
-        """Keep the custom cube and axes the same pixel size across resizes."""
-
-        widget = self._orientation_widget
-        interactor = getattr(self.plotter, "interactor", None)
-        if (
-            not self._orientation_marker_uses_custom_drag
-            or widget is None
-            or interactor is None
-            or not widget.GetEnabled()
-        ):
-            return
-
-        width = int(interactor.width())
-        height = int(interactor.height())
-        if width <= 0 or height <= 0:
-            return
-
-        viewport = _orientation_marker_viewport(width, height)
-        if not np.allclose(tuple(widget.GetViewport()), viewport):
-            widget.SetViewport(*viewport)
-
     def eventFilter(self, watched: Any, event: Any) -> bool:  # noqa: N802 (Qt API name)
         """Use the ViewCube as a dedicated camera-orbit handle.
 
@@ -799,13 +724,8 @@ class Viewport3D(QWidget):
         leaving model transform handles and normal viewport navigation intact.
         """
 
-        if (
-            watched is self.plotter.interactor
-            and event.type() == QEvent.Type.Resize
-        ):
-            self._update_orientation_widget_viewport()
-            self._position_camera_home_button()
-
+        if watched is self.plotter.interactor and event.type() in _WAKE_EVENTS:
+            self._poke_boil()
         if watched is self.plotter.interactor and self._orientation_marker_uses_custom_drag:
             event_type = event.type()
             if event_type == QEvent.Type.MouseButtonPress:
@@ -892,9 +812,11 @@ class Viewport3D(QWidget):
         if self._vtk_interactor(self.plotter) is None:
             return
         try:
-            # CAD navigation: left-drag orbits, right/middle drag pan, and the
-            # wheel zooms. Keep modified drags predictable.
-            self.plotter.enable_custom_trackball_style(**CAMERA_NAVIGATION_BINDINGS)
+            # Tinkercad-style navigation: left drag orbits, right drag pans,
+            # and the middle button dollies. Modified buttons keep the same
+            # intent instead of unexpectedly rolling or changing interaction.
+            # Use terrain style to strictly lock the Z-axis (prevents rolling/crooked camera)
+            self.plotter.enable_terrain_style(mouse_wheel_zooms=True)
             style = getattr(getattr(self.plotter, "iren", None), "style", None)
             if style is None:
                 return
@@ -994,7 +916,7 @@ class Viewport3D(QWidget):
             self.plotter.renderer.ResetCameraClippingRange()
         except (AttributeError, TypeError, ValueError):
             pass
-        self.plotter.render()
+        self.request_render()
 
     def _stop_camera_animation(self) -> None:
         if self._camera_animation is not None:
@@ -1083,11 +1005,10 @@ class Viewport3D(QWidget):
     def _camera_reset_bounds(self) -> tuple[float, float, float, float, float, float]:
         """Return bounds for framing the vat/model, excluding the large grid."""
 
-        diameter = max(float(self._current_diameter), 60.0)
-        height = diameter * VAT_HEIGHT_RATIO
-        radius = (diameter * 2.2) / 2.0  # Frame the full workspace with breathing room
-        minimum = np.array([-radius, -radius, -height * 0.75], dtype=np.float64)
-        maximum = np.array([radius, radius, height * 0.75], dtype=np.float64)
+        diameter = max(float(self._current_diameter), 20.0)
+        minimum, maximum = scene_bounds(self._scene_params)
+        minimum = minimum.astype(np.float64)
+        maximum = maximum.astype(np.float64)
 
         if self._model_actor is not None and self._model_bounds is not None:
             matrix = self._model_actor.user_matrix
@@ -1115,15 +1036,11 @@ class Viewport3D(QWidget):
         bounds = self._camera_reset_bounds()
         target_pose: CameraPose | None = None
         try:
-            self.plotter.view_isometric(bounds=bounds, render=False)
-            try:
-                self.plotter.camera.azimuth += 25
-                self.plotter.camera.elevation += 12
-            except Exception:
-                pass
-            self._focus_camera_on_vat()
+            # Front three-quarter view: projector on the left, beam into the vial.
+            self.plotter.view_vector((0.32, -1.0, 0.42), viewup=(0.0, 0.0, 1.0), render=False)
+            self.plotter.reset_camera(render=False, bounds=bounds)
             self._lock_camera_roll()
-            self.plotter.camera.Zoom(0.72)  # Natural comfortable distance
+            self.plotter.camera.Zoom(1.6)
             target_pose = self._capture_camera_pose()
         finally:
             if current_pose is not None:
@@ -1141,138 +1058,151 @@ class Viewport3D(QWidget):
 
     # --- колба (фиксированный размер, не зависит от модели) --------------------
     def update_vat(self, diameter_mm: float, container_mode: int = 0) -> None:
-        self._current_diameter = diameter_mm
-        radius = diameter_mm / 2.0
-        height = diameter_mm * VAT_HEIGHT_RATIO
+        """Back-compat entry: only diameter and the bath flag."""
+        params = self._scene_params
+        self.update_scene(SceneParams(
+            diameter_mm=float(diameter_mm), wall_mm=params.wall_mm, bath=container_mode == 2,
+            field_mm=params.field_mm, throw_mm=params.throw_mm, alpha_per_mm=params.alpha_per_mm,
+            n_resin=params.n_resin, n_liquid=params.n_liquid, height_ratio=VAT_HEIGHT_RATIO,
+        ))
 
-        # Safely remove all old vat actors
-        for attr in [
-            '_vat_actor',
-            '_vat_outer_actor',
-            '_vat_inner_actor',
-            '_vat_walls_actor',
-            '_vat_liquid_actor',
-            '_rays_actor',
-        ]:
-            actor = getattr(self, attr, None)
-            if actor is not None:
-                self.plotter.remove_actor(actor, render=False)
-                setattr(self, attr, None)
-
-        if container_mode == 0:
-            # Standard Cylinder
-            vat_geom = pv.Cylinder(
-                center=(0.0, 0.0, 0.0), direction=(0.0, 0.0, 1.0),
-                radius=radius, height=height, resolution=100, capping=False,
-            )
-            self._vat_actor = self.plotter.add_mesh(
-                vat_geom, color="#add8e6", opacity=0.25, smooth_shading=True,
-                specular=0.8, specular_power=40, name="vat_glass", pickable=False, render=False,
-            )
-        else:
-            # Cuvette with Vial inside
-            # 1. Inner Vial (Flask)
-            vial_geom = pv.Cylinder(
-                center=(0.0, 0.0, 0.0), direction=(0.0, 0.0, 1.0),
-                radius=radius, height=height, resolution=100, capping=False,
-            )
-            self._vat_actor = self.plotter.add_mesh(
-                vial_geom, color="#add8e6", opacity=0.35, smooth_shading=True,
-                specular=0.9, specular_power=50, name="vat_vial", pickable=False, render=False,
-            )
-
-            # 2. Outer Square Cuvette
-            # "по размеру как подложка сетчатая под колбой" -> diameter_mm * 1.5
-            # "сверху не имела грани" -> construct from 5 faces
-            # "чуть ниже колбы" -> height_cuvette = height * 0.9
-            grid_span = diameter_mm * 1.5
-            h_cuv = height * 0.85
-
-            wall_t = 2.0
-            outer_w = grid_span
-
-            # Build Cuvette out of 5 boxes to avoid boolean_difference failures (which cause lids)
-            bottom = pv.Cube(center=(0, 0, -height/2 + wall_t/2), x_length=outer_w, y_length=outer_w, z_length=wall_t)
-            left = pv.Cube(center=(-outer_w/2 + wall_t/2, 0, -height/2 + h_cuv/2), x_length=wall_t, y_length=outer_w, z_length=h_cuv)
-            right = pv.Cube(center=(outer_w/2 - wall_t/2, 0, -height/2 + h_cuv/2), x_length=wall_t, y_length=outer_w, z_length=h_cuv)
-            front = pv.Cube(center=(0, -outer_w/2 + wall_t/2, -height/2 + h_cuv/2), x_length=outer_w - 2*wall_t, y_length=wall_t, z_length=h_cuv)
-            back = pv.Cube(center=(0, outer_w/2 - wall_t/2, -height/2 + h_cuv/2), x_length=outer_w - 2*wall_t, y_length=wall_t, z_length=h_cuv)
-
-            cuvette_geom = bottom.merge([left, right, front, back])
-
-            self._vat_outer_actor = self.plotter.add_mesh(
-                cuvette_geom, color="#80c0ff", opacity=0.15, smooth_shading=True,
-                specular=1.0, specular_power=20, name="vat_cuvette", pickable=False, render=False,
-            )
-
-        if self._bottom_plane_actor is not None:
-            self.plotter.remove_actor(self._bottom_plane_actor, render=False)
-
-        bottom_z = -height / 2.0
-        grid_span = diameter_mm * 1.5
-        bottom_plane = pv.Plane(
-            center=(0.0, 0.0, bottom_z),
-            direction=(0.0, 0.0, 1.0),
-            i_size=grid_span,
-            j_size=grid_span,
-            i_resolution=30,
-            j_resolution=30,
-        )
-
-        self._bottom_plane_actor = self.plotter.add_mesh(
-            bottom_plane,
-            color="#222222",
-            opacity=0.8,
-            show_edges=True,
-            edge_color="#444444",
-            line_width=1.0,
-            name="vat-bottom",
-            pickable=False,
-            render=False,
-        )
-        self.plotter.render()
+    def update_scene(self, params: SceneParams) -> None:
+        """Redraw the printer sketch from real settings (vial, bath, beam, resin)."""
+        self._scene_params = params
+        self._current_diameter = params.diameter_mm
+        try:
+            self._sketch.update(params)
+        except Exception:
+            self._sketch_ok = False
+        self.request_render()
         if not self._camera_framed or self._model_actor is None:
             self._camera_framed = True
             self._reset_camera_view(animate=False)
+
+    def set_scene_activity(self, activity: str, progress: float = 0.0) -> None:
+        """idle | computing | done | printing — drives light scan, rim ticks and the turn arrow."""
+        if self._sketch.set_activity(activity, progress):
+            # Progress arrives up to 15×/s; it rides the next sketch frame instead of
+            # asking for its own, so a compute never costs more frames than the boil.
+            if self._boil_timer.isActive() or self._offscreen:
+                self._poke_boil()
+            else:
+                self.request_render()
+
+    def set_scene_frames(self, frames: int) -> None:
+        self._sketch.set_frames(frames)
+        self.request_render()
+
+    def set_rotation_visible(self, visible: bool) -> None:
+        self._sketch.set_rotation_visible(visible)
+        self.request_render()
+
+    def apply_palette(self) -> None:
+        """Re-read theme.current() (day/night switch)."""
+        pal = theme.scene_palette()
+        self.plotter.set_background(pal.background)
+        self._sketch.set_palette(pal)
+        if self._model_actor is not None:
+            apply_dither(self._model_actor, pal.dither_ink, pal.dither_paper, self._dither_pixel())
+        if self._virtual_actor is not None:
+            apply_dither(self._virtual_actor, pal.accent, pal.dither_paper, self._dither_pixel())
+        self.request_render()
+
+    def _poke_boil(self) -> None:
+        """Something changed: let the drawing breathe for a few seconds, then hold still.
+
+        A still sketch costs nothing. The boil only runs while the person is doing
+        something (orbiting, editing, a compute in progress), so an idle window
+        uses no CPU or GPU at all.
+        """
+        self._boil_until = time.monotonic() + BOIL_SETTLE_S
+        timer = getattr(self, "_boil_timer", None)
+        if timer is not None and not self._offscreen and not timer.isActive():
+            timer.start()
+
+    def request_render(self, *, wake: bool = True) -> None:
+        """Ask Qt to repaint the 3D view once, on the next frame.
+
+        ``plotter.render()`` draws immediately *and* Qt draws again in paintGL, and
+        several calls in one event-loop turn each cost a full frame. A widget
+        update is coalesced by Qt: one paint, one VTK render.
+        """
+        if self._offscreen:
+            return
+        if wake:
+            self._poke_boil()
+        interactor = getattr(self.plotter, "interactor", None)
+        if interactor is not None:
+            QWidget.update(interactor)
+
+    def _dither_pixel(self) -> float:
+        try:
+            return 2.0 * float(self.devicePixelRatioF())
+        except Exception:
+            return 2.0
+
+    def _on_render_end(self, *_args: object) -> None:
+        # Cost = the larger of wall time and CPU time of the whole process: a software
+        # OpenGL driver renders on several threads, so a 150 ms frame can burn 450 ms CPU.
+        wall = time.perf_counter() - self._render_started
+        cpu = time.process_time() - self._render_cpu_started
+        self._last_render_ms = 0.7 * self._last_render_ms + 0.3 * max(wall, cpu) * 1000.0
+
+    def _on_render_start(self, *_args: object) -> None:
+        self._render_started = time.perf_counter()
+        self._render_cpu_started = time.process_time()
+        camera = getattr(self.plotter, "camera", None)
+        if camera is None:
+            return
+        try:
+            self._sketch.on_camera(np.asarray(camera.position, dtype=np.float64))
+        except Exception:
+            pass
+
+    def shutdown(self) -> None:
+        """Release VTK before Qt destroys the OpenGL contexts (clean exit, no tracebacks)."""
+        self._boil_timer.stop()
+        try:
+            self.plotter.close()
+        except Exception:
+            pass
+
+    def _on_boil_tick(self) -> None:
+        if not self.isVisible() or not self._sketch_ok:
+            return
+        if self.window().isMinimized() or time.monotonic() > self._boil_until:
+            self._boil_timer.stop()      # hold the last frame; the next change wakes it
+            return
+        self._sketch.tick()
+        self.request_render(wake=False)
+        # On a slow GPU never let the sketch animation crowd out the interface:
+        # keep the boil at most ~1/4 of the time budget.
+        spent_ms = self._last_render_ms
+        interval = int(min(2000.0, max(140.0, spent_ms * 4.0)))
+        if abs(interval - self._boil_timer.interval()) > 20:
+            self._boil_timer.setInterval(interval)
 
     # --- модель: геометрия добавляется один раз, дальше — только матрица -------
     def set_model(self, mesh: trimesh.Trimesh) -> None:
         """Вызывается один раз на новый загруженный файл (не на каждую правку)."""
         self._remove_transform_widgets()
         self._model_bounds = np.asarray(mesh.bounds, dtype=np.float64).copy()
-        pv_mesh = _trimesh_to_pyvista(mesh)
-
-        display_mesh = pv_mesh
-        if pv_mesh.n_faces > MAX_VIEWPORT_TRIANGLES:
-            try:
-                ratio = 1.0 - (MAX_VIEWPORT_TRIANGLES / pv_mesh.n_faces)
-                display_mesh = pv_mesh.decimate_pro(ratio, preserve_topology=True)
-            except Exception:
-                display_mesh = pv_mesh
-
-        # Расчёт point-normals с разбиением по резким рёбрам. С
-        # split_vertices=False (как было раньше) VTK усредняет нормаль
-        # в вершине по ВСЕМ смежным граням независимо от угла между
-        # ними — это стирает контраст именно на мелком рельефе (гравировка,
-        # резьба), геометрия при этом не теряется. feature_angle=30° —
-        # держим гладкую заливку на плавных поверхностях, но сохраняем
-        # резкую тень там, где грань реально излом, а не кривизна.
-        display_mesh = display_mesh.compute_normals(
-            cell_normals=False, point_normals=True,
-            split_vertices=True, feature_angle=30.0,
-            consistent_normals=True, auto_orient_normals=True,
-        )
+        # Taken out of the metadata so later copies/pickles of the mesh stay light.
+        prepared = mesh.metadata.pop("spinslicer_display", None) if isinstance(getattr(mesh, "metadata", None), dict) else None
+        display_mesh = prepared if prepared is not None else prepare_display_mesh(mesh)
 
         if self._model_actor is not None:
             self.plotter.remove_actor(self._model_actor, render=False)
 
         self._model_actor = self.plotter.add_mesh(
-            display_mesh, color=MODEL_COLOR, smooth_shading=True,
-            specular=0.35, specular_power=18, name="model", pickable=False, render=False,
+            display_mesh, color="#E7DFCF", smooth_shading=True,
+            specular=0.25, specular_power=18, name="model", pickable=False, render=False,
         )
+        pal = theme.scene_palette()
+        apply_dither(self._model_actor, pal.dither_ink, pal.dither_paper, self._dither_pixel())
         self._create_transform_widgets(mesh)
         self.set_transform_mode(self._transform_mode)
-        self.plotter.render()
+        self.request_render()
 
     def update_model_transform(self, matrix_4x4: np.ndarray) -> None:
         """GPU-трансформация модели — без пересчёта вершин на CPU."""
@@ -1287,13 +1217,49 @@ class Viewport3D(QWidget):
         if self._scale_representation is not None:
             self._scale_representation.SetTransform(_numpy_to_vtk_transform(matrix))
 
+    # --- виртуальная печать: затвердевшая смола поверх «призрака» модели ---------
+    def show_virtual_print(self, mesh: trimesh.Trimesh) -> None:
+        """Cured resin from virtual_print.stl, shown instead of the model (opaque, so
+        nothing translucent has to be depth-sorted while the camera moves)."""
+        self.clear_virtual_print(render=False)
+        self._virtual_actor = self.plotter.add_mesh(
+            _trimesh_to_pyvista(mesh), color="#E7DFCF", smooth_shading=True,
+            specular=0.3, specular_power=16, name="virtual_print", pickable=False, render=False,
+        )
+        pal = theme.scene_palette()
+        apply_dither(self._virtual_actor, pal.accent, pal.dither_paper, self._dither_pixel())
+        if self._model_actor is not None:
+            self._model_actor.SetVisibility(False)
+        # The gizmo would move the hidden model, not the print: hide it while previewing.
+        if self._affine_widget is not None and self._affine_enabled:
+            self._affine_widget.disable()
+            self._affine_enabled = False
+        if self._scale_widget is not None:
+            self._scale_widget.Off()
+        self.request_render()
+
+    def clear_virtual_print(self, render: bool = True) -> None:
+        if self._virtual_actor is None:
+            return
+        self.plotter.remove_actor(self._virtual_actor, render=False)
+        self._virtual_actor = None
+        if self._model_actor is not None:
+            self._model_actor.SetVisibility(True)
+            self.set_transform_mode(self._transform_mode)
+        if render:
+            self.request_render()
+
+    @property
+    def virtual_print_shown(self) -> bool:
+        return self._virtual_actor is not None
+
     def clear_model(self) -> None:
         self._remove_transform_widgets()
         self._model_bounds = None
         if self._model_actor is not None:
             self.plotter.remove_actor(self._model_actor, render=False)
             self._model_actor = None
-            self.plotter.render()
+            self.request_render()
 
     # --- прямое управление трансформацией ------------------------------------
     def _create_transform_widgets(self, mesh: trimesh.Trimesh) -> None:
@@ -1525,7 +1491,7 @@ class Viewport3D(QWidget):
         if mode == "scale" and self._affine_enabled:
             self._affine_widget.disable()
             self._affine_enabled = False
-        self.plotter.render()
+        self.request_render()
 
     def _on_affine_interact(self, previous_matrix: np.ndarray) -> None:
         """Ease each small affine-widget update instead of snapping."""
@@ -1616,7 +1582,7 @@ class Viewport3D(QWidget):
             return
         self._model_actor.user_matrix = normalized
         self._update_affine_gizmo(normalized)
-        self.plotter.render()
+        self.request_render()
 
     def _update_affine_gizmo(self, matrix: np.ndarray) -> None:
         """Keep move arrows and rotation rings proportional to the model."""

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spinslicer"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local projection and frame-preview tool for volumetric printing"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -21,12 +21,6 @@ dependencies = [
     "opencv-python-headless==5.0.0.93",
     "matplotlib==3.11.1",
     "imageio-ffmpeg==0.7.0",
-]
-
-[project.optional-dependencies]
-# GPU acceleration (see requirements-gpu.txt); SpinSlicer runs on the CPU without it.
-gpu = [
-    "taichi==1.7.4",
 ]
 
 [tool.pytest.ini_options]
@@ -47,17 +41,21 @@ ignore = ["E501", "E701", "E702", "E402", "F601", "F841", "W291"]
 python_version = "3.12"
 files = [
     "SpinSlicer.py",
-    "compute.py",
     "constants.py",
     "frame_io.py",
     "i18n.py",
     "job_controller.py",
     "model_node.py",
+    "pixel_game.py",
     "profiles.py",
+    "projector_canvas.py",
     "qt_runtime.py",
     "release_check.py",
     "nut_dialog.py",
+    "sketch_scene.py",
     "slicer_tab.py",
+    "theme.py",
+    "ui_kit.py",
     "slicing_engine.py",
     "ui_panels.py",
     "validation.py",
@@ -65,6 +63,7 @@ files = [
     "vam_backend.py",
     "video_tab.py",
     "viewport.py",
+    "virtual_print.py",
     "widgets.py",
     "workers.py",
 ]
