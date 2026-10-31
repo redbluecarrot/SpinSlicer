@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-RESOLUTIONS: tuple[tuple[int, int], ...] = ((1280, 720), (1920, 1080), (2560, 1440), (3840, 2160))
+RESOLUTIONS: tuple[tuple[int, int], ...] = ((1024, 768), (1280, 720), (1920, 1080), (2560, 1440))
 
 
 @dataclass(frozen=True)

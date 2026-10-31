@@ -84,6 +84,7 @@ class SlicerTab(QWidget):
         self._gen_worker: Optional[GenerationWorker] = None
         self._calibration_run = False
         self._last_output_dir: Optional[str] = None
+        self._generated_matrix: Optional[np.ndarray] = None
 
         self._vat_timer = QTimer(self)
         self._vat_timer.setSingleShot(True)
@@ -307,7 +308,10 @@ class SlicerTab(QWidget):
         node = self._model_node
         if node is None:
             return
-        self._reset_virtual_print()
+        # Only a real move invalidates the preview; a re-sync to the same pose must not.
+        generated = self._generated_matrix
+        if generated is None or not np.allclose(generated, node.matrix(), atol=1e-6):
+            self._reset_virtual_print()
         self._viewport.update_model_transform(node.matrix())
         self._process_panel.transform_panel.sync_from_model(self._model_node)
         self._emit_model_state()
@@ -557,6 +561,8 @@ class SlicerTab(QWidget):
 
     def _on_generation_done(self, num_frames: int, out_dir: str) -> None:
         self._last_output_dir = out_dir
+        node = self._model_node
+        self._generated_matrix = None if node is None else np.array(node.matrix(), dtype=np.float64)
         if getattr(self, "_calibration_run", False):
             from PyQt6.QtCore import QSettings
 

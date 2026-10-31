@@ -500,6 +500,7 @@ class ProjectorTab(QWidget):
         self.info_label.setProperty("_spinslicer_skip_text_translation", True)
         top.addWidget(title)
         top.addStretch(1)
+        self.info_label.setVisible(False)
         top.addWidget(self.info_label)
         root.addLayout(top)
 

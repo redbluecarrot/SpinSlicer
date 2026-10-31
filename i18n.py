@@ -406,6 +406,10 @@ _PREFIX_RU: tuple[tuple[str, str], ...] = (
 
 # --- New interface (2026-10): exact strings -------------------------------------------
 _EN.update({
+    "Принтер, проектор и смола — настраиваются один раз": "Printer, projector and resin — set up once",
+    "Частота проектора": "Projector refresh rate", "Оптика": "Optics", "Гц": "Hz",
+    "Показатели преломления": "Refractive indices",
+    "герцовка экрана: кадры не могут сменяться чаще": "screen refresh rate: frames cannot change faster",
     "Принтер и смола": "Printer and resin", "Свет": "Light", "Печать": "Print", "Модель": "Model",
     "НАСТРОЙКА · ОДИН РАЗ": "SETUP · ONCE",
     "показать ▾": "show ▾", "скрыть ▴": "hide ▴", "мм": "mm", "мВт/см²": "mW/cm²", "мм⁻¹": "mm⁻¹",
@@ -542,6 +546,8 @@ _EN_TEMPLATES: dict[str, str] = {
     "подрезка кадров под {} мм": "frames pre-sharpened for {} mm",
     "кадр каждые {} мс · проектор {} Гц": "a frame every {} ms · projector {} Hz",
     "кадр каждые {} мс · проектор {} Гц — больше {} Гц, проверьте проектор": "a frame every {} ms · projector {} Hz — over {} Hz, check the projector",
+    "кадр каждые {} мс · проектор {} Гц — выше частоты проектора ({} Гц)": "a frame every {} ms · projector {} Hz — above the projector refresh rate ({} Hz)",
+    "кадр на экране ≥ {} мс": "a frame stays on screen ≥ {} ms",
     "файл {}×{} — показывать во весь экран без масштабирования": "a {}×{} file — play full screen without scaling",
     "{} с": "{} s", "{} оборота": "{} revolutions", "{} Гц": "{} Hz", "{} мм": "{} mm",
     "{} × {} × {} мм": "{} × {} × {} mm",

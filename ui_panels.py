@@ -217,7 +217,7 @@ class _Computed:
 
 
 PAGES: dict[str, tuple[str, str]] = {
-    "setup": ("НАСТРОЙКА · ОДИН РАЗ", "Принтер и смола"),
+    "setup": ("НАСТРОЙКА · ОДИН РАЗ", "Настройки"),
     "model": ("ШАГ 1 ИЗ 3", "Модель"),
     "light": ("ШАГ 2 ИЗ 3", "Свет"),
     "print": ("ШАГ 3 ИЗ 3", "Печать"),
@@ -395,13 +395,14 @@ class ProcessSettingsPanel(QWidget):
         self.placement = Segmented([("в ванне", 1), ("в воздухе", 0)], 0)
         self.bath = self.placement   # back-compat name; use container_mode_value()
         self.field_height = Stepper(5.0, 120.0, 40.0, 1.0, 0, "мм")
-        self.resolution = Segmented([(f"{w}×{h}", i) for i, (w, h) in enumerate(RESOLUTIONS)], 1)
+        self.resolution = Segmented([(f"{w}×{h}", i) for i, (w, h) in enumerate(RESOLUTIONS)], 2)
         self.output_res = Stepper(128, 3840, DEFAULT_OUTPUT_RESOLUTION, 8, 0, "px")
         self.rays = Segmented([("параллельные", 0), ("конусом", 1)], 0)
         self.throw_ratio = Stepper(0.2, 5.0, 1.2, 0.05, 2, ": 1")
         self.projector_blur = Stepper(0.0, 0.5, 0.0, 0.01, 2, "мм")
         self.offset_x = Stepper(-2000, 2000, 0, 1, 0, "px")
         self.offset_y = Stepper(-2000, 2000, 0, 1, 0, "px")
+        self.projector_hz = Stepper(24.0, 360.0, 60.0, 1.0, 0, "Гц")
         self.projector_gamma = Stepper(0.5, 3.0, 2.2, 0.1, 2)
         self.projector_contrast = Stepper(0.0, 10000.0, 1000.0, 100.0, 0, ":1")
         self.projector_irradiance = Stepper(0.0, 200.0, 0.0, 0.5, 2, "мВт/см²")
@@ -428,6 +429,8 @@ class ProcessSettingsPanel(QWidget):
         self.r_gel = self._row("Доза геля", self.gel_dose, hint="не знаете? напечатайте шкалу ↓")
         self.r_calib = self._row("Калибровка", self._link("напечатать шкалу →", "calibrate"),
                                  "9 столбиков с дозой 88–112 %: выбираете лучший, доза обновится сама")
+        self.r_hz = self._row("Частота проектора", self.projector_hz,
+                              hint="герцовка экрана: кадры не могут сменяться чаще")
         self.r_offx = self._row("Сдвиг картинки по X", self.offset_x)
         self.r_offy = self._row("Сдвиг картинки по Y", self.offset_y)
         self.r_gamma = self._row("Гамма", self.projector_gamma)
@@ -437,14 +440,15 @@ class ProcessSettingsPanel(QWidget):
         self.r_nliquid = self._row("n жидкости ванны", self.n_liquid)
         self.r_hints = self._row("Подсказки маркером", self.hints_switch, "для тех, кто печатает впервые")
         self.r_language = self._row("Язык", self.language_box)
-        expert = self._group([self.r_offx, self.r_offy, self.r_gamma, self.r_contrast, self.r_irr,
-                              self.r_nglass, self.r_nliquid])
+        expert = self._group([self.r_nglass, self.r_nliquid])
         self._add_page("setup", [
-            section_head("Колба"), self.r_diameter, self.r_wall, self.r_bath,
-            section_head("Проектор"), self.r_resolution, self.r_output, self.r_field, self.r_rays, self.r_throw,
-            self.r_blur,
+            section_head("Колба"), self.r_diameter, self.r_wall, self.r_bath, self.r_field,
+            section_head("Проектор"), self.r_resolution, self.r_hz, self.r_output, self.r_offx, self.r_offy,
+            self.r_gamma, self.r_contrast, self.r_irr,
+            section_head("Оптика"), self.r_rays, self.r_throw, self.r_blur,
+            self._expander("Показатели преломления", expert),
             section_head("Смола"), self.r_alpha, self.r_nresin, self.r_gel, self.r_calib,
-            section_head("Ещё"), self._expander("Для специалистов", expert), self.r_hints, self.r_language,
+            section_head("Ещё"), self.r_hints, self.r_language,
         ])
 
     def _build_model(self) -> None:
@@ -474,9 +478,9 @@ class ProcessSettingsPanel(QWidget):
         fl.setContentsMargins(0, 14, 0, 6)
         fl.addWidget(self.fit_label)
         self.transform_panel = ObjectTransformPanel(self)
-        self._model_rows = [self.r_scale, self.r_orient, self.r_voids, self.r_place, fit_box]
+        self._model_rows = [self.r_orient, self.r_scale, self.r_place, fit_box]
         self._model_expander = self._expander("Точная позиция", self.transform_panel)
-        self._add_page("model", [self.r_file, *self._model_rows, self._model_expander])
+        self._add_page("model", [self.r_file, *self._model_rows, self._model_expander, self.r_voids])
 
     def _build_light(self) -> None:
         self.grid_res = Segmented([("Быстро", 128), ("Норма", 256), ("Точно", 384)], 1)
@@ -523,7 +527,7 @@ class ProcessSettingsPanel(QWidget):
         gl.addWidget(self._arcade(self.game))
         self.game_box = game_box
         game_box.setVisible(False)
-        self._add_page("light", [self.r_grid, self.r_frames, self.r_comp, self.r_virtual, results, game_box])
+        self._add_page("light", [self.r_grid, self.r_frames, self.r_comp, results, self.r_virtual, game_box])
 
     def _build_print(self) -> None:
         self.output_kind = Segmented([("на проектор", 0), ("видео MP4", 1), ("кадры PNG", 2)])
@@ -557,8 +561,8 @@ class ProcessSettingsPanel(QWidget):
         self._exposure = 1.0
         self._projecting: Optional[tuple[float, float]] = None
         self.game_print = PixelGame()
-        self._add_page("print", [self.r_output_kind, self.r_speed, self.r_brightness, self.dose_slot, box,
-                                 self.r_tools, self._expander("Мини-игры", self._arcade(self.game_print))])
+        self._add_page("print", [self.r_output_kind, self.r_tools, self.r_speed, self.r_brightness, self.dose_slot, box,
+                                 self._expander("Мини-игры", self._arcade(self.game_print))])
 
     def attach_dose_card(self, card: QWidget) -> None:
         """Show the dose card on the print page; its slider sets the print exposure."""
@@ -643,10 +647,10 @@ class ProcessSettingsPanel(QWidget):
     def _persisted(self) -> dict[str, QWidget]:
         return {
             "ui/diameter": self.diameter, "ui/wall": self.glass_thickness, "ui/placement": self.placement,
-            "ui/field": self.field_height, "ui/resolution": self.resolution, "ui/output_res": self.output_res,
+            "ui/field": self.field_height, "ui/resolution2": self.resolution, "ui/output_res": self.output_res,
             "ui/rays": self.rays, "ui/throw_ratio": self.throw_ratio,
             "physics/blur": self.projector_blur, "ui/offset_x": self.offset_x, "ui/offset_y": self.offset_y,
-            "physics/gamma": self.projector_gamma, "physics/contrast": self.projector_contrast,
+            "ui/refresh_hz": self.projector_hz, "physics/gamma": self.projector_gamma, "physics/contrast": self.projector_contrast,
             "physics/irradiance": self.projector_irradiance, "ui/n_glass": self.n_glass,
             "ui/n_liquid": self.n_liquid, "physics/alpha": self.alpha_absorption, "ui/n_resin": self.n_resin,
             "physics/gel_dose": self.gel_dose, "ui/grid": self.grid_res, "ui/frames": self.frames,
@@ -680,8 +684,8 @@ class ProcessSettingsPanel(QWidget):
 
     def _wire(self) -> None:
         scene_keys = {"ui/diameter", "ui/wall", "ui/placement", "ui/field", "ui/rays", "ui/throw_ratio",
-                      "ui/resolution", "ui/output_res", "physics/alpha", "ui/n_resin", "ui/n_liquid", "ui/frames"}
-        canvas_keys = {"ui/resolution", "ui/offset_x", "ui/offset_y", "ui/speed", "ui/frames"}
+                      "ui/resolution2", "ui/output_res", "physics/alpha", "ui/n_resin", "ui/n_liquid", "ui/frames"}
+        canvas_keys = {"ui/resolution2", "ui/offset_x", "ui/offset_y", "ui/speed", "ui/frames"}
         for key, widget in self._persisted().items():
             signal = widget.toggled if isinstance(widget, Switch) else widget.valueChanged  # type: ignore[attr-defined]
             signal.connect(lambda _v, k=key, w=widget: self._save(k, w))
@@ -714,7 +718,7 @@ class ProcessSettingsPanel(QWidget):
 
     # Settings that only change how finished frames are shown, never the frames.
     _SHOW_ONLY_KEYS = frozenset({"ui/speed", "ui/output_kind", "print/brightness", "ui/offset_x",
-                                 "ui/offset_y", "ui/resolution"})
+                                 "ui/offset_y", "ui/resolution2"})
 
     def _on_setting_changed(self, key: str = "") -> None:
         # Changing physics after a run makes the old result stale.
@@ -866,6 +870,8 @@ class ProcessSettingsPanel(QWidget):
         sw, sh = self.screen_size()
         g = self.canvas_geometry()
         fits = self.output_res.value_int() <= sw
+        hz = self.projector_hz.value()
+        self.r_hz.set_effect(f"кадр на экране ≥ {f(1000 / max(hz, 1), 1)} мс")
         self.r_resolution.set_effect(f"видео и вывод на проектор — {sw}×{sh}, пиксель в пиксель")
         self.r_output.set_effect(
             f"пиксель {f(self.diameter.value() / max(self.output_res.value(), 1), 3)} мм на оси колбы"
@@ -914,7 +920,7 @@ class ProcessSettingsPanel(QWidget):
                                else "без подрезки мелкие детали размоет", warn=not self.blur_compensation.isChecked())
         fps = v["fps"]
         self.r_speed.set_effect(f"кадр каждые {round(1000 / fps)} мс · проектор {f(fps)} Гц"
-                                + (" — больше 60 Гц, проверьте проектор" if fps > 60 else ""), warn=fps > 60)
+                                + (f" — выше частоты проектора ({f(hz, 0)} Гц)" if fps > hz else ""), warn=fps > hz)
         b = self.brightness_factor()
         self.r_brightness.set_effect(
             "полная яркость — самая короткая печать" if b >= 0.999 else

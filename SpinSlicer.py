@@ -2,7 +2,7 @@
 
 Главное окно:
 
-  шапка   — путь детали «1 Модель → 2 Свет → 3 Печать», справа «Принтер»
+  шапка   — путь детали «1 Модель → 2 Свет → 3 Печать», справа «Настройки»
             (принтер и смола, настраиваются один раз) и день/ночь.
   слева   — 3D-сцена в стиле рисунка (slicer_tab.SlicerTab), а на шаге
             «Печать» — кадры проектора (video_tab.ProjectorTab);
@@ -93,6 +93,21 @@ def resource_path(relative_path: str) -> str:
 
 
 APP_ICON_PATH = resource_path("assets/spinslicer.svg")
+# Windows draws the window and taskbar icon from the raster .ico: the SVG needs a Qt
+# plugin that a frozen build may not carry, and the icon would silently go blank.
+APP_WINDOW_ICON_PATH = resource_path("assets/spinslicer.ico") if sys.platform == "win32" else APP_ICON_PATH
+APP_USER_MODEL_ID = "SpinSlicer.OpenCAL.Slicer"
+
+
+def _set_windows_app_id() -> None:
+    """Own taskbar identity: without it Windows groups the window under python.exe and its icon."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
 
 
 class _LogoMark(QWidget):
@@ -122,7 +137,7 @@ class CALSlicerMainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.setWindowIcon(QIcon(APP_ICON_PATH))
+        self.setWindowIcon(QIcon(APP_WINDOW_ICON_PATH))
         self.setAcceptDrops(True)
         self._settings = QSettings(APP_ORG, APP_TITLE)
         self._job_controller = JobController()
@@ -198,7 +213,7 @@ class CALSlicerMainWindow(QMainWindow):
             "model": NavButton(tr("Модель"), badge="1"),
             "light": NavButton(tr("Свет"), badge="2"),
             "print": NavButton(tr("Печать"), badge="3"),
-            "setup": NavButton(tr("Принтер"), sub="—"),
+            "setup": NavButton(tr("Настройки"), sub="—"),
         }
         self._step_lines: list[QFrame] = []
         for key in self.STEPS:
@@ -215,7 +230,7 @@ class CALSlicerMainWindow(QMainWindow):
         setup = self.nav["setup"]
         self._nav_group.addButton(setup)
         setup.clicked.connect(lambda _c=False: self._select_page("setup"))
-        setup.setToolTip(tr("Принтер и смола — настраиваются один раз"))
+        setup.setToolTip(tr("Принтер, проектор и смола — настраиваются один раз"))
         setup_box = QWidget()
         sb = QHBoxLayout(setup_box)
         sb.setContentsMargins(0, 0, 0, 0)
@@ -596,11 +611,12 @@ class CALSlicerMainWindow(QMainWindow):
 
 
 def main() -> None:
+    _set_windows_app_id()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_TITLE)
     # Matches spinslicer.desktop, so the taskbar (Wayland) shows the app icon.
     app.setDesktopFileName("spinslicer")
-    app.setWindowIcon(QIcon(APP_ICON_PATH))
+    app.setWindowIcon(QIcon(APP_WINDOW_ICON_PATH))
 
     settings = QSettings(APP_ORG, APP_TITLE)
     saved_language = settings.value("language", "ru")
