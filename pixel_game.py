@@ -484,6 +484,7 @@ class Photon(Game):
     title = "Фотон"
     hint = "проведите фотон через стенки, не задев стекло"
     GAP = 38
+    WALL_W = 5                                   # glass thickness in pixels (drawn and hit alike)
 
     def __init__(self) -> None:
         super().__init__()
@@ -571,7 +572,7 @@ class Photon(Game):
             self.walls.append(self._new_wall())
         for wall in self.walls:
             wall[0] -= speed
-            if wall[2] == 0.0 and wall[0] + 6 < 38:
+            if wall[2] == 0.0 and int(wall[0]) + self.WALL_W < 38:
                 wall[2] = 1.0
                 self.score += 1
         self.walls = [w for w in self.walls if w[0] > -10]
@@ -579,22 +580,33 @@ class Photon(Game):
         if self.y < self.TOP or self.y > self.BOTTOM:
             self.state = "over"
         for x, mask, _ in self.walls:
-            if x - 1 <= 40 and x + 6 >= 36 and not self._open(mask, self.y):
+            if int(x) <= 39 and int(x) + self.WALL_W > 37 and not self._open(mask, self.y):
                 self.state = "over"
 
     def draw(self, g: QPainter, c: Colors, best: int) -> None:
+        # The two limits the photon is absorbed at, drawn so they can be seen.
+        g.setBrush(c.dim)
+        g.drawRect(0, self.TOP - 2, W, 1)
+        g.drawRect(0, self.BOTTOM + 2, W, 1)
         for x, mask, _ in self.walls:
             xi = int(x)
-            for r in range(0, len(mask), 2):
-                yy = self.TOP + r
+            rows = len(mask)
+            r = 0
+            while r < rows:                      # glass = the solid runs, drawn exactly as they hit
                 if mask[r]:
-                    if self.level:
-                        g.setBrush(c.dim)
-                        g.drawRect(xi + 2 + (r // 2) % 2, yy, 1, 1)
-                else:
-                    g.setBrush(c.ink)
-                    g.drawRect(xi + (r // 2) % 2, yy, 1, 1)
-                    g.drawRect(xi + 5 - (r // 2) % 2, yy, 1, 1)
+                    r += 1
+                    continue
+                start = r
+                while r < rows and not mask[r]:
+                    r += 1
+                g.setBrush(c.dim)
+                g.drawRect(xi, self.TOP + start, self.WALL_W, r - start)
+                g.setBrush(c.ink)
+                g.drawRect(xi, self.TOP + start, 1, r - start)
+                if start > 0:
+                    g.drawRect(xi, self.TOP + start, self.WALL_W, 1)
+                if r < rows:
+                    g.drawRect(xi, self.TOP + r - 1, self.WALL_W, 1)
         g.setBrush(c.acc)
         for i, (x, y) in enumerate(self.trail):
             if i % 2 == 0:
