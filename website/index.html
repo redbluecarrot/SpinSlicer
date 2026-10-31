@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpinSlicer — open-source CAL slicer for Computed Axial Lithography</title>
+<meta name="description" content="SpinSlicer is a free, open-source (MIT) slicer for Computed Axial Lithography (CAL) and tomographic volumetric 3D printing: STL to projector frames, virtual print and timed projector output. Windows and Linux.">
+<link rel="canonical" href="https://redbluecarrot.github.io/SpinSlicer/">
+<meta name="robots" content="index, follow">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="alternate" type="text/plain" href="llms.txt" title="SpinSlicer summary for language models">
+<meta property="og:type" content="website">
+<meta property="og:title" content="SpinSlicer — open-source CAL slicer">
+<meta property="og:description" content="Free, open-source slicer for Computed Axial Lithography (CAL) and tomographic volumetric 3D printing. STL to projector frames, virtual print and timed projector output.">
+<meta property="og:url" content="https://redbluecarrot.github.io/SpinSlicer/">
+<meta property="og:image" content="https://redbluecarrot.github.io/SpinSlicer/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://redbluecarrot.github.io/SpinSlicer/#app",
+      "name": "SpinSlicer",
+      "description": "Open-source desktop slicer for Computed Axial Lithography (CAL), also called tomographic volumetric additive manufacturing (VAM). Computes projector frames from an STL file with a physical optics model of a rotating resin vial, simulates the cured part, plans the exposure and plays the frames on the projector.",
+      "url": "https://redbluecarrot.github.io/SpinSlicer/",
+      "image": "https://redbluecarrot.github.io/SpinSlicer/og.png",
+      "applicationCategory": "DesignApplication",
+      "applicationSubCategory": "Slicer for Computed Axial Lithography (volumetric 3D printing)",
+      "operatingSystem": "Windows, Linux",
+      "softwareVersion": "0.5.3",
+      "dateModified": "2026-10-31",
+      "license": "https://opensource.org/licenses/MIT",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "downloadUrl": "https://github.com/redbluecarrot/SpinSlicer/releases",
+      "releaseNotes": "https://github.com/redbluecarrot/SpinSlicer/releases",
+      "inLanguage": ["en", "ru"],
+      "keywords": "computed axial lithography, CAL slicer, volumetric 3D printing, volumetric additive manufacturing, VAM, tomographic 3D printing",
+      "author": { "@type": "Person", "name": "redbluecarrot", "url": "https://github.com/redbluecarrot" },
+      "sameAs": ["https://github.com/redbluecarrot/SpinSlicer"]
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "SpinSlicer source code",
+      "codeRepository": "https://github.com/redbluecarrot/SpinSlicer",
+      "programmingLanguage": ["Python", "C++"],
+      "license": "https://opensource.org/licenses/MIT",
+      "targetProduct": { "@id": "https://redbluecarrot.github.io/SpinSlicer/#app" }
+    }
+  ]
+}
+</script>
+<style>
+:root{--bg:#fbf8f9;--fg:#141217;--muted:#5d5660;--line:#e7dfe3;--card:#fff;--pink:#ff8db5;--pink-soft:#ffd3e3;--link:#b8326a}
+@media (prefers-color-scheme:dark){:root{--bg:#141217;--fg:#f3eef1;--muted:#a9a0a6;--line:#2c2730;--card:#1c1920;--link:#ff9cc0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:40px 16px 64px}
+a{color:var(--link)}
+header{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+header img{width:96px;height:96px}
+h1{font-size:2.1rem;line-height:1.15;margin:0}
+h1 span{display:block;font-size:1.05rem;font-weight:500;color:var(--muted);margin-top:6px}
+h2{font-size:1.3rem;margin:40px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.lead{font-size:1.1rem;margin:24px 0}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}
+.btn{display:inline-block;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:600;border:1px solid var(--line);color:var(--fg);background:var(--card)}
+.btn.primary{background:var(--pink);border-color:var(--pink);color:#141217}
+ul{padding-left:1.2em}
+li{margin:6px 0}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600}
+.note{color:var(--muted);font-size:.92rem}
+dt{font-weight:650;margin-top:14px}
+dd{margin:4px 0 0}
+footer{margin-top:48px;color:var(--muted);font-size:.9rem}
+code{font-size:.92em}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <img src="logo.svg" alt="SpinSlicer logo: a brain-shaped part in a resin vial" width="96" height="96">
+  <h1>SpinSlicer<span>Open-source CAL slicer for Computed Axial Lithography</span></h1>
+</header>
+
+<p class="lead">SpinSlicer is a free, open-source (MIT) desktop slicer for <strong>Computed Axial
+Lithography (CAL)</strong>, also called tomographic volumetric additive manufacturing (VAM).
+A vial of resin turns in front of a projector, and light from hundreds of angles adds up to cure
+the whole part at once. SpinSlicer computes those projector frames from an STL file, shows what
+they will cure, and plays them on the projector for exactly the planned exposure.</p>
+
+<div class="actions">
+  <a class="btn primary" href="https://github.com/redbluecarrot/SpinSlicer/releases">Download for Windows or Linux</a>
+  <a class="btn" href="https://github.com/redbluecarrot/SpinSlicer">Source code on GitHub</a>
+</div>
+
+<h2>What it does</h2>
+<ul>
+  <li><strong>STL to projector frames.</strong> Load, place and check a part, then compute one frame per projection angle (PNG frames or MP4).</li>
+  <li><strong>Physical optics model.</strong> Refraction at the vial (Snell), attenuation (Beer–Lambert), Fresnel losses, the projector's pixel profile, cone of rays and the rotation during a frame.</li>
+  <li><strong>FastCAL engine.</strong> A round vial makes every angle optically the same, so the problem splits into small per-frequency systems; it uses all CPU cores. Square cuvettes use a SIRT path.</li>
+  <li><strong>Virtual print.</strong> The frames as the projector really shows them (8-bit, gamma, contrast) are turned back into dose, and the cured part is shown in 3D next to the model with its match (IoU).</li>
+  <li><strong>Print plan and calibration.</strong> Print time and number of turns from the resin's gel dose, absorption and projector irradiance; an exposure calibration print for a new resin.</li>
+  <li><strong>Projector output, ready to print.</strong> Frames placed 1:1 on the projector screen, one frame row per layer, timed by the clock, and stopped automatically when the planned dose is delivered.</li>
+</ul>
+
+<h2>Who it is for</h2>
+<p>Researchers working on computed axial lithography and volumetric additive manufacturing, and
+makers building their own CAL / volumetric 3D printer. Every setting shows what it physically
+changes, and every number comes from a model of the optics.</p>
+
+<h2>Requirements</h2>
+<table>
+  <tr><th>Platform</th><td>Windows (installer or single <code>.exe</code>) and Linux x86_64 (<code>.deb</code>, <code>.rpm</code>, Arch package, portable archive)</td></tr>
+  <tr><th>Interface</th><td>English and Russian, day and night themes</td></tr>
+  <tr><th>Download size</th><td>about 280 MB (Windows) to 400 MB (Linux)</td></tr>
+  <tr><th>Memory</th><td>engine about 0.5 GB (Fast), 1.1 GB (Normal), 1.7 GB (Fine), plus about 0.85 GB for the window</td></tr>
+  <tr><th>License</th><td><a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/LICENSE">MIT</a></td></tr>
+</table>
+<p class="note">Memory and timings were measured on a 2-core 2.1 GHz machine with 8 GB RAM on a Benchy test part
+(Fast about 10 s, Normal 34 s, Fine 69 s); see the
+<a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/resources-2026-10-31.md">resources report</a>.</p>
+
+<h2>Other CAL / VAM software</h2>
+<ul>
+  <li><a href="https://github.com/computed-axial-lithography/VAMToolbox">VAMToolbox</a> — a Python library for VAM projection optimization (OSMO, BCLP and other methods).</li>
+  <li><a href="https://opencal-org.readthedocs.io/">OpenCAL</a> — an open-source CAL printer with the Tomo print-preparation software.</li>
+  <li><a href="https://github.com/computed-axial-lithography/CAL-software-Matlab">CAL-software-Matlab</a> — the original MATLAB code of the CAL group.</li>
+</ul>
+<p>SpinSlicer is a ready desktop application covering the whole path from STL to a running
+projector, rather than a library to script. Its engine was compared with OSMO, PM, BCLP and
+classic CAL in the <a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/engine-judge-2026-10-31.md">engine judge report</a>.</p>
+
+<h2>Questions</h2>
+<dl>
+  <dt>What is a CAL slicer?</dt>
+  <dd>In computed axial lithography there are no layers to slice: the "slicer" computes the set of
+  light patterns projected into the rotating vial so that only the part receives enough dose to cure.
+  SpinSlicer does this from an STL file.</dd>
+  <dt>Is SpinSlicer free?</dt>
+  <dd>Yes. It is open source under the MIT license, and the installers are free on the GitHub Releases page.</dd>
+  <dt>Does it work with my printer?</dt>
+  <dd>It targets rotating-vial CAL printers driven by a projector. You describe the vial, the immersion bath,
+  the projector (resolution, throw ratio, gamma, irradiance) and the resin once, and SpinSlicer plans for that setup.</dd>
+  <dt>How does it compare with VAMToolbox?</dt>
+  <dd>VAMToolbox is a scripting library for projection optimization; SpinSlicer is an end-to-end desktop
+  application with its own engine, a virtual print, a print plan and timed projector output.</dd>
+</dl>
+
+<footer>
+  SpinSlicer 0.5.3 · MIT license ·
+  <a href="https://github.com/redbluecarrot/SpinSlicer">github.com/redbluecarrot/SpinSlicer</a> ·
+  <a href="https://github.com/redbluecarrot/SpinSlicer/issues">Report an issue</a>
+</footer>
+</main>
+</body>
+</html>

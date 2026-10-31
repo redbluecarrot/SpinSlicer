@@ -1,0 +1,6 @@
+# Every crawler, including search engines and AI search bots
+# (Googlebot, Bingbot, OAI-SearchBot, GPTBot, ClaudeBot, PerplexityBot), may read this site.
+User-agent: *
+Allow: /
+
+Sitemap: https://redbluecarrot.github.io/SpinSlicer/sitemap.xml

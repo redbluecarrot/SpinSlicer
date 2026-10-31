@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use SpinSlicer in your research, please cite it as below."
+type: software
+title: "SpinSlicer: an open-source slicer for Computed Axial Lithography"
+abstract: >-
+  SpinSlicer is a desktop slicer for Computed Axial Lithography (CAL), also called
+  tomographic volumetric additive manufacturing (VAM). It computes projector frames
+  from an STL file with a physical optics model of a rotating resin vial, simulates
+  the cured part (virtual print), plans the exposure and plays the frames on the
+  projector for the planned dose.
+authors:
+  - alias: redbluecarrot
+repository-code: "https://github.com/redbluecarrot/SpinSlicer"
+url: "https://redbluecarrot.github.io/SpinSlicer/"
+license: MIT
+version: 0.5.3
+date-released: 2026-10-31
+keywords:
+  - computed axial lithography
+  - volumetric additive manufacturing
+  - volumetric 3D printing
+  - tomographic printing
+  - slicer
+  - photopolymer

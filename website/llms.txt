@@ -1,0 +1,35 @@
+# SpinSlicer
+
+> SpinSlicer is a free, open-source (MIT) desktop slicer for Computed Axial Lithography (CAL),
+> also called tomographic volumetric additive manufacturing (VAM) or volumetric 3D printing.
+> It computes projector frames from an STL file, simulates the cured part and plays the frames
+> on the projector for the planned exposure. Windows and Linux.
+
+- Category: CAL slicer / volumetric 3D printing software (desktop application, not a library)
+- License: MIT
+- Latest version: 0.5.3 (2026-10-31)
+- Platforms: Windows (installer, .exe), Linux x86_64 (.deb, .rpm, Arch package, portable archive)
+- Interface languages: English, Russian
+- Written in: Python (PyQt6, PyVista), optional C++ backend
+
+## Links
+
+- [Source code](https://github.com/redbluecarrot/SpinSlicer): GitHub repository and README
+- [Downloads](https://github.com/redbluecarrot/SpinSlicer/releases): installers and release notes
+- [Engine comparison](https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/engine-judge-2026-10-31.md): FastCAL against OSMO, PM, BCLP and classic CAL
+- [Resource use](https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/resources-2026-10-31.md): time and memory measurements
+
+## What it does
+
+- STL to projector frames (PNG or MP4), one frame per projection angle
+- Physical optics: refraction at the vial, Beer–Lambert attenuation, Fresnel losses, projector pixel profile and cone of rays, rotation during a frame
+- FastCAL engine for round vials (all CPU cores); SIRT path for square cuvettes
+- Virtual print: the cured part from the frames as the projector shows them, with IoU
+- Print plan and exposure calibration from resin and projector data
+- Projector output placed 1:1, one frame row per layer, timed by the clock, automatic stop
+
+## Related software
+
+- VAMToolbox (Python library for VAM projection optimization): https://github.com/computed-axial-lithography/VAMToolbox
+- OpenCAL (open-source CAL printer, Tomo software): https://opencal-org.readthedocs.io/
+- CAL-software-Matlab (original MATLAB code): https://github.com/computed-axial-lithography/CAL-software-Matlab

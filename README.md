@@ -5,7 +5,7 @@
 <h1 align="center">SpinSlicer</h1>
 
 <p align="center">
-  Local software for tomographic volumetric additive manufacturing (VAM).
+  Open-source CAL slicer for Computed Axial Lithography and tomographic volumetric 3D printing (VAM).
 </p>
 
 <p align="center">
@@ -14,19 +14,25 @@
   <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
-SpinSlicer prepares prints for tomographic volumetric additive manufacturing
-(VAM / CAL): a vial of resin turns in front of a projector, and the light from
+SpinSlicer is a free, open-source (MIT) desktop slicer for **Computed Axial
+Lithography (CAL)**, also called tomographic volumetric additive manufacturing
+(VAM): a vial of resin turns in front of a projector, and the light from
 hundreds of angles adds up to cure the whole part at once. SpinSlicer computes
 those projector frames from an STL file, shows what they will cure, and plays
 them on the projector for exactly the planned exposure.
 
-It is built for both CAL researchers and people building their own printer:
-every setting shows what it physically changes, and every number comes from a
-model of the optics, not from a rule of thumb.
+It is built for both CAL researchers and people building their own volumetric
+3D printer: every setting shows what it physically changes, and every number
+comes from a model of the optics, not from a rule of thumb. It runs on Windows
+and Linux, with ready installers on the [Releases page](https://github.com/redbluecarrot/SpinSlicer/releases).
+
+**In short:** STL in → optimized projector frames out (PNG or MP4) → virtual print
+of the cured part → timed output on the projector. Engine: FastCAL (exact optics
+of a round vial, all CPU cores); square cuvettes use a SIRT path.
 
 ## Features
 
-Version 0.5.0 — see the [release notes](docs/releases/v0.5.0.md).
+See the [release notes](docs/releases/) for what changed in each version.
 
 - **Three steps:** *Model* (load, place and check the STL), *Light* (compute the
   frames), *Print* (show them on the projector, save an MP4 or PNG frames).
@@ -239,6 +245,22 @@ Alternatively, install the native package with `sudo apt install ./SpinSlicer-<v
 or `sudo dnf install ./SpinSlicer-<version>-1.x86_64.rpm`. Both packages add
 `SpinSlicer` to the desktop application menu. Linux builds target x86_64.
 
+## Related CAL / VAM software
+
+SpinSlicer is one of a few open tools for computed axial lithography:
+
+- [VAMToolbox](https://github.com/computed-axial-lithography/VAMToolbox) — a Python
+  library for VAM projection optimization (including the OSMO and BCLP methods that
+  SpinSlicer's [engine judge](docs/validation/engine-judge-2026-10-31.md) compares against).
+- [OpenCAL](https://opencal-org.readthedocs.io/) — an open-source CAL printer with the
+  Tomo print-preparation software.
+- [CAL-software-Matlab](https://github.com/computed-axial-lithography/CAL-software-Matlab) —
+  the original MATLAB code of the CAL group.
+
+SpinSlicer differs in being a ready desktop application that covers the whole path
+from STL to a running projector — placement, frame computation, virtual print, print
+plan and timed projector output — rather than a library to script.
+
 ## Scientific references
 
 - [Tomo — Print Preparation Software](https://opencal-org.readthedocs.io/en/stable/software/tomo/)
@@ -249,3 +271,9 @@ or `sudo dnf install ./SpinSlicer-<version>-1.x86_64.rpm`. Both packages add
 The DOI paper describes tomographic VAM and automatic exposure control through
 real-time scattered-light feedback. SpinSlicer times the exposure from the planned
 dose and stops the projector by itself; camera-based feedback is not implemented yet.
+
+## License and citation
+
+SpinSlicer is released under the [MIT License](LICENSE). If you use it in research,
+GitHub's **Cite this repository** button (from [`CITATION.cff`](CITATION.cff)) gives a
+ready citation.

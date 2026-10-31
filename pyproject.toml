@@ -5,9 +5,31 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spinslicer"
 version = "0.5.3"
-description = "Local projection and frame-preview tool for volumetric printing"
+description = "Open-source CAL slicer: projector frames, virtual print and projector output for Computed Axial Lithography (tomographic volumetric 3D printing)"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "redbluecarrot" }]
+keywords = [
+    "computed axial lithography",
+    "CAL",
+    "volumetric additive manufacturing",
+    "VAM",
+    "volumetric 3D printing",
+    "tomographic printing",
+    "slicer",
+    "photopolymer",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "PyQt6==6.11.0",
     "pyqtdarktheme==0.1.7",
@@ -22,6 +44,12 @@ dependencies = [
     "matplotlib==3.11.1",
     "imageio-ffmpeg==0.7.0",
 ]
+
+[project.urls]
+Homepage = "https://redbluecarrot.github.io/SpinSlicer/"
+Source = "https://github.com/redbluecarrot/SpinSlicer"
+Releases = "https://github.com/redbluecarrot/SpinSlicer/releases"
+Issues = "https://github.com/redbluecarrot/SpinSlicer/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
