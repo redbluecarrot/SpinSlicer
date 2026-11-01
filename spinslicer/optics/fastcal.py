@@ -331,6 +331,20 @@ class OpticsOptions:
             raise ValueError("throw_mm must be finite and nonnegative (0 = telecentric).")
 
 
+def apparent_throw_mm(throw_mm: float, L_out: float, n_air: float, n_liquid: float,
+                      container_mode: int) -> float:
+    """Pupil-to-axis distance as seen from inside the bath (what the ray model needs).
+
+    A flat window makes the air part of the path look n_liquid / n_air times longer
+    (paraxially), which lowers the ray divergence. The bath window is assumed to sit
+    against the vial, so the liquid part of the path is the vial's outer radius.
+    """
+    if throw_mm <= 0 or container_mode != 2:
+        return float(throw_mm)
+    liquid = L_out / 2
+    return (throw_mm - liquid) * n_liquid / n_air + liquid
+
+
 LEGACY_OPTICS = OpticsOptions(fresnel=False, pixel_profile="ray", sub_rays=1,
                               rotation_smear=False, smear_steps=1)
 

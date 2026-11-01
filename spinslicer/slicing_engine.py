@@ -598,7 +598,9 @@ class SlicingEngine:
             if use_fastcal:
                 detector = fastcal.detector_bins(grid_res, output_res)
                 extra = {"engine_out": fast_engines, "num_s": detector,
-                         "optics": fastcal.OpticsOptions(throw_mm=params.projector_throw_mm)}
+                         "optics": fastcal.OpticsOptions(throw_mm=fastcal.apparent_throw_mm(
+                             params.projector_throw_mm, L_out, params.n_air, params.n_liquid,
+                             params.container_mode))}
             sinograms = optimize(
                 slices,
                 angles_rad,
