@@ -37,6 +37,7 @@ class ScenePalette:
     dither_paper: str
     warn: str
     hatch: bool = False           # day theme: beam drawn as pen hatching, not a wash
+    model: str = "#D9D1D5"        # the part being placed
 
 
 @dataclass(frozen=True)
@@ -81,8 +82,27 @@ class SceneParams:
         return abs(self.n_resin - outside) * 20.0
 
 
+def fresnel_radius(p: SceneParams) -> float:
+    """Round lens big enough for the whole (rectangular) light sheet."""
+    return math.hypot(p.radius * 1.04, max(p.field_mm / 2.0, 1.0)) * 1.03
+
+
+def fresnel_x(p: SceneParams) -> float | None:
+    """Where the Fresnel lens stands: well before the vial (and its bath), only for a
+    parallel sheet."""
+    if p.throw_mm > 0:
+        return None
+    front = p.radius * 1.45 if p.bath else p.radius          # the bath's wall
+    return -front - max(14.0, 0.3 * p.diameter_mm)
+
+
 def projector_x(p: SceneParams) -> float:
-    return -(p.radius + max(0.6 * p.diameter_mm, 24.0))
+    base = -(p.radius + max(0.6 * p.diameter_mm, 24.0))
+    lens = fresnel_x(p)
+    if lens is None:
+        return base
+    # The projector's cone must open to the lens's size over a throw of ~1.2 radii.
+    return min(base, lens - 1.2 * fresnel_radius(p) - 1.5)
 
 
 def scene_bounds(p: SceneParams) -> tuple[np.ndarray, np.ndarray]:
@@ -117,6 +137,8 @@ def _dashed(points: np.ndarray, on: int = 3, off: int = 3) -> list[np.ndarray]:
 
 def _jitter(lines: list[np.ndarray], amplitude: float, seed: int) -> list[np.ndarray]:
     """Smooth, low-frequency wobble (a marker line, not noise)."""
+    if amplitude <= 0.0:
+        return list(lines)
     rng = np.random.default_rng(seed)
     out = []
     for pts in lines:
@@ -171,8 +193,21 @@ def static_lines(p: SceneParams) -> list[np.ndarray]:
     lens = np.column_stack([np.full(24, px + 1.2), 3.5 * np.cos(np.linspace(0, 2 * math.pi, 24)),
                             3.5 * np.sin(np.linspace(0, 2 * math.pi, 24))])
     lines.append(lens)
+    lines.extend(fresnel_lines(p))
     lines.extend(beam_edges(p))
     return lines
+
+
+def fresnel_lines(p: SceneParams) -> list[np.ndarray]:
+    """A round Fresnel lens: the cone from the projector enters it and leaves as a
+    parallel sheet. Drawn as concentric grooves in the plane across the beam."""
+    x = fresnel_x(p)
+    if x is None:
+        return []
+    big = fresnel_radius(p)
+    t = np.linspace(0, 2 * math.pi, 96)
+    return [np.column_stack([np.full(96, x), big * k * np.cos(t), big * k * np.sin(t)])
+            for k in (0.14, 0.28, 0.42, 0.56, 0.7, 0.84, 1.0)]
 
 
 def bath_lines(p: SceneParams) -> list[np.ndarray]:
@@ -218,9 +253,14 @@ def _beam_profile(p: SceneParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarray
     """Half-width (y) and half-height (z) of the light sheet along x."""
     r = p.radius
     half_w0, half_h0 = r * 1.04, p.field_mm / 2.0
+    lens = fresnel_x(p)
     if p.throw_mm > 0:
         src = -p.throw_mm
         scale = np.clip((x - src) / max(-src, 1e-6), 0.05, None)
+    elif lens is not None:
+        # a cone from the projector up to the Fresnel lens, a parallel sheet after it
+        apex = projector_x(p) + 1.5
+        scale = np.clip((x - apex) / max(lens - apex, 1e-6), 0.06, 1.0)
     else:
         scale = np.ones_like(x)
     w = half_w0 * scale
@@ -231,10 +271,17 @@ def _beam_profile(p: SceneParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarray
     return w, h
 
 
+def _beam_grid(p: SceneParams, start: float, end: float, n: int) -> np.ndarray:
+    """Sample positions along the beam, always including the lens (where the cone ends)."""
+    x = np.linspace(start, end, n)
+    lens = fresnel_x(p)
+    return x if lens is None else np.union1d(x, [lens])
+
+
 def beam_mesh(p: SceneParams, color: str, base_alpha: float) -> pv.PolyData:
     """Translucent light sheet with absorption fading inside the vial."""
     px = projector_x(p) + 1.5
-    x = np.linspace(px, p.radius * 1.25, 40)
+    x = _beam_grid(p, px, p.radius * 1.25, 40)
     w, h = _beam_profile(p, x)
     rgb = np.array(_hex(color)) * 255
     r = p.radius
@@ -257,7 +304,7 @@ def beam_mesh(p: SceneParams, color: str, base_alpha: float) -> pv.PolyData:
 
 def beam_edges(p: SceneParams) -> list[np.ndarray]:
     px = projector_x(p) + 1.5
-    x = np.linspace(px, p.radius * 1.1, 24)
+    x = _beam_grid(p, px, p.radius * 1.1, 24)
     w, h = _beam_profile(p, x)
     return [np.column_stack([x, sy * w, sz * h]) for sy, sz in ((1, 1), (1, -1), (-1, -1), (-1, 1))]
 
@@ -360,6 +407,9 @@ class SketchScene:
         self._palette = palette
         self._params = SceneParams()
         self._frame = 0
+        self._boil_on = False
+        self._straight = False
+        self._visible = True
         self._frames_per_rev = 360
         self._progress = 0.0
         self._activity = "idle"           # idle | computing | printing
@@ -411,20 +461,51 @@ class SketchScene:
 
     def tick(self) -> None:
         """Advance one animation frame (boil, rotation arrow, light scan)."""
-        self._frame = (self._frame + 1) % BOIL_VARIANTS
-        for group in (self._boil, self._sil):
-            for i, actor in enumerate(group):
-                actor.SetVisibility(i == self._frame)
+        if self._boil_on:
+            self._show_variant((self._frame + 1) % BOIL_VARIANTS)
         if self._rot_actor is not None:
             self._rot_angle = (self._rot_angle + 6.0) % 360.0
             self._rot_actor.SetOrientation(0.0, 0.0, self._rot_angle)
         if self._scan_actor is not None:
             p = self._params
-            start, end = projector_x(p), p.radius
+            start, end = self._scan_start(), p.radius
             self._scan_x = self._scan_x + (end - start) * 0.06
             if self._scan_x > end - start:
                 self._scan_x = 0.0
             self._scan_actor.SetPosition(self._scan_x, 0.0, 0.0)
+
+    def _scan_start(self) -> float:
+        lens = fresnel_x(self._params)
+        return lens if lens is not None else -self._params.radius * 1.5
+
+    def _show_variant(self, frame: int) -> None:
+        self._frame = frame
+        for group in (self._boil, self._sil):
+            for i, actor in enumerate(group):
+                actor.SetVisibility(self._visible and i == frame)
+
+    def set_visible(self, visible: bool) -> None:
+        """Show or hide the whole printer sketch (vial, beam, rim ticks, arrows)."""
+        self._visible = bool(visible)
+        self._apply_visible()
+
+    def _apply_visible(self) -> None:
+        for actor in list(self._actors.values()) + [self._rot_actor, self._scan_actor]:
+            if actor is not None:
+                actor.SetVisibility(self._visible)
+        self._show_variant(self._frame)
+
+    def set_straight(self, straight: bool) -> None:
+        """Ruled lines (no wobble). Rebuilds the drawing when it changes."""
+        if bool(straight) != self._straight:
+            self._straight = bool(straight)
+            self.rebuild()
+
+    def set_boil(self, on: bool) -> None:
+        """Line boil on/off. Off pins the drawing to one still variant."""
+        self._boil_on = bool(on)
+        if not on:
+            self._show_variant(0)
 
     def on_camera(self, position: np.ndarray) -> None:
         xy = np.asarray(position[:2], dtype=float)
@@ -445,6 +526,8 @@ class SketchScene:
 
     # -- building ----------------------------------------------------------
     def _amp(self) -> float:
+        if self._straight:
+            return 0.0
         return max(0.12, self._params.diameter_mm * 0.0035)
 
     def _add_lines(self, lines: list[np.ndarray], color: str, width: float, name: str,
@@ -496,6 +579,8 @@ class SketchScene:
         self._rebuild_silhouettes()
         self._rebuild_ticks()
         self._rebuild_dynamic()
+        if not self._visible:
+            self._apply_visible()
 
     def _rebuild_silhouettes(self) -> None:
         lines = silhouette_lines(self._params, self._camera_xy)
@@ -512,7 +597,7 @@ class SketchScene:
             actor = self._plotter.add_mesh(
                 mesh, color=self._palette.sketch, line_width=self._line_width, lighting=False,
                 name=f"sketch-sil-{k}", pickable=False, render=False, reset_camera=False)
-            actor.SetVisibility(k == self._frame)
+            actor.SetVisibility(self._visible and k == self._frame)
             self._sil.append(actor)
 
     def _lit_fraction(self) -> float:
@@ -566,8 +651,10 @@ class SketchScene:
             if self._rot_actor is not None:
                 self._rot_actor.SetOrientation(0.0, 0.0, self._rot_angle)
         if self._activity == "computing":
-            w, h = _beam_profile(p, np.array([projector_x(p)]))
-            slab = pv.Box(bounds=(projector_x(p), projector_x(p) + p.diameter_mm * 0.08,
+            # the slab is the whole light sheet at the vial, one layer thick, running through it
+            w, h = _beam_profile(p, np.array([-p.radius]))
+            x0 = self._scan_start()
+            slab = pv.Box(bounds=(x0, x0 + p.diameter_mm * 0.06,
                                   -float(w[0]), float(w[0]), -float(h[0]), float(h[0])))
             self._scan_actor = self._plotter.add_mesh(
                 slab, color=self._palette.accent, opacity=0.18, lighting=False, name="sketch-scan",

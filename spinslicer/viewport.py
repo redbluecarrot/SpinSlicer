@@ -32,7 +32,7 @@ import trimesh
 import trimesh.transformations as tf
 import vtk
 from PyQt6.QtCore import QEasingCurve, QEvent, QRect, Qt, QTimer, QVariantAnimation, pyqtSignal
-from PyQt6.QtWidgets import QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 
 from spinslicer import theme
@@ -50,7 +50,15 @@ from spinslicer.constants import (
     VIEWPORT_ORIENTATION_VIEWPORT,
     VIEWPORT_ORIENTATION_WIDGET_SIZE,
 )
-from spinslicer.sketch_scene import SceneParams, SketchScene, apply_dither, scene_bounds
+from spinslicer.i18n import tr
+from spinslicer.sketch_scene import (
+    SceneParams,
+    SketchScene,
+    _hex,
+    apply_dither,
+    scene_bounds,
+)
+from spinslicer.ui_kit import straight_lines
 
 # How long the drawing keeps "boiling" after the last change before it holds still.
 BOIL_SETTLE_S = 4.0
@@ -1089,6 +1097,22 @@ class Viewport3D(QWidget):
             else:
                 self.request_render()
 
+    def set_line_style(self, style: str) -> None:
+        """straight | sketch | live."""
+        self._sketch.set_straight(style == "straight")
+        self._sketch.set_boil(style == "live")
+        self._restyle_model()
+        self.request_render()
+
+    def _restyle_model(self) -> None:
+        """The part is printed as ordered-dither dots (the original look); ruled lines get
+        finer dots, so it stays calm."""
+        pal = theme.scene_palette()
+        if self._model_actor is not None:
+            self._model_actor.GetProperty().SetColor(_hex(pal.model))
+            pixel = self._dither_pixel() * (0.5 if straight_lines() else 1.0)
+            apply_dither(self._model_actor, pal.dither_ink, pal.dither_paper, max(1.0, pixel))
+
     def set_scene_frames(self, frames: int) -> None:
         self._sketch.set_frames(frames)
         self.request_render()
@@ -1102,10 +1126,7 @@ class Viewport3D(QWidget):
         pal = theme.scene_palette()
         self.plotter.set_background(pal.background)
         self._sketch.set_palette(pal)
-        if self._model_actor is not None:
-            apply_dither(self._model_actor, pal.dither_ink, pal.dither_paper, self._dither_pixel())
-        if self._virtual_actor is not None:
-            apply_dither(self._virtual_actor, pal.accent, pal.dither_paper, self._dither_pixel())
+        self._restyle_model()
         self.request_render()
 
     def _poke_boil(self) -> None:
@@ -1196,11 +1217,10 @@ class Viewport3D(QWidget):
             self.plotter.remove_actor(self._model_actor, render=False)
 
         self._model_actor = self.plotter.add_mesh(
-            display_mesh, color="#E7DFCF", smooth_shading=True,
-            specular=0.25, specular_power=18, name="model", pickable=False, render=False,
+            display_mesh, color=theme.scene_palette().model, smooth_shading=True,
+            specular=0.2, specular_power=18, name="model", pickable=False, render=False,
         )
-        pal = theme.scene_palette()
-        apply_dither(self._model_actor, pal.dither_ink, pal.dither_paper, self._dither_pixel())
+        self._restyle_model()
         self._create_transform_widgets(mesh)
         self.set_transform_mode(self._transform_mode)
         self.request_render()
@@ -1219,31 +1239,101 @@ class Viewport3D(QWidget):
             self._scale_representation.SetTransform(_numpy_to_vtk_transform(matrix))
 
     # --- виртуальная печать: затвердевшая смола поверх «призрака» модели ---------
-    def show_virtual_print(self, mesh: trimesh.Trimesh) -> None:
-        """Cured resin from virtual_print.stl, shown instead of the model (opaque, so
-        nothing translucent has to be depth-sorted while the camera moves)."""
+    def show_virtual_print(self, view: Any) -> None:
+        """The cured resin on its own: no vial, beam or model, just the part with its
+        defects lit up (red = extra resin, blue = undersize or not cured at all).
+
+        ``view`` is virtual_print.load_view() or a bare trimesh. Opaque and plainly
+        shaded: no dither, no translucency, so colours are what they say.
+        """
         self.clear_virtual_print(render=False)
+        if isinstance(view, trimesh.Trimesh):
+            view = {"mesh": view, "missing": None, "metrics": {}, "colored": False}
+        mesh = view["mesh"]
+        pv_mesh = _trimesh_to_pyvista(mesh)
+        kwargs: dict[str, Any] = {"color": "#E8D9B8"}
+        if view.get("colored") and getattr(mesh.visual, "vertex_colors", None) is not None:
+            pv_mesh.point_data["rgb"] = np.asarray(mesh.visual.vertex_colors)[:, :3].astype(np.uint8)
+            kwargs = {"scalars": "rgb", "rgb": True}
         self._virtual_actor = self.plotter.add_mesh(
-            _trimesh_to_pyvista(mesh), color="#E7DFCF", smooth_shading=True,
-            specular=0.3, specular_power=16, name="virtual_print", pickable=False, render=False,
-        )
-        pal = theme.scene_palette()
-        apply_dither(self._virtual_actor, pal.accent, pal.dither_paper, self._dither_pixel())
+            pv_mesh, smooth_shading=True, specular=0.15, specular_power=10, ambient=0.25,
+            name="virtual_print", pickable=False, render=False, reset_camera=False, **kwargs)
+        self._virtual_missing = None
+        missing = view.get("missing")
+        if missing is not None and len(missing.faces):
+            self._virtual_missing = self.plotter.add_mesh(
+                _trimesh_to_pyvista(missing), color="#3E80FF", smooth_shading=True, ambient=0.35,
+                name="virtual_print_missing", pickable=False, render=False, reset_camera=False)
+        # Only the print stays: the printer sketch and the planned model get out of the way.
+        self._sketch.set_visible(False)
         if self._model_actor is not None:
             self._model_actor.SetVisibility(False)
         # The gizmo would move the hidden model, not the print: hide it while previewing.
         if self._affine_widget is not None and self._affine_enabled:
             self._affine_widget.disable()
             self._affine_enabled = False
+        if self._affine_widget is not None:
+            for actor in (*self._affine_widget._arrows, *self._affine_widget._circles):
+                actor.visibility = False
         if self._scale_widget is not None:
             self._scale_widget.Off()
+        self._camera_before_virtual = self.plotter.camera_position
+        try:
+            self.plotter.reset_camera(render=False, bounds=mesh.bounds.T.ravel().tolist())
+        except Exception:
+            pass
+        self._show_virtual_legend(view.get("metrics") or {}, self._virtual_missing is not None)
         self.request_render()
+
+    def _show_virtual_legend(self, metrics: dict[str, Any], has_missing: bool) -> None:
+        label = getattr(self, "_virtual_legend", None)
+        if label is None:
+            label = QLabel(self)
+            label.setObjectName("virtualLegend")
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            self._virtual_legend = label
+        pal = theme.current()
+        extra = float(metrics.get("extra_pct", 0.0))
+        short = float(metrics.get("missing_pct", 0.0))
+
+        def row(color: str, text: str) -> str:
+            return f"<div><span style='color:{color}'>&#9632;</span>&nbsp;{text}</div>"
+        html = (f"<div style='font-size:13px;font-weight:600;color:{pal.text}'>{tr('Виртуальная печать')}</div>"
+                + row("#E8D9B8", tr("затвердело как задумано"))
+                + row("#FF4048", f"{tr('лишняя смола')} · {extra:.1f} %")
+                + row("#3E80FF", f"{tr('не хватает')} · {short:.1f} %"))
+        label.setText(html)
+        label.setStyleSheet(f"background-color: {pal.surface}; border: 1px solid {pal.border};"
+                            f"border-radius: 10px; padding: 10px 14px; color: {pal.muted};")
+        label.adjustSize()
+        label.move(16, self.height() - label.height() - 16)
+        label.raise_()
+        label.show()
+
+    def resizeEvent(self, event: Any) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        label = getattr(self, "_virtual_legend", None)
+        if label is not None and label.isVisible():
+            label.move(16, self.height() - label.height() - 16)
 
     def clear_virtual_print(self, render: bool = True) -> None:
         if self._virtual_actor is None:
             return
         self.plotter.remove_actor(self._virtual_actor, render=False)
         self._virtual_actor = None
+        if getattr(self, "_virtual_missing", None) is not None:
+            self.plotter.remove_actor(self._virtual_missing, render=False)
+            self._virtual_missing = None
+        label = getattr(self, "_virtual_legend", None)
+        if label is not None:
+            label.hide()
+        self._sketch.set_visible(True)
+        camera = getattr(self, "_camera_before_virtual", None)
+        if camera is not None:
+            try:
+                self.plotter.camera_position = camera
+            except Exception:
+                pass
         if self._model_actor is not None:
             self._model_actor.SetVisibility(True)
             self.set_transform_mode(self._transform_mode)

@@ -8,7 +8,8 @@ Day:   warm paper with a red-pen marker and an ink-black main button.
 
 Everything that is a colour lives here: Qt style sheets, custom-painted widgets
 (they read ``current()``) and the 3D sketch scene (``scene_palette()``).
-Fonts (Onest, JetBrains Mono, Caveat; SIL OFL) are bundled in assets/fonts.
+Two fonts (SIL OFL, bundled in assets/fonts): Syne ExtraBold, the letter of the logo, for
+titles and tabs, and Onest for everything else.
 """
 from __future__ import annotations
 
@@ -51,9 +52,9 @@ class Palette:
 
 
 DARK = Palette(
-    dark=True, bg="#0E0D10", view="#09080B", surface="#121115", surface_alt="#1C191F", seg_on="#302A33",
-    input="#121115", border="#2A262E", border_soft="#1F1C23", text="#F1ECEE", muted="#9D969A", dim="#6E676B",
-    accent="#FF8DB5", accent_hover="#FFA6C6", accent_pressed="#E9799F", accent_soft="#2A1A22",
+    dark=True, bg="#0E0D10", view="#09080B", surface="#19161C", surface_alt="#26222B", seg_on="#3B3441",
+    input="#0F0E12", border="#403A46", border_soft="#2E2A33", text="#F6F2F4", muted="#C2BBBF", dim="#938C91",
+    accent="#FF8DB5", accent_hover="#FFA6C6", accent_pressed="#E9799F", accent_soft="#3A1F2D",
     action="#F4A6BE", on_action="#3A1022", warn="#FFB86B", sketch="#D9D1D5", resin="#2A2230", liquid="#5FA8C8",
     track="#2C2630", sun="#F1ECEE",
 )
@@ -71,8 +72,10 @@ AXIS_Y = "#86B574"
 AXIS_Z = "#6F9FD6"
 
 FONT_UI = "Onest"
-FONT_MONO = "JetBrains Mono"
-FONT_HAND = "Caveat"
+FONT_DISPLAY = "Syne"
+FONT_MONO = FONT_UI          # old names: one text face, no separate mono or handwriting
+FONT_HAND = FONT_UI
+DISPLAY_WEIGHT = 800
 RADIUS = 10
 RADIUS_SM = 8
 
@@ -95,6 +98,7 @@ def scene_palette(p: Palette | None = None) -> ScenePalette:
     return ScenePalette(
         background=p.view, sketch=p.sketch, accent=p.accent, muted=p.dim, resin=p.resin,
         liquid=p.liquid, dither_ink=p.sketch, dither_paper=p.view, warn=p.warn, hatch=not p.dark,
+        model="#E7DFCF",
     )
 
 
@@ -117,8 +121,16 @@ def load_fonts() -> None:
             QFontDatabase.addApplicationFont(os.path.join(folder, name))
 
 
+def display_font(size: int = 14) -> QFont:
+    font = QFont(FONT_DISPLAY)
+    font.setFamilies([FONT_DISPLAY, FONT_UI])
+    font.setPixelSize(size)
+    font.setWeight(QFont.Weight(DISPLAY_WEIGHT))
+    return font
+
+
 def hand_font(size: int = 20) -> QFont:
-    font = QFont(FONT_HAND)
+    font = QFont(FONT_UI)
     font.setPixelSize(size)
     font.setWeight(QFont.Weight.Medium)
     return font
@@ -133,6 +145,8 @@ def mono_font(size: int = 11) -> QFont:
 def build_qss(p: Palette | None = None) -> str:
     p = p or _current
     hover_bg = p.seg_on if p.dark else "#EFEBE5"
+    seg_checked = (f"background-color: {p.accent_soft}; border: 1px solid {p.accent}; color: {p.accent}; font-weight: 700;"
+                   if p.dark else f"background-color: {p.seg_on}; color: {p.text}; font-weight: 700;")
     return f"""
 * {{
     font-family: "{FONT_UI}", "Inter", "Segoe UI", sans-serif;
@@ -140,7 +154,8 @@ def build_qss(p: Palette | None = None) -> str:
     color: {p.text};
 }}
 QMainWindow, QDialog, QMessageBox {{ background-color: {p.bg}; }}
-QWidget#centralRoot, QWidget#appHeader, QWidget#sidePanel, QWidget#chipBar {{ background-color: {p.bg}; }}
+QWidget#centralRoot, QWidget#appHeader, QWidget#chipBar {{ background-color: {p.bg}; }}
+QWidget#sidePanel {{ background-color: {p.surface}; }}
 QWidget#appHeader {{ border-bottom: 1px solid {p.border}; }}
 QWidget#sidePanel {{ border-left: 1px solid {p.border}; }}
 QWidget#settingRow {{ border-bottom: 1px solid {p.border_soft}; }}
@@ -150,24 +165,24 @@ QToolTip {{
 }}
 
 QLabel {{ color: {p.muted}; background: transparent; }}
-QLabel#appTitle, QLabel#projectName {{ font-size: 15px; font-weight: 600; color: {p.text}; }}
+QLabel#appTitle, QLabel#projectName {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 15px; color: {p.text}; }}
 QLabel#projectSub {{ font-family: "{FONT_MONO}"; font-size: 11px; color: {p.muted}; }}
-QLabel#panelTitle {{ font-size: 19px; font-weight: 700; color: {p.text}; }}
+QLabel#panelTitle {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 20px; color: {p.text}; }}
 QLabel#panelLead {{ color: {p.muted}; }}
-QLabel#todoLabel {{ color: {p.text}; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: {p.surface_alt}; }}
-QLabel#emptyTitle {{ font-size: 26px; font-weight: 700; color: {p.text}; }}
+QLabel#todoLabel {{ color: {p.text}; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: {p.surface_alt}; border: 1px solid {p.border_soft}; }}
+QLabel#emptyTitle {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 26px; color: {p.text}; }}
 QLabel#planLabel {{ font-family: "{FONT_MONO}"; font-size: 12px; color: {p.text}; }}
 QWidget#printStage {{ background-color: {p.view}; }}
 QSplitter::handle:vertical {{ height: 6px; background: {p.border_soft}; }}
-QLabel#sectionHead {{ font-family: "{FONT_MONO}"; font-size: 11px; letter-spacing: 1px; color: {p.muted}; padding-top: 8px; }}
+QLabel#sectionHead {{ font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: {p.accent if p.dark else p.muted}; padding-top: 14px; padding-bottom: 2px; }}
 QLabel#rowLabel {{ color: {p.text}; font-weight: 600; }}
 QLabel#rowValue {{ font-family: "{FONT_MONO}"; color: {p.text}; font-weight: 500; }}
-QLabel#rowEffect {{ font-family: "{FONT_MONO}"; font-size: 11px; color: {p.muted}; }}
+QLabel#rowEffect {{ font-size: 12px; color: {p.muted}; }}
 QLabel#rowEffect[warn="true"] {{ color: {p.warn}; }}
-QLabel#rowHint {{ font-family: "{FONT_HAND}"; font-size: 21px; color: {p.accent}; }}
+QLabel#rowHint {{ font-size: 12px; font-weight: 500; color: {p.accent}; }}
 QLabel#hintLabel {{ color: {p.dim}; font-size: 11px; }}
 QLabel#fieldLabel {{ color: {p.muted}; font-size: 12px; }}
-QLabel#actionSub {{ font-family: "{FONT_MONO}"; font-size: 11px; color: {p.muted}; }}
+QLabel#actionSub {{ font-size: 12px; color: {p.muted}; }}
 QLabel#chip {{
     font-family: "{FONT_MONO}"; font-size: 11px; color: {p.text};
     border: 1px solid {p.border}; border-radius: 9px; padding: 6px 10px; background: {p.bg};
@@ -202,17 +217,17 @@ QPushButton:hover {{ background-color: {hover_bg}; }}
 QPushButton:pressed {{ background-color: {p.input}; }}
 QPushButton:disabled {{ color: {p.dim}; border-color: {p.border_soft}; }}
 QPushButton#stepButton {{
-    background-color: {p.surface_alt}; border: none; border-radius: 8px;
+    background-color: {p.seg_on if p.dark else p.surface_alt}; border: none; border-radius: 8px;
     min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0; font-size: 16px;
 }}
-QPushButton#stepButton:hover {{ background-color: {p.seg_on}; }}
+QPushButton#stepButton:hover {{ background-color: {p.accent_soft if p.dark else p.seg_on}; color: {p.accent}; }}
 QFrame#segFrame {{ background-color: {p.surface_alt}; border-radius: 10px; }}
 QPushButton#segButton {{
-    background: transparent; border: none; border-radius: 7px; padding: 6px 4px;
-    font-weight: 600; font-size: 12px; color: {p.text};
+    background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 7px 4px;
+    font-weight: 500; font-size: 12px; color: {p.muted};
 }}
-QPushButton#segButton:checked {{ background-color: {p.seg_on}; }}
-QPushButton#segButton:hover:!checked {{ color: {p.accent}; }}
+QPushButton#segButton:checked {{ {seg_checked} }}
+QPushButton#segButton:hover:!checked {{ color: {p.text}; background-color: {p.seg_on}; }}
 QPushButton#linkButton {{
     background: transparent; border: none; padding: 0; color: {p.accent};
     font-family: "{FONT_MONO}"; font-size: 12px;
@@ -220,7 +235,7 @@ QPushButton#linkButton {{
 QPushButton#linkButton:hover {{ color: {p.accent_hover}; }}
 QPushButton#primaryAction, QPushButton#generateButton {{
     background-color: {p.action}; color: {p.on_action}; border: none; border-radius: 18px;
-    min-height: 54px; font-size: 16px; font-weight: 700;
+    min-height: 54px; font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-size: 15px; font-weight: {DISPLAY_WEIGHT};
 }}
 QPushButton#primaryAction:hover, QPushButton#generateButton:hover {{ background-color: {p.accent_hover if p.dark else "#2A272B"}; }}
 QPushButton#primaryAction:disabled {{ background-color: {p.surface_alt}; color: {p.dim}; }}
@@ -304,6 +319,10 @@ def apply_theme(app: QApplication, dark: bool | None = None) -> Palette:
     app.setPalette(palette)
     font = QFont(FONT_UI)
     font.setPixelSize(13)
+    # Grey-scale smoothing without hinting: heavy wide letters (Syne) otherwise get colour
+    # fringes and stair-stepped edges that read as "pixelated".
+    font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
     app.setFont(font)
     app.setStyleSheet(build_qss(p))
     return p

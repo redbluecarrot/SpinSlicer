@@ -68,3 +68,20 @@ def test_slicing_writes_a_virtual_print_that_matches_the_part(tmp_path):
     assert cured.volume > 0
     np.testing.assert_allclose(cured.extents, (14.0, 10.0, 4.0), atol=2.0)
     assert 0.5 * 14.0 * 10.0 * 4.0 < cured.volume < 1.2 * 14.0 * 10.0 * 4.0   # coarse 64 grid
+
+
+def test_defect_view_marks_extra_resin_red_and_uncured_parts_blue():
+    n = 40
+    c = np.arange(n)
+    X, Y, Z = np.meshgrid(c, c, c, indexing="ij")
+    target = ((abs(X - 20) < 8) & (abs(Y - 20) < 8) & (abs(Z - 20) < 8)).astype(np.float32)
+    target[30:33, 20, 20] = 1.0                                   # a thin pin the light did not build
+    built = (abs(X - 20) < 8) & (abs(Y - 20) < 8) & (abs(Z - 20) < 8)
+    built |= (abs(X - 20) < 3) & (abs(Y - 20) < 3) & (Z >= 28) & (Z < 33)   # a blob of extra resin on top
+    cured = np.where(built, 255, 0).astype(np.uint8)
+    result = virtual_print.VirtualPrint(cured, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0),
+                                        {"best_exposure": 1.0})
+    colored, missing = virtual_print.defect_meshes(result, target)
+    rgb = np.asarray(colored.visual.vertex_colors)[:, :3].astype(int)
+    assert (rgb[:, 0] > 240).any() and (rgb[:, 2] < 120).any()    # red where the blob grows
+    assert len(missing.faces) > 0 and missing.bounds[0][0] > 27   # the pin, and only the pin

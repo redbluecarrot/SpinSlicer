@@ -10,8 +10,11 @@ Results:
   * metrics: the exposure that reproduces the model best (as a factor on the dose the
     process window suggests), the exposure range that keeps the part's size within half
     a voxel, and the match at that exposure and at +-5 % (lamp drift, resin batch);
-  * virtual_print.stl: surface of the cured resin in mm (the slicer shows it in 3D; any
-    STL viewer opens it). Built here, in the worker thread, so the UI only loads it;
+  * virtual_print.stl: surface of the cured resin in mm (any STL viewer opens it);
+    virtual_print.ply: the same surface coloured by its deviation from the model (red =
+    extra resin, blue = undersize) and virtual_print_missing.stl: parts of the model
+    that did not cure at all. The slicer shows these in 3D. Built here, in the worker
+    thread, so the UI only loads them;
   * virtual_print_slices.png: a few layers, green = cured as wanted, red = extra resin,
     blue = missing.
 """
@@ -195,11 +198,120 @@ def cured_mesh(result: VirtualPrint) -> Any:
     return trimesh.Trimesh(verts * spacing + origin, faces[:, ::-1], process=False)
 
 
+MESH_COLORED = "virtual_print.ply"
+MESH_MISSING = "virtual_print_missing.stl"
+RESIN_RGB = (232, 217, 184)      # cured as wanted
+EXTRA_RGB = (255, 64, 72)        # resin where the model has none
+SHORT_RGB = (62, 128, 255)       # model that did not cure
+
+
+def _crop(solid: np.ndarray, cured: np.ndarray, pad: int = 6) -> tuple[slice, slice, slice]:
+    """Bounding box of both volumes plus ``pad`` empty voxels; may reach outside the array
+    (the caller pads), so that distances at the very top/bottom layer still see empty space."""
+    both = solid | cured
+    box = []
+    for axis in range(3):
+        other = tuple(a for a in range(3) if a != axis)
+        idx = np.flatnonzero(both.any(axis=other))
+        lo, hi = (int(idx[0]), int(idx[-1]) + 1) if idx.size else (0, 1)
+        box.append(slice(lo - pad, hi + pad))
+    return box[0], box[1], box[2]
+
+
+def _cut(volume: np.ndarray, box: tuple[slice, slice, slice]) -> np.ndarray:
+    """volume[box] where voxels outside the array count as empty."""
+    out = np.zeros(tuple(b.stop - b.start for b in box), volume.dtype)
+    src, dst = [], []
+    for b, n in zip(box, volume.shape):
+        lo, hi = max(b.start, 0), min(b.stop, n)
+        src.append(slice(lo, hi))
+        dst.append(slice(lo - b.start, hi - b.start))
+    out[tuple(dst)] = volume[tuple(src)]
+    return out
+
+
+def defect_meshes(result: VirtualPrint, target: np.ndarray) -> tuple[Any, Any]:
+    """(cured surface coloured by deviation from the model, mesh of the uncured model parts).
+
+    Deviation of a surface point = signed distance to the model surface in mm (+ outside).
+    It is neutral within half a voxel, and ramps to red (extra resin) or blue (undersize)
+    over the next voxel and a half. Model voxels farther than half a voxel from any cured
+    voxel are "missing": thin features and fine detail the light did not build.
+    """
+    import trimesh
+    from scipy import ndimage
+    from skimage.measure import marching_cubes
+
+    hx, hy, hz = result.spacing_mm
+    cured_mask = result.cured >= cure_level(result)
+    solid = target >= (128 if target.dtype == np.uint8 else 0.5)
+    box = _crop(solid, cured_mask)
+    sol, cur = _cut(solid, box), _cut(cured_mask, box)
+    spacing = np.array([hx, hy, hz])
+    tol = 0.5 * min(hx, hy)
+    mesh = cured_mesh(result)
+    colored = mesh
+    if len(mesh.faces):
+        sdf = (ndimage.distance_transform_edt(~sol, sampling=spacing)
+               - ndimage.distance_transform_edt(sol, sampling=spacing)).astype(np.float32)
+        start = np.array([b.start for b in box], np.float64)
+        idx = (np.asarray(mesh.vertices) - np.asarray(result.origin_mm)) / spacing - start
+        dev = ndimage.map_coordinates(sdf, idx.T, order=1, mode="nearest")
+        t = np.clip((np.abs(dev) - tol) / (1.5 * min(hx, hy)), 0.0, 1.0)[:, None]
+        base = np.array(RESIN_RGB, np.float64)
+        end = np.where((dev > 0)[:, None], np.array(EXTRA_RGB, np.float64), np.array(SHORT_RGB, np.float64))
+        rgb = np.round(base * (1 - t) + end * t).astype(np.uint8)
+        colored = trimesh.Trimesh(mesh.vertices, mesh.faces, process=False,
+                                  vertex_colors=np.column_stack([rgb, np.full(len(rgb), 255, np.uint8)]))
+    far = ndimage.distance_transform_edt(~cur, sampling=spacing) > tol
+    gone = sol & far
+    missing = trimesh.Trimesh()
+    if gone.any():
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            verts, faces, _, _ = marching_cubes(np.pad(gone.astype(np.float32), 1), level=0.5,
+                                                allow_degenerate=False)
+        origin = np.array(result.origin_mm) + np.array([b.start for b in box]) * spacing - spacing
+        missing = trimesh.Trimesh(verts * spacing + origin, faces[:, ::-1], process=False)
+    return colored, missing
+
+
 def save(result: VirtualPrint, target: np.ndarray, out_dir: str) -> None:
     mesh = cured_mesh(result)
     if len(mesh.faces):
         mesh.export(os.path.join(out_dir, MESH_FILE))
+        try:
+            colored, missing = defect_meshes(result, target)
+            colored.export(os.path.join(out_dir, MESH_COLORED))
+            if len(missing.faces):
+                missing.export(os.path.join(out_dir, MESH_MISSING))
+        except Exception:         # the plain surface above is enough to look at
+            pass
     save_slices_png(result, target, os.path.join(out_dir, "virtual_print_slices.png"))
+
+
+def load_view(out_dir: str) -> Optional[dict[str, Any]]:
+    """Everything the 3D view needs: coloured surface, missing parts and the match numbers."""
+    import json
+
+    import trimesh
+
+    plain = mesh_path(out_dir)
+    if plain is None:
+        return None
+    colored = os.path.join(out_dir, MESH_COLORED)
+    mesh = trimesh.load(colored if os.path.isfile(colored) else plain, force="mesh", process=False)
+    gone = os.path.join(out_dir, MESH_MISSING)
+    missing = trimesh.load(gone, force="mesh") if os.path.isfile(gone) else None
+    metrics: dict[str, Any] = {}
+    try:
+        with open(os.path.join(out_dir, "print_plan.json"), encoding="utf-8") as handle:
+            metrics = (json.load(handle).get("virtual_print") or {}).get("best") or {}
+    except (OSError, ValueError):
+        pass
+    return {"mesh": mesh, "missing": missing, "metrics": metrics,
+            "colored": os.path.isfile(colored)}
 
 
 def save_slices_png(result: VirtualPrint, target: np.ndarray, path: str, count: int = 4) -> None:

@@ -12,6 +12,7 @@ from spinslicer.sketch_scene import (  # noqa: E402
     _beam_profile,
     bath_lines,
     beam_mesh,
+    fresnel_x,
     projector_x,
     silhouette_lines,
     static_lines,
@@ -31,8 +32,13 @@ def test_bath_is_drawn_only_with_a_bath() -> None:
 
 def test_beam_height_is_the_projector_field() -> None:
     p = SceneParams(field_mm=24, bath=True, n_resin=1.45, n_liquid=1.45)
-    _w, h = _beam_profile(p, np.array([projector_x(p)]))
-    assert np.isclose(2 * h[0], 24)
+    # a cone from the projector opens to the full field at the Fresnel lens, then stays parallel
+    lens = fresnel_x(p)
+    between = (lens - p.radius) / 2          # after the lens, before the vial: still parallel
+    _w, h = _beam_profile(p, np.array([projector_x(p) + 1.5, lens, between]))
+    assert h[0] < 0.2 * h[1]                 # the cone is narrow at the projector
+    assert np.isclose(2 * h[1], 24)          # and as high as the field at the lens
+    assert np.isclose(h[2], h[1])            # parallel afterwards
 
 
 def test_refraction_without_bath_narrows_the_sheet() -> None:

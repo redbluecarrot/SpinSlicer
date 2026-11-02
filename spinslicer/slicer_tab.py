@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional, cast
+from typing import Optional
 
 import numpy as np
 import trimesh
@@ -543,14 +543,13 @@ class SlicerTab(QWidget):
             self._viewport.clear_virtual_print()
             return
         from spinslicer import virtual_print
-        path = virtual_print.mesh_path(self._last_output_dir) if self._last_output_dir else None
-        if path is None:
-            self.virtual_btn.setChecked(False)
-            self.virtual_btn.setEnabled(False)
-            return
         try:
-            mesh = cast(trimesh.Trimesh, trimesh.load(path, force="mesh"))
-            self._viewport.show_virtual_print(mesh)
+            view = virtual_print.load_view(self._last_output_dir) if self._last_output_dir else None
+            if view is None:
+                self.virtual_btn.setChecked(False)
+                self.virtual_btn.setEnabled(False)
+                return
+            self._viewport.show_virtual_print(view)
         except Exception as exc:  # display only: never break the run
             self.logMessage.emit(f"virtual_print: {exc}")
             self.virtual_btn.setChecked(False)

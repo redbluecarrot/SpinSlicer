@@ -35,6 +35,9 @@ if len(sys.argv) >= 4 and sys.argv[1] == "--engine-worker":
 from datetime import datetime, timezone
 from pathlib import Path
 
+if sys.platform == "win32" and "QT_QPA_PLATFORM" not in os.environ:
+    os.environ["QT_QPA_PLATFORM"] = "windows:fontengine=freetype"
+
 if sys.platform.startswith("linux"):
     if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
         os.environ.pop("DISPLAY", None)
@@ -86,7 +89,13 @@ from spinslicer.pixel_game import silhouette_from_mesh  # noqa: E402
 from spinslicer.slicer_tab import SlicerTab  # noqa: E402
 from spinslicer.theme import apply_theme  # noqa: E402
 from spinslicer.theme import current as current_palette  # noqa: E402
-from spinslicer.ui_kit import Chip, NavButton, SunMoonToggle, set_hints_visible  # noqa: E402
+from spinslicer.ui_kit import (  # noqa: E402
+    Chip,
+    NavButton,
+    SunMoonToggle,
+    set_hints_visible,
+    set_line_style,
+)
 from spinslicer.ui_panels import ProcessSettingsPanel  # noqa: E402
 from spinslicer.video_tab import ProjectorTab  # noqa: E402
 
@@ -196,12 +205,13 @@ class CALSlicerMainWindow(QMainWindow):
 
         ident = QVBoxLayout()
         ident.setSpacing(1)
-        self.project_name = QLabel(tr("Новый проект"))
+        self.project_name = QLabel("SpinSlicer")
         self.project_name.setObjectName("projectName")
         self.project_name.setProperty("_spinslicer_skip_text_translation", True)
         self.project_sub = QLabel(tr("модель не загружена"))
         self.project_sub.setObjectName("projectSub")
         self.project_sub.setProperty("_spinslicer_skip_text_translation", True)
+        self.project_sub.setVisible(False)       # the header carries the name only
         ident.addStretch(1)
         ident.addWidget(self.project_name)
         ident.addWidget(self.project_sub)
@@ -377,6 +387,8 @@ class CALSlicerMainWindow(QMainWindow):
         panel.settingsChanged.connect(self.slicer_tab.refresh_model_state)
         panel.hintsToggled.connect(set_hints_visible)
         set_hints_visible(panel.hints_switch.isChecked())
+        panel.lineStyleChanged.connect(self._on_line_style)
+        self._on_line_style(str(panel.line_style.currentData()))
 
         st = self.slicer_tab
         st.modelInfo.connect(self._on_model_info)
@@ -465,11 +477,9 @@ class CALSlicerMainWindow(QMainWindow):
         self._model_info_args = (name, size, faces, scale_pct)
         self.settings_tab.set_model_info(name, size if isinstance(size, list) else None, faces, scale_pct)
         if not isinstance(size, list):
-            self.project_name.setText(tr("Новый проект"))
             self.project_sub.setText(tr("модель не загружена"))
         else:
             sx, sy, sz = (float(v) for v in size)
-            self.project_name.setText(os.path.splitext(name)[0])
             self.project_sub.setText(tr(f"{num(sx)} × {num(sy)} × {num(sz)} мм"))
             node = self.slicer_tab._model_node
             if node is not None and self._game_shape_for != node.source_path:
@@ -519,6 +529,13 @@ class CALSlicerMainWindow(QMainWindow):
         tol = float(plan.get("exposure_tolerance_pct", 0.0)) if plan else 0.0
         self.chips["tol"].set_value(f"± {f(tol)} %" if plan else "—", warn=bool(plan) and tol < 3)
 
+    def _on_line_style(self, style: str) -> None:
+        set_line_style(style)
+        self.slicer_tab.viewport.set_line_style(style)
+        for button in self.nav.values():
+            button.update()
+        self.slicer_tab._empty.update()
+
     def _on_theme(self, dark: bool) -> None:
         app = QApplication.instance()
         if isinstance(app, QApplication):
@@ -555,7 +572,6 @@ class CALSlicerMainWindow(QMainWindow):
         if args is not None:
             self._on_model_info(*args)
         else:
-            self.project_name.setText(tr("Новый проект"))
             self.project_sub.setText(tr("модель не загружена"))
         self._refresh_chips()
         self._refresh_nav()

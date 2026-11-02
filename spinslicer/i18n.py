@@ -422,6 +422,18 @@ _EN.update({
     "Гамма": "Gamma", "Контраст": "Contrast", "Облучённость": "Irradiance", "n стекла": "Glass n",
     "n жидкости ванны": "Bath liquid n", "Подсказки маркером": "Marker hints",
     "для тех, кто печатает впервые": "for first-time printers", "Язык": "Language",
+    "Линии": "Lines", "прямые": "straight", "от руки": "hand-drawn", "живые": "alive",
+    "прямые — по линейке, модель без точек; от руки — неподвижный набросок; живые — набросок «дышит»":
+        "straight — ruled, model without dots; hand-drawn — a still sketch; alive — the sketch breathes", "затвердело как задумано": "cured as intended",
+    "лишняя смола": "extra resin", "не хватает": "missing",
+    "Влезает в колбу": "Fits the vial", "влезает": "fits", "не влезает": "does not fit",
+    "Ширина": "Width", "Высота": "Height", "В центр": "Centre", "Вписать в колбу": "Fit to the vial",
+    "показать, что затвердеет из этих кадров": "show what will cure from these frames",
+    "Деталь": "Part", "Проверка": "Check",
+    "Показать": "Show", "Вернуться к модели": "Back to the model",
+    "Интерфейс": "Interface", "Тонкая настройка": "Fine tuning",
+    "конус проектора проходит линзу Френеля и становится параллельным":
+        "the projector cone passes a Fresnel lens and becomes parallel",
     "загрузить STL": "load STL", "Модель не загружена": "No model loaded", "STL-файл детали": "the part's STL file",
     "Масштаб": "Scale", "Ориентация": "Orientation", "Отверстия и резьба": "Holes and threads",
     "Положение": "Position", "Точная позиция": "Exact position", "Качество": "Quality",

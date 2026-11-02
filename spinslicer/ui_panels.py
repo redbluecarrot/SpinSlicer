@@ -242,6 +242,7 @@ class ProcessSettingsPanel(QWidget):
     orientationRequested = pyqtSignal(int)
     virtualToggled = pyqtSignal(bool)
     hintsToggled = pyqtSignal(bool)
+    lineStyleChanged = pyqtSignal(str)
     languageChanged = pyqtSignal(int)
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -301,8 +302,7 @@ class ProcessSettingsPanel(QWidget):
         self.todo.setProperty("_spinslicer_skip_text_translation", True)
         head_l.addWidget(self.step_label)
         head_l.addWidget(self.title)
-        head_l.addSpacing(4)
-        head_l.addWidget(self.todo)
+        self.todo.setVisible(False)        # the step hints are gone; the label only keeps old callers working
         root.addWidget(head)
 
         self._stack = QStackedWidget()
@@ -399,7 +399,8 @@ class ProcessSettingsPanel(QWidget):
         self.glass_thickness = Stepper(0.5, 10.0, 2.0, 0.5, 1, "мм")
         self.placement = Segmented([("в ванне", 1), ("в воздухе", 0)], 0)
         self.bath = self.placement   # back-compat name; use container_mode_value()
-        self.field_height = Stepper(5.0, 120.0, 40.0, 1.0, 0, "мм")
+        self.field_height = Stepper(5.0, 400.0, 40.0, 1.0, 0, "мм")
+        self._field_auto = True
         self.resolution = Segmented([(f"{w}×{h}", i) for i, (w, h) in enumerate(RESOLUTIONS)], 2)
         self.output_res = Stepper(128, 3840, DEFAULT_OUTPUT_RESOLUTION, 8, 0, "px")
         self.rays = Segmented([("параллельные", 0), ("конусом", 1)], 0)
@@ -416,7 +417,9 @@ class ProcessSettingsPanel(QWidget):
         self.alpha_absorption = Stepper(0.0, 0.1, 0.0, 0.001, 3, "мм⁻¹")
         self.n_resin = Stepper(1.0, 2.0, 1.50, 0.01, 2)
         self.gel_dose = Stepper(0.0, 5000.0, 0.0, 10.0, 1, "мДж/см³")
-        self.hints_switch = Switch(True)
+        self.hints_switch = Switch(False)
+        self.blur_compensation = Switch(True)
+        self.line_style = Segmented([("прямые", "straight"), ("от руки", "sketch"), ("живые", "live")], 0)
         self.language_box = NoScrollComboBox()
 
         self.r_diameter = self._row("Диаметр колбы", self.diameter)
@@ -429,6 +432,7 @@ class ProcessSettingsPanel(QWidget):
         self.r_rays = self._row("Лучи проектора", self.rays, stacked=True)
         self.r_throw = self._row("Throw ratio", self.throw_ratio, hint="есть в паспорте проектора, обычно 1,1–1,6")
         self.r_blur = self._row("Размытие пятна", self.projector_blur, hint="не знаете? оставьте 0")
+        self.r_comp = self._row("Компенсация размытия", self.blur_compensation)
         self.r_alpha = self._row("Поглощение смолы", self.alpha_absorption)
         self.r_nresin = self._row("Преломление смолы", self.n_resin)
         self.r_gel = self._row("Доза геля", self.gel_dose, hint="не знаете? напечатайте шкалу ↓")
@@ -444,16 +448,20 @@ class ProcessSettingsPanel(QWidget):
         self.r_nglass = self._row("n стекла", self.n_glass)
         self.r_nliquid = self._row("n жидкости ванны", self.n_liquid)
         self.r_hints = self._row("Подсказки маркером", self.hints_switch, "для тех, кто печатает впервые")
+        self.r_draw = self._row("Линии", self.line_style, stacked=True,
+                                effect="прямые — по линейке, модель без точек; от руки — неподвижный набросок; живые — набросок «дышит»")
         self.r_language = self._row("Язык", self.language_box)
-        expert = self._group([self.r_nglass, self.r_nliquid])
+        expert = self._group([self.r_blur, self.r_comp, self.r_offx, self.r_offy, self.r_gamma, self.r_contrast,
+                              self.r_irr, self.r_nglass, self.r_nliquid])
+        # In the order a printer is built: the interface, the vial, the projector and its
+        # optics, the resin. What is rarely touched hides in "fine tuning".
         self._add_page("setup", [
-            section_head("Колба"), self.r_diameter, self.r_wall, self.r_bath, self.r_field,
-            section_head("Проектор"), self.r_resolution, self.r_hz, self.r_output, self.r_offx, self.r_offy,
-            self.r_gamma, self.r_contrast, self.r_irr,
-            section_head("Оптика"), self.r_rays, self.r_throw, self.r_blur,
-            self._expander("Показатели преломления", expert),
+            section_head("Интерфейс"), self.r_language, self.r_draw, self.r_hints,
+            section_head("Колба"), self.r_diameter, self.r_wall, self.r_bath,
+            section_head("Проектор"), self.r_resolution, self.r_hz, self.r_output, self.r_rays, self.r_throw,
+            self.r_field,
             section_head("Смола"), self.r_alpha, self.r_nresin, self.r_gel, self.r_calib,
-            section_head("Ещё"), self.r_hints, self.r_language,
+            self._expander("Тонкая настройка", expert),
         ])
 
     def _build_model(self) -> None:
@@ -490,13 +498,16 @@ class ProcessSettingsPanel(QWidget):
     def _build_light(self) -> None:
         self.grid_res = Segmented([("Быстро", 128), ("Норма", 256), ("Точно", 384)], 1)
         self.frames = Segmented([("180", 180), ("360", 360), ("720", 720)], 1)
-        self.blur_compensation = Switch(True)
-        self.virtual = Switch(False)
+        self.virtual = QPushButton(tr("Показать"))
+        self.virtual.setCheckable(True)
+        self.virtual.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.virtual.toggled.connect(
+            lambda on: self.virtual.setText(tr("Вернуться к модели") if on else tr("Показать")))
         self._virtual_ready = False
         self.r_grid = self._row("Качество", self.grid_res, stacked=True, hint="для первой печати хватит «Норма»")
         self.r_frames = self._row("Кадров на оборот", self.frames, stacked=True)
-        self.r_comp = self._row("Компенсация размытия", self.blur_compensation)
-        self.r_virtual = self._row("Виртуальная печать", self.virtual, "появится после расчёта света")
+        self.r_virtual = self._row("Виртуальная печать", self.virtual, "показать, что затвердеет из этих кадров", stacked=True)
+        self.r_virtual.setVisible(False)          # only after a computation
         self.metric_match = Metric("совпадение")
         self.metric_tol = Metric("запас экспоз.")
         self.metric_time = Metric("печать")
@@ -532,7 +543,7 @@ class ProcessSettingsPanel(QWidget):
         gl.addWidget(self._arcade(self.game))
         self.game_box = game_box
         game_box.setVisible(False)
-        self._add_page("light", [self.r_grid, self.r_frames, self.r_comp, results, self.r_virtual, game_box])
+        self._add_page("light", [self.r_grid, self.r_frames, results, self.r_virtual, game_box])
 
     def _build_print(self) -> None:
         self.output_kind = Segmented([("на проектор", 0), ("видео MP4", 1), ("кадры PNG", 2)])
@@ -616,26 +627,15 @@ class ProcessSettingsPanel(QWidget):
         self._refresh_action()
 
     def _arcade(self, game: PixelGame) -> QWidget:
-        """A game with its picker and a one-line rule."""
+        """A game with its picker."""
         box = QWidget()
         lay = QVBoxLayout(box)
         lay.setContentsMargins(0, 4, 0, 8)
         lay.setSpacing(6)
         picker = Segmented([(g.title, i) for i, g in enumerate(game.games)])
-        rule = QLabel()
-        rule.setObjectName("rowEffect")
-        rule.setWordWrap(True)
-        rule.setProperty("_spinslicer_skip_text_translation", True)
-        controls = QLabel()
-        controls.setObjectName("rowEffect")
-        controls.setProperty("_spinslicer_skip_text_translation", True)
-        hints = {"cure": "мышь — двигать, клик — старт", "layers": "←/→ — двигать, ↑ — повернуть, ↓ — быстрее",
-                 "photon": "клик или пробел — подлететь вверх"}
 
         def choose(index: int) -> None:
             game.set_game(index)
-            rule.setText(tr(game.game().hint))
-            controls.setText(tr(hints[game.game().key]))
             self._settings.setValue("game/last", index)
         picker.changed.connect(choose)
         self._arcade_refresh = getattr(self, "_arcade_refresh", []) + [lambda: choose(picker.currentIndex())]
@@ -644,15 +644,13 @@ class ProcessSettingsPanel(QWidget):
         choose(last)
         lay.addWidget(picker)
         lay.addWidget(game)
-        lay.addWidget(rule)
-        lay.addWidget(controls)
         return box
 
     # ------------------------------------------------------------- settings
     def _persisted(self) -> dict[str, QWidget]:
         return {
             "ui/diameter": self.diameter, "ui/wall": self.glass_thickness, "ui/placement": self.placement,
-            "ui/field": self.field_height, "ui/resolution2": self.resolution, "ui/output_res": self.output_res,
+            "ui/resolution2": self.resolution, "ui/output_res": self.output_res,
             "ui/rays": self.rays, "ui/throw_ratio": self.throw_ratio,
             "physics/blur": self.projector_blur, "ui/offset_x": self.offset_x, "ui/offset_y": self.offset_y,
             "ui/refresh_hz": self.projector_hz, "physics/gamma": self.projector_gamma, "physics/contrast": self.projector_contrast,
@@ -678,8 +676,13 @@ class ProcessSettingsPanel(QWidget):
                     widget.setValue(float(stored))  # type: ignore[attr-defined]
             except (TypeError, ValueError):
                 pass
-        hints = str(self._settings.value("ui/hints", True)).lower() in {"1", "true", "yes"}
+        hints = str(self._settings.value("ui/hints", False)).lower() in {"1", "true", "yes"}
         self.hints_switch.setChecked(hints)
+        self._field_auto = True
+        self._sync_field()
+        style = str(self._settings.value("ui/line_style", "straight"))
+        index = {"straight": 0, "sketch": 1, "live": 2}.get(style, 0)
+        self.line_style.setCurrentIndex(index)
 
     def _save(self, key: str, widget: QWidget) -> None:
         if isinstance(widget, Switch):
@@ -688,6 +691,11 @@ class ProcessSettingsPanel(QWidget):
             self._settings.setValue(key, widget.value())  # type: ignore[attr-defined]
 
     def _wire(self) -> None:
+        for widget in (self.diameter, self.glass_thickness, self.output_res, self.resolution):
+            widget.valueChanged.connect(lambda _v: self._sync_field(force=True))   # before the refresh below
+        self.field_height.valueChanged.connect(self._on_field_edited)
+        self.field_height.valueChanged.connect(lambda _v: self._on_setting_changed("ui/field"))
+        self.field_height.valueChanged.connect(lambda _v: self.sceneChanged.emit())
         scene_keys = {"ui/diameter", "ui/wall", "ui/placement", "ui/field", "ui/rays", "ui/throw_ratio",
                       "ui/resolution2", "ui/output_res", "physics/alpha", "ui/n_resin", "ui/n_liquid", "ui/frames"}
         canvas_keys = {"ui/resolution2", "ui/offset_x", "ui/offset_y", "ui/speed", "ui/frames"}
@@ -706,8 +714,31 @@ class ProcessSettingsPanel(QWidget):
         self.virtual.toggled.connect(self._on_virtual_toggled)
         self.hints_switch.toggled.connect(self.hintsToggled.emit)
         self.hints_switch.toggled.connect(lambda v: self._settings.setValue("ui/hints", v))
+        self.line_style.changed.connect(self._on_line_style)
         self.language_box.currentIndexChanged.connect(self.languageChanged.emit)
         self.output_kind.changed.connect(lambda _i: self._refresh_action())
+
+    def _auto_field_mm(self) -> float:
+        """Height of the projector picture in the vial: its rows times the pixel size."""
+        sh = self.screen_size()[1]
+        height = sh * self.diameter.value() / max(self.output_res.value(), 1.0)
+        zone = (self.diameter.value() - 2 * self.glass_thickness.value()) * FILL_FRACTION
+        return float(max(5.0, min(400.0, round(min(height, zone)), self.diameter.value() * VAT_HEIGHT_RATIO)))
+
+    def _sync_field(self, force: bool = False) -> None:
+        if force:
+            self._field_auto = True
+        if self._field_auto:
+            with QSignalBlocker(self.field_height):
+                self.field_height.setValue(self._auto_field_mm())
+
+    def _on_field_edited(self, _value: float) -> None:
+        self._field_auto = False
+
+    def _on_line_style(self, _index: int) -> None:
+        style = str(self.line_style.currentData())
+        self._settings.setValue("ui/line_style", style)
+        self.lineStyleChanged.emit(style)
 
     def _on_virtual_toggled(self, on: bool) -> None:
         if not on and not self._virtual_ready:
@@ -868,6 +899,9 @@ class ProcessSettingsPanel(QWidget):
             f"в жидкости n = {f(self.n_liquid.value(), 2)} луч почти не гнётся: кадры без искажений" if bath
             else f"в воздухе колба работает как линза: кадры специально растянуты, печатается только центр "
                  f"Ø {f(v['zone'], 0)} мм. Ванна лучше.", warn=not bath)
+        cone = self.rays.value_int() == 1
+        self.r_throw.setVisible(cone)
+        self.r_nliquid.setVisible(bath)
         vial_h = self.diameter.value() * VAT_HEIGHT_RATIO
         self.r_field.set_effect(
             f"печатать можно до {f(v['height'], 0)} мм в высоту"
@@ -895,7 +929,7 @@ class ProcessSettingsPanel(QWidget):
                     + (" — поставьте проектор дальше" if smear > v["voxel"] * 2 else ""),
                     warn=smear > v["voxel"] * 2)
         self.r_rays.set_effect("движок трассирует расходящиеся лучи (как у обычного объектива)" if cone
-                               else "телецентрический объектив или проектор далеко")
+                               else "конус проектора проходит линзу Френеля и становится параллельным")
         blur = self.projector_blur.value()
         self.r_blur.set_effect("проектор резкий — кадры как есть" if blur <= 0
                                else f"кадры подрезкиваются под размытие {f(blur, 2)} мм")
@@ -982,7 +1016,7 @@ class ProcessSettingsPanel(QWidget):
                 self.action_sub.setText(tr("уменьшите масштаб или возьмите колбу шире"))
             else:
                 self.action_btn.setText(tr("Дальше — свет →"))
-                self.action_sub.setText(tr("проверка модели пройдена"))
+                self.action_sub.setText("")
         elif page == "light":
             if self._running:
                 self.action_btn.setText(tr("Остановить"))
@@ -1096,7 +1130,7 @@ class ProcessSettingsPanel(QWidget):
             self.load_link.setText(tr("загрузить STL"))
         else:
             self.r_file.label.setText(name)
-            faces_text = f"{faces:,}".replace(",", " ")
+            faces_text = f"{faces:,}".replace(",", " ")
             self.r_file.set_effect(f"{f(size_mm[0])} × {f(size_mm[1])} × {f(size_mm[2])} мм · {faces_text} треугольников")
             self.load_link.setText(tr("заменить"))
             with QSignalBlocker(self.scale):
@@ -1123,8 +1157,9 @@ class ProcessSettingsPanel(QWidget):
                 self.game_box.setVisible(True)
                 self.game_title.setText(tr("Пока считается — засветите деталь сами"))
         # While computing the settings cannot change: make room for the game.
-        for row in (self.r_grid, self.r_frames, self.r_virtual):
+        for row in (self.r_grid, self.r_frames):
             row.setVisible(not running)
+        self.r_virtual.setVisible(not running and self._virtual_ready)
         self.r_comp.setVisible(not running and self.projector_blur.value() > 0)
         self._refresh_action()
 
@@ -1138,6 +1173,7 @@ class ProcessSettingsPanel(QWidget):
 
     def set_virtual_available(self, available: bool) -> None:
         self._virtual_ready = available
+        self.r_virtual.setVisible(available and not self._running)
         if available:
             self._stale = False
             self.r_virtual.set_effect("показать в 3D, что затвердеет")
@@ -1152,6 +1188,7 @@ class ProcessSettingsPanel(QWidget):
             if self.virtual.isChecked():
                 with QSignalBlocker(self.virtual):
                     self.virtual.setChecked(False)
+                self.virtual.setText(tr("Показать"))
                 self.virtualToggled.emit(False)
             self.r_virtual.set_effect("результат устарел — пересчитайте свет" if self._stale
                                       else "появится после расчёта света")

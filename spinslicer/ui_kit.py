@@ -45,7 +45,31 @@ from spinslicer.i18n import tr
 # hints
 # ---------------------------------------------------------------------------
 _hint_labels: "weakref.WeakSet[HintLabel]" = weakref.WeakSet()
-_hints_on = True
+_hints_on = False
+
+
+LINE_STYLES = ("straight", "sketch", "live")      # ruler lines · hand-drawn, still · hand-drawn, alive
+_line_style = "straight"
+_draw_effect_on = False
+
+
+def line_style() -> str:
+    return _line_style
+
+
+def straight_lines() -> bool:
+    return _line_style == "straight"
+
+
+def draw_effect_enabled() -> bool:
+    return _draw_effect_on
+
+
+def set_line_style(style: str) -> None:
+    """straight: ruled lines; sketch: hand-drawn but still; live: hand-drawn and boiling."""
+    global _line_style, _draw_effect_on
+    _line_style = style if style in LINE_STYLES else "sketch"
+    _draw_effect_on = _line_style == "live"
 
 
 def hints_visible() -> bool:
@@ -60,7 +84,7 @@ def set_hints_visible(on: bool) -> None:
 
 
 class HintLabel(QLabel):
-    """Marker note for newcomers (Caveat font, accent colour). Never animated."""
+    """Marker note for newcomers (accent colour). Never animated."""
 
     def __init__(self, text: str = "", parent: Optional[QWidget] = None) -> None:
         super().__init__(tr(text), parent)
@@ -147,10 +171,7 @@ class NavButton(QAbstractButton):
         self.update()
 
     def _fonts(self) -> tuple[QFont, QFont]:
-        title = QFont(theme.FONT_UI)
-        title.setPixelSize(14)
-        title.setWeight(QFont.Weight.DemiBold)
-        return title, theme.mono_font(10)
+        return theme.display_font(13), theme.mono_font(11)
 
     def sizeHint(self) -> QSize:  # noqa: N802 (Qt API name)
         title, sub = self._fonts()
@@ -171,10 +192,13 @@ class NavButton(QAbstractButton):
         self.update()
 
     def _on_toggled(self, checked: bool) -> None:
-        if checked:
+        if checked and _draw_effect_on:
             self._anim.stop()
             self._draw = 0.0
             self._anim.start()
+        else:
+            self._anim.stop()
+            self._draw = 1.0
         self.update()
 
     def _on_draw(self, value: float) -> None:
@@ -185,7 +209,7 @@ class NavButton(QAbstractButton):
         p = theme.current()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        alpha = 1.0 if self.isChecked() else (0.85 if self._hover else 0.6)
+        alpha = 1.0 if self.isChecked() else (0.95 if self._hover else 0.78)
         painter.setOpacity(alpha)
         title, sub = self._fonts()
         x = 12.0
@@ -219,8 +243,12 @@ class NavButton(QAbstractButton):
         if self.isChecked() and self._draw > 0:
             painter.setOpacity(1.0)
             painter.setPen(QPen(QColor(p.accent), 2.6, cap=Qt.PenCapStyle.RoundCap))
-            path = marker_path(8.0, self.width() - 8.0, self.height() - 4.5, len(tr(self._title)))
-            draw_partial(painter, path, self._draw)
+            if straight_lines():
+                y = self.height() - 4.5
+                painter.drawLine(QPointF(8.0, y), QPointF(self.width() - 8.0, y))
+            else:
+                path = marker_path(8.0, self.width() - 8.0, self.height() - 4.5, len(tr(self._title)))
+                draw_partial(painter, path, self._draw)
         painter.end()
 
 
@@ -321,14 +349,14 @@ class Switch(QAbstractButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        off = p.surface_alt if p.dark else "#D9D4CC"
+        off = p.seg_on if p.dark else "#D9D4CC"
         if not self.isEnabled():
             painter.setOpacity(0.45)
             painter.setBrush(QColor(off))
         else:
             painter.setBrush(_mix(off, p.accent, self._t))
         painter.drawRoundedRect(QRectF(0, 0, 40, 24), 12, 12)
-        painter.setBrush(_mix("#FFFFFF" if not p.dark else p.text, p.bg, self._t))
+        painter.setBrush(_mix("#FFFFFF" if not p.dark else p.muted, p.bg, self._t))
         painter.drawEllipse(QRectF(3 + 16 * self._t, 3, 18, 18))
         painter.end()
 
@@ -630,8 +658,9 @@ class EmptyScene(QWidget):
         super().hideEvent(event)
 
     def _tick(self) -> None:
-        self._frame = (self._frame + 1) % 3
-        self.update()
+        if _draw_effect_on:
+            self._frame = (self._frame + 1) % 3
+            self.update()
 
     @staticmethod
     def _stl_path(event: Any) -> str:
@@ -676,10 +705,11 @@ class EmptyScene(QWidget):
             return
         top = max(12.0, (avail - h * 1.2) / 2)
         r = h * 0.36
-        rng = random.Random(7 + self._frame * 31)
+        rng = random.Random(7 + (self._frame if _draw_effect_on else 0) * 31)
 
         def j() -> float:
-            return rng.uniform(-1.1, 1.1)
+            value = rng.uniform(-1.1, 1.1)
+            return 0.0 if straight_lines() else value
         pen = QPen(QColor(p.sketch), 1.8, cap=Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
