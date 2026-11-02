@@ -118,7 +118,7 @@ def _set_windows_app_id() -> None:
 
 
 class _LogoMark(QWidget):
-    """The app logo (brain in a vial), drawn from the SVG so it stays sharp on any screen."""
+    """The app logo (the letter S in a vial), drawn from the SVG so it stays sharp on any screen."""
 
     def __init__(self, path: str, side: int) -> None:
         super().__init__()
