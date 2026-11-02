@@ -5,9 +5,17 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create and publish (e.g. v0.5.4). Leave empty to only build."
+        required: false
+        default: ""
 
 permissions:
   contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -137,7 +145,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ env.RELEASE_TAG }}
         run: |
           $releaseVersion = $env:RELEASE_VERSION -replace '^v', ''
           if ($releaseVersion -notmatch '^(\d+\.\d+\.\d+)') {
@@ -171,7 +179,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         env:
-          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ env.RELEASE_TAG }}
           OUTPUT_DIR: release-assets
         run: bash packaging/build_linux_packages.sh
 
@@ -211,7 +219,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.tag, 'v')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -231,8 +239,10 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: release-assets/*
-          name: SpinSlicer ${{ github.ref_name }}
-          body_path: docs/releases/${{ github.ref_name }}.md
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: SpinSlicer ${{ env.RELEASE_TAG }}
+          body_path: docs/releases/${{ env.RELEASE_TAG }}.md
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           fail_on_unmatched_files: true
