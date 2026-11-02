@@ -1,0 +1,13 @@
+# Text is stored with LF and checked out with LF on every platform, so a Windows
+# checkout does not turn into CRLF noise in diffs (and the git hooks keep running).
+* text=auto eol=lf
+
+# Binary files: never touched.
+*.png binary
+*.ico binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.dll binary
+*.so binary
+*.pdf binary
