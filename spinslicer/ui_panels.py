@@ -691,8 +691,8 @@ class ProcessSettingsPanel(QWidget):
             self._settings.setValue(key, widget.value())  # type: ignore[attr-defined]
 
     def _wire(self) -> None:
-        for widget in (self.diameter, self.glass_thickness, self.output_res, self.resolution):
-            widget.valueChanged.connect(lambda _v: self._sync_field(force=True))   # before the refresh below
+        for geometry in (self.diameter, self.glass_thickness, self.output_res, self.resolution):
+            geometry.valueChanged.connect(lambda _v: self._sync_field(force=True))   # before the refresh below
         self.field_height.valueChanged.connect(self._on_field_edited)
         self.field_height.valueChanged.connect(lambda _v: self._on_setting_changed("ui/field"))
         self.field_height.valueChanged.connect(lambda _v: self.sceneChanged.emit())
