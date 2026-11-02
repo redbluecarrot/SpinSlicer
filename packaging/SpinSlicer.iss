@@ -3,7 +3,7 @@
 #define MyAppExeName "SpinSlicer.exe"
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.5.3"
+  #define MyAppVersion "0.5.4"
 #endif
 
 #ifndef MyAppRelease
