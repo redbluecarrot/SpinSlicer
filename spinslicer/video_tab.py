@@ -104,13 +104,7 @@ class ScreenPreview(QWidget):
         painter.drawRoundedRect(rect.adjusted(-1, -1, 1, 1), 6, 6)
         k = rect.width() / self._geometry.width
         if self._image is not None:
-            # Where the vial walls are on the screen (the frame is exactly as wide as the vial).
             fw, fh = self._true_size or (self._image.width(), self._image.height())
-            vx, _vy = self._geometry.placement(fw, fh)
-            painter.setPen(QPen(QColor(p.dim), 1.0, Qt.PenStyle.DashLine))
-            for wall in (vx, vx + fw):
-                xw = rect.x() + wall * k
-                painter.drawLine(QPointF(xw, rect.top() + 6), QPointF(xw, rect.bottom() - 6))
             x, y = self._geometry.placement(fw, fh)
             target = QRectF(rect.x() + x * k, rect.y() + y * k, fw * k, fh * k)
             painter.save()
