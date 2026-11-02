@@ -13,7 +13,7 @@ authors:
 repository-code: "https://github.com/redbluecarrot/SpinSlicer"
 url: "https://redbluecarrot.github.io/SpinSlicer/"
 license: MIT
-version: 0.5.4
+version: 0.6.0
 date-released: 2026-11-02
 keywords:
   - computed axial lithography
