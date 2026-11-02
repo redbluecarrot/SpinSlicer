@@ -10,6 +10,7 @@ abstract: >-
   projector for the planned dose.
 authors:
   - alias: redbluecarrot
+  - alias: falcxe
 repository-code: "https://github.com/redbluecarrot/SpinSlicer"
 url: "https://redbluecarrot.github.io/SpinSlicer/"
 license: MIT
