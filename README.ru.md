@@ -15,6 +15,24 @@
   <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases/latest"><img src="https://img.shields.io/github/v/release/redbluecarrot/SpinSlicer?color=ff8db5&label=release" alt="Latest release"></a>
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases"><img src="https://img.shields.io/github/downloads/redbluecarrot/SpinSlicer/total?color=ff8db5" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/redbluecarrot/SpinSlicer?color=ff8db5" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-ff8db5" alt="Windows and Linux">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/stargazers"><img src="https://img.shields.io/github/stars/redbluecarrot/SpinSlicer?style=social" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
+  <img src="assets/demo.gif" alt="SpinSlicer: загрузка STL, расчёт кадров проектора, виртуальная печать, вывод кадров на проектор" width="900">
+</p>
+
+<p align="center">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases/latest"><b>Скачать</b></a> ·
+  <a href="https://redbluecarrot.github.io/SpinSlicer/"><b>Страница проекта</b></a>
+</p>
+
+
 SpinSlicer — бесплатный открытый (MIT) слайсер для **компьютерной осевой литографии
 (Computed Axial Lithography, CAL)**, то есть томографической объёмной аддитивной печати (VAM):
 колба со смолой вращается перед проектором, и свет сотен ракурсов складывается так, что
@@ -24,6 +42,9 @@ SpinSlicer — бесплатный открытый (MIT) слайсер для
 Он сделан и для учёных, работающих с CAL, и для тех, кто собирает принтер сам: каждая
 настройка показывает, что она физически меняет, а каждое число берётся из модели оптики.
 Работает на Windows и Linux, готовые установщики — на [странице релизов](https://github.com/redbluecarrot/SpinSlicer/releases).
+
+
+Если SpinSlicer вам пригодился, ⭐ на GitHub поможет другим найти проект.
 
 ## Возможности
 
@@ -58,19 +79,19 @@ SpinSlicer — бесплатный открытый (MIT) слайсер для
 Скачайте готовые сборки со страницы [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Установщик:** скачайте и запустите `SpinSlicer-Setup-0.5.0.exe`
+  - **Установщик:** скачайте и запустите `SpinSlicer-Setup-0.6.0.exe`
   - **Портативная версия:** скачайте `SpinSlicer-windows-x64.zip`, распакуйте и запустите `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.5.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.6.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.5.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.6.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.5.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.6.0-1.x86_64.rpm
   ```
 - **Портативная сборка для Linux:**
   ```bash

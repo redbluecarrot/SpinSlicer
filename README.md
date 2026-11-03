@@ -14,6 +14,25 @@
   <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases/latest"><img src="https://img.shields.io/github/v/release/redbluecarrot/SpinSlicer?color=ff8db5&label=release" alt="Latest release"></a>
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases"><img src="https://img.shields.io/github/downloads/redbluecarrot/SpinSlicer/total?color=ff8db5" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/redbluecarrot/SpinSlicer?color=ff8db5" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-ff8db5" alt="Windows and Linux">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/stargazers"><img src="https://img.shields.io/github/stars/redbluecarrot/SpinSlicer?style=social" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
+  <img src="assets/demo.gif" alt="SpinSlicer: load an STL, compute the projector frames, check the virtual print, play the frames on the projector" width="900">
+</p>
+
+<p align="center">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases/latest"><b>Download</b></a> ·
+  <a href="https://redbluecarrot.github.io/SpinSlicer/"><b>Project page</b></a> ·
+  <a href="#workflow"><b>How it works</b></a>
+</p>
+
+
 SpinSlicer is a free, open-source (MIT) desktop slicer for **Computed Axial
 Lithography (CAL)**, also called tomographic volumetric additive manufacturing
 (VAM): a vial of resin turns in front of a projector, and the light from
@@ -29,6 +48,9 @@ and Linux, with ready installers on the [Releases page](https://github.com/redbl
 **In short:** STL in → optimized projector frames out (PNG or MP4) → virtual print
 of the cured part → timed output on the projector. Engine: FastCAL (exact optics
 of a round vial, all CPU cores); square cuvettes use a SIRT path.
+
+
+If SpinSlicer is useful to you, a ⭐ on GitHub helps other CAL builders find it.
 
 ## Features
 
@@ -77,19 +99,19 @@ See the [release notes](docs/releases/) for what changed in each version.
 Download pre-built binaries directly from [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Installer:** Download and run `SpinSlicer-Setup-0.5.0.exe`
+  - **Installer:** Download and run `SpinSlicer-Setup-0.6.0.exe`
   - **Portable:** Download `SpinSlicer-windows-x64.zip`, extract and run `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.5.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.6.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.5.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.6.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.5.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.6.0-1.x86_64.rpm
   ```
 - **Generic Linux Portable:**
   ```bash

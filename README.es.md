@@ -15,15 +15,36 @@
   <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases/latest"><img src="https://img.shields.io/github/v/release/redbluecarrot/SpinSlicer?color=ff8db5&label=release" alt="Latest release"></a>
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases"><img src="https://img.shields.io/github/downloads/redbluecarrot/SpinSlicer/total?color=ff8db5" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/redbluecarrot/SpinSlicer?color=ff8db5" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-ff8db5" alt="Windows and Linux">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/stargazers"><img src="https://img.shields.io/github/stars/redbluecarrot/SpinSlicer?style=social" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
+  <img src="assets/demo.gif" alt="SpinSlicer: cargar un STL, calcular los fotogramas, revisar la impresión virtual y proyectarlos" width="900">
+</p>
+
+<p align="center">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases/latest"><b>Descargar</b></a> ·
+  <a href="https://redbluecarrot.github.io/SpinSlicer/"><b>Página del proyecto</b></a>
+</p>
+
+
 SpinSlicer prepara impresiones para la fabricación aditiva volumétrica tomográfica
 (VAM / CAL): un vial de resina gira frente a un proyector y la luz de cientos de
 ángulos se suma para curar la pieza entera a la vez. SpinSlicer calcula esos
 fotogramas a partir de un STL, muestra lo que curarán y los proyecta durante
 exactamente la exposición planificada.
 
+
+Si SpinSlicer te resulta útil, una ⭐ en GitHub ayuda a que otros lo encuentren.
+
 ## Características
 
-Versión 0.5.0 — consulta las [notas de la versión](docs/releases/v0.5.0.md) (en inglés y ruso).
+Versión 0.6.0 — consulta las [notas de la versión](docs/releases/v0.6.0.md) (en inglés y ruso).
 
 - **Tres pasos:** *Modelo* (cargar, colocar y comprobar el STL), *Luz* (calcular los
   fotogramas) e *Impresión* (proyectar, guardar MP4 o PNG).
@@ -47,19 +68,19 @@ Versión 0.5.0 — consulta las [notas de la versión](docs/releases/v0.5.0.md) 
 Descarga los binarios desde [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Instalador:** descarga y ejecuta `SpinSlicer-Setup-0.5.0.exe`
+  - **Instalador:** descarga y ejecuta `SpinSlicer-Setup-0.6.0.exe`
   - **Portable:** descarga `SpinSlicer-windows-x64.zip`, extráelo y ejecuta `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.5.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.6.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.5.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.6.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.5.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.6.0-1.x86_64.rpm
   ```
 - **Linux portable genérico:**
   ```bash

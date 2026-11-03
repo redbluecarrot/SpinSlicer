@@ -15,13 +15,34 @@
   <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases/latest"><img src="https://img.shields.io/github/v/release/redbluecarrot/SpinSlicer?color=ff8db5&label=release" alt="Latest release"></a>
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases"><img src="https://img.shields.io/github/downloads/redbluecarrot/SpinSlicer/total?color=ff8db5" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/redbluecarrot/SpinSlicer?color=ff8db5" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-ff8db5" alt="Windows and Linux">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/stargazers"><img src="https://img.shields.io/github/stars/redbluecarrot/SpinSlicer?style=social" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
+  <img src="assets/demo.gif" alt="SpinSlicer：载入 STL、计算投影帧、查看虚拟打印、在投影仪上播放" width="900">
+</p>
+
+<p align="center">
+  <a href="https://github.com/redbluecarrot/SpinSlicer/releases/latest"><b>下载</b></a> ·
+  <a href="https://redbluecarrot.github.io/SpinSlicer/"><b>项目主页</b></a>
+</p>
+
+
 SpinSlicer 为断层扫描式体积增材制造（VAM / CAL）准备打印：装有树脂的
 样品瓶在投影仪前旋转，数百个角度的光叠加起来，使整个零件同时固化。SpinSlicer
 根据 STL 计算这些投影帧，显示它们将固化出什么，并按计划的曝光时间精确地投射。
 
+
+如果 SpinSlicer 对你有帮助，在 GitHub 上点个 ⭐ 能让更多人找到它。
+
 ## 功能
 
-版本 0.5.0 —— 详见[发布说明](docs/releases/v0.5.0.md)（英文和俄文）。
+版本 0.6.0 —— 详见[发布说明](docs/releases/v0.6.0.md)（英文和俄文）。
 
 - **三个步骤：** *模型*（加载、摆放并检查 STL）、*光*（计算投影帧）、*打印*
   （投射到投影仪、保存 MP4 或 PNG）。
@@ -42,19 +63,19 @@ SpinSlicer 为断层扫描式体积增材制造（VAM / CAL）准备打印：装
 可直接从 [Releases](https://github.com/redbluecarrot/SpinSlicer/releases) 下载预编译程序：
 
 - **Windows 10 / 11：**
-  - **安装程序：** 下载并运行 `SpinSlicer-Setup-0.5.0.exe`
+  - **安装程序：** 下载并运行 `SpinSlicer-Setup-0.6.0.exe`
   - **便携版：** 下载 `SpinSlicer-windows-x64.zip`，解压后运行 `SpinSlicer.exe`
 - **Arch Linux / Manjaro：**
   ```bash
-  sudo pacman -U SpinSlicer-0.5.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.6.0-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint：**
   ```bash
-  sudo apt install ./SpinSlicer-0.5.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.6.0-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE：**
   ```bash
-  sudo dnf install ./SpinSlicer-0.5.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.6.0-1.x86_64.rpm
   ```
 - **通用 Linux 便携版：**
   ```bash
