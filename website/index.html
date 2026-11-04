@@ -43,7 +43,7 @@
       "keywords": "computed axial lithography, CAL slicer, volumetric 3D printing, volumetric additive manufacturing, VAM, tomographic 3D printing",
       "author": [
         { "@type": "Person", "name": "redbluecarrot", "url": "https://github.com/redbluecarrot" },
-        { "@type": "Person", "name": "falcxe", "url": "https://github.com/falcxe" }
+        { "@type": "Person", "name": "v0xeII", "url": "https://github.com/v0xeII" }
       ],
       "sameAs": ["https://github.com/redbluecarrot/SpinSlicer"]
     },
@@ -84,92 +84,123 @@ dt{font-weight:650;margin-top:14px}
 dd{margin:4px 0 0}
 footer{margin-top:48px;color:var(--muted);font-size:.9rem}
 code{font-size:.92em}
+#lang{position:fixed;top:12px;right:12px;z-index:5;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:600 .85rem/1 system-ui,sans-serif;cursor:pointer}
+#lang:hover{border-color:var(--pink)}
 </style>
 </head>
 <body>
+<button id="lang" type="button" aria-label="Switch language / Сменить язык">RU</button>
 <main>
 <header>
   <img src="logo.svg" alt="SpinSlicer logo: the letter S in a spinning resin vial seen from above" width="96" height="96">
-  <h1>SpinSlicer<span>Open-source CAL slicer for Computed Axial Lithography</span></h1>
+  <h1 data-ru='SpinSlicer<span>Открытый слайсер для компьютерной осевой литографии (CAL)</span>'>SpinSlicer<span>Open-source CAL slicer for Computed Axial Lithography</span></h1>
 </header>
 
-<p class="lead">SpinSlicer is a free, open-source (MIT) desktop slicer for <strong>Computed Axial
+<p class="lead" data-ru='SpinSlicer — бесплатный настольный слайсер с открытым кодом (MIT) для <strong>компьютерной осевой литографии (CAL)</strong>, она же томографическая объёмная аддитивная печать (VAM). Колба со смолой вращается перед проектором, и свет с сотен ракурсов складывается так, что вся деталь отверждается разом. SpinSlicer считает эти кадры проектора по STL-файлу, показывает, что они отвердят, и проигрывает их на проекторе ровно столько, сколько запланировано.'>SpinSlicer is a free, open-source (MIT) desktop slicer for <strong>Computed Axial
 Lithography (CAL)</strong>, also called tomographic volumetric additive manufacturing (VAM).
 A vial of resin turns in front of a projector, and light from hundreds of angles adds up to cure
 the whole part at once. SpinSlicer computes those projector frames from an STL file, shows what
 they will cure, and plays them on the projector for exactly the planned exposure.</p>
 
 <div class="actions">
-  <a class="btn primary" href="https://github.com/redbluecarrot/SpinSlicer/releases">Download for Windows or Linux</a>
-  <a class="btn" href="https://github.com/redbluecarrot/SpinSlicer">Source code on GitHub</a>
+  <a class="btn primary" href="https://github.com/redbluecarrot/SpinSlicer/releases" data-ru='Скачать для Windows или Linux'>Download for Windows or Linux</a>
+  <a class="btn" href="https://github.com/redbluecarrot/SpinSlicer" data-ru='Исходный код на GitHub'>Source code on GitHub</a>
 </div>
 
-<h2>What it does</h2>
+<h2 data-ru='Что умеет'>What it does</h2>
 <ul>
-  <li><strong>STL to projector frames.</strong> Load, place and check a part, then compute one frame per projection angle (PNG frames or MP4).</li>
-  <li><strong>Physical optics model.</strong> Refraction at the vial (Snell), attenuation (Beer–Lambert), Fresnel losses, the projector's pixel profile, cone of rays and the rotation during a frame.</li>
-  <li><strong>FastCAL engine.</strong> A round vial makes every angle optically the same, so the problem splits into small per-frequency systems; it uses all CPU cores. Square cuvettes use a SIRT path.</li>
-  <li><strong>Virtual print.</strong> The frames as the projector really shows them (8-bit, gamma, contrast) are turned back into dose, and the cured part is shown in 3D next to the model with its match (IoU).</li>
-  <li><strong>Print plan and calibration.</strong> Print time and number of turns from the resin's gel dose, absorption and projector irradiance; an exposure calibration print for a new resin.</li>
-  <li><strong>Projector output, ready to print.</strong> Frames placed 1:1 on the projector screen, one frame row per layer, timed by the clock, and stopped automatically when the planned dose is delivered.</li>
+  <li data-ru='<strong>От STL до кадров проектора.</strong> Загрузите, расположите и проверьте деталь, затем рассчитайте по кадру на каждый угол проекции (PNG-кадры или MP4).'><strong>STL to projector frames.</strong> Load, place and check a part, then compute one frame per projection angle (PNG frames or MP4).</li>
+  <li data-ru='<strong>Физическая модель оптики.</strong> Преломление на колбе (закон Снеллиуса), затухание (Бугер — Ламберт — Бер), потери Френеля, профиль пикселя проектора, конус лучей и вращение за время кадра.'><strong>Physical optics model.</strong> Refraction at the vial (Snell), attenuation (Beer–Lambert), Fresnel losses, the projector's pixel profile, cone of rays and the rotation during a frame.</li>
+  <li data-ru='<strong>Движок FastCAL.</strong> У круглой колбы все углы оптически одинаковы, поэтому задача распадается на небольшие системы по частотам и использует все ядра процессора. Для квадратных кювет есть путь SIRT.'><strong>FastCAL engine.</strong> A round vial makes every angle optically the same, so the problem splits into small per-frequency systems; it uses all CPU cores. Square cuvettes use a SIRT path.</li>
+  <li data-ru='<strong>Виртуальная печать.</strong> Кадры в том виде, как их реально покажет проектор (8 бит, гамма, контраст), переводятся обратно в дозу, и отверждённая деталь показывается в 3D рядом с моделью вместе с совпадением (IoU).'><strong>Virtual print.</strong> The frames as the projector really shows them (8-bit, gamma, contrast) are turned back into dose, and the cured part is shown in 3D next to the model with its match (IoU).</li>
+  <li data-ru='<strong>План печати и калибровка.</strong> Время печати и число оборотов по дозе гелеобразования смолы, поглощению и освещённости проектора; калибровочная печать экспозиции для новой смолы.'><strong>Print plan and calibration.</strong> Print time and number of turns from the resin's gel dose, absorption and projector irradiance; an exposure calibration print for a new resin.</li>
+  <li data-ru='<strong>Вывод на проектор, готовый к печати.</strong> Кадры 1:1 на экране проектора, одна строка кадров на слой, по таймеру, и автоматическая остановка, когда набрана запланированная доза.'><strong>Projector output, ready to print.</strong> Frames placed 1:1 on the projector screen, one frame row per layer, timed by the clock, and stopped automatically when the planned dose is delivered.</li>
 </ul>
 
-<h2>Engine results</h2>
-<p>The FastCAL engine was benchmarked against OSMO, PM, BCLP and classic CAL (filtered back-projection),
+<h2 data-ru='Результаты движка'>Engine results</h2>
+<p data-ru='Движок FastCAL сравнили с OSMO, PM, BCLP и классическим CAL (фильтрованная обратная проекция): каждый планировал одни и те же задания, а оценивали всех на вдвое более мелкой сетке точным лучевым оператором по 8-битным кадрам, как их показывает проектор. На сетке 128 у FastCAL лучшие IoU и ошибка поверхности на каждой тестовой детали; у BCLP и PM остался отрыв не более 0,005 по устойчивости в худшем случае на некоторых деталях. На 2-ядерной машине 2,1 ГГц Benchy считается около 34 с на сетке 256. Подробности и все числа: <a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/engine-judge-2026-10-31.md">отчёт судейства движков</a>.'>The FastCAL engine was benchmarked against OSMO, PM, BCLP and classic CAL (filtered back-projection),
 each planning the same jobs and all judged on a twice finer grid with an exact ray-traced operator, from
 8-bit frames as a projector shows them. At grid 128 FastCAL had the best IoU and surface error on every
 test part; BCLP and PM kept a lead of at most 0.005 in worst-case robustness on some parts. On a 2-core
 2.1 GHz machine a Benchy takes about 34 s at grid 256. Details and all numbers:
 <a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/engine-judge-2026-10-31.md">engine judge report</a>.</p>
 
-<h2>Who it is for</h2>
-<p>Researchers working on computed axial lithography and volumetric additive manufacturing, and
+<h2 data-ru='Для кого'>Who it is for</h2>
+<p data-ru='Исследователям компьютерной осевой литографии и объёмной аддитивной печати, а также мастерам, которые строят свой CAL-принтер для объёмной 3D-печати. Каждая настройка показывает, что она меняет физически, а каждое число получено из модели оптики.'>Researchers working on computed axial lithography and volumetric additive manufacturing, and
 makers building their own CAL / volumetric 3D printer. Every setting shows what it physically
 changes, and every number comes from a model of the optics.</p>
 
-<h2>Requirements</h2>
+<h2 data-ru='Требования'>Requirements</h2>
 <table>
-  <tr><th>Platform</th><td>Windows (installer or single <code>.exe</code>) and Linux x86_64 (<code>.deb</code>, <code>.rpm</code>, Arch package, portable archive)</td></tr>
-  <tr><th>Interface</th><td>English and Russian, day and night themes</td></tr>
-  <tr><th>Download size</th><td>about 280 MB (Windows) to 400 MB (Linux)</td></tr>
-  <tr><th>Memory</th><td>engine about 0.5 GB (Fast), 1.1 GB (Normal), 1.7 GB (Fine), plus about 0.85 GB for the window</td></tr>
-  <tr><th>License</th><td><a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/LICENSE">MIT</a></td></tr>
+  <tr><th data-ru='Платформа'>Platform</th><td data-ru='Windows (установщик или один <code>.exe</code>) и Linux x86_64 (<code>.deb</code>, <code>.rpm</code>, пакет Arch, портативный архив)'>Windows (installer or single <code>.exe</code>) and Linux x86_64 (<code>.deb</code>, <code>.rpm</code>, Arch package, portable archive)</td></tr>
+  <tr><th data-ru='Интерфейс'>Interface</th><td data-ru='английский и русский, дневная и ночная темы'>English and Russian, day and night themes</td></tr>
+  <tr><th data-ru='Размер загрузки'>Download size</th><td data-ru='около 280 МБ (Windows) – 400 МБ (Linux)'>about 280 MB (Windows) to 400 MB (Linux)</td></tr>
+  <tr><th data-ru='Память'>Memory</th><td data-ru='движок около 0,5 ГБ (Fast), 1,1 ГБ (Normal), 1,7 ГБ (Fine), плюс около 0,85 ГБ на окно'>engine about 0.5 GB (Fast), 1.1 GB (Normal), 1.7 GB (Fine), plus about 0.85 GB for the window</td></tr>
+  <tr><th data-ru='Лицензия'>License</th><td data-ru='<a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/LICENSE">MIT</a>'><a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/LICENSE">MIT</a></td></tr>
 </table>
-<p class="note">Memory and timings were measured on a 2-core 2.1 GHz machine with 8 GB RAM on a Benchy test part
+<p class="note" data-ru='Память и время измерены на 2-ядерной машине 2,1 ГГц с 8 ГБ ОЗУ на тестовой детали Benchy (Fast около 10 с, Normal 34 с, Fine 69 с); см. <a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/resources-2026-10-31.md">отчёт о ресурсах</a>.'>Memory and timings were measured on a 2-core 2.1 GHz machine with 8 GB RAM on a Benchy test part
 (Fast about 10 s, Normal 34 s, Fine 69 s); see the
 <a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/resources-2026-10-31.md">resources report</a>.</p>
 
-<h2>Other CAL / VAM software</h2>
+<h2 data-ru='Другие программы для CAL / VAM'>Other CAL / VAM software</h2>
 <ul>
-  <li><a href="https://github.com/computed-axial-lithography/VAMToolbox">VAMToolbox</a> — a Python library for VAM projection optimization (OSMO, BCLP and other methods).</li>
-  <li><a href="https://opencal-org.readthedocs.io/">OpenCAL</a> — an open-source CAL printer with the Tomo print-preparation software.</li>
-  <li><a href="https://github.com/computed-axial-lithography/CAL-software-Matlab">CAL-software-Matlab</a> — the original MATLAB code of the CAL group.</li>
+  <li data-ru='<a href="https://github.com/computed-axial-lithography/VAMToolbox">VAMToolbox</a> — библиотека на Python для оптимизации проекций VAM (OSMO, BCLP и другие методы).'><a href="https://github.com/computed-axial-lithography/VAMToolbox">VAMToolbox</a> — a Python library for VAM projection optimization (OSMO, BCLP and other methods).</li>
+  <li data-ru='<a href="https://opencal-org.readthedocs.io/">OpenCAL</a> — CAL-принтер с открытым кодом и программа подготовки печати Tomo.'><a href="https://opencal-org.readthedocs.io/">OpenCAL</a> — an open-source CAL printer with the Tomo print-preparation software.</li>
+  <li data-ru='<a href="https://github.com/computed-axial-lithography/CAL-software-Matlab">CAL-software-Matlab</a> — оригинальный MATLAB-код группы CAL.'><a href="https://github.com/computed-axial-lithography/CAL-software-Matlab">CAL-software-Matlab</a> — the original MATLAB code of the CAL group.</li>
 </ul>
-<p>SpinSlicer is a ready desktop application covering the whole path from STL to a running
+<p data-ru='SpinSlicer — готовое настольное приложение, которое охватывает весь путь от STL до работающего проектора, а не библиотека для скриптов. Его движок сравнили с OSMO, PM, BCLP и классическим CAL в <a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/engine-judge-2026-10-31.md">отчёте судейства движков</a>.'>SpinSlicer is a ready desktop application covering the whole path from STL to a running
 projector, rather than a library to script. Its engine was compared with OSMO, PM, BCLP and
 classic CAL in the <a href="https://github.com/redbluecarrot/SpinSlicer/blob/main/docs/validation/engine-judge-2026-10-31.md">engine judge report</a>.</p>
 
-<h2>Questions</h2>
+<h2 data-ru='Вопросы'>Questions</h2>
 <dl>
-  <dt>What is a CAL slicer?</dt>
-  <dd>In computed axial lithography there are no layers to slice: the "slicer" computes the set of
+  <dt data-ru='Что такое CAL-слайсер?'>What is a CAL slicer?</dt>
+  <dd data-ru='В компьютерной осевой литографии нарезать нечего: «слайсер» считает набор световых картин, которые проецируются во вращающуюся колбу, так что достаточную для отверждения дозу получает только деталь. SpinSlicer делает это по STL-файлу.'>In computed axial lithography there are no layers to slice: the "slicer" computes the set of
   light patterns projected into the rotating vial so that only the part receives enough dose to cure.
   SpinSlicer does this from an STL file.</dd>
-  <dt>Is SpinSlicer free?</dt>
-  <dd>Yes. It is open source under the MIT license, and the installers are free on the GitHub Releases page.</dd>
-  <dt>Does it work with my printer?</dt>
-  <dd>It targets rotating-vial CAL printers driven by a projector. You describe the vial, the immersion bath,
+  <dt data-ru='SpinSlicer бесплатный?'>Is SpinSlicer free?</dt>
+  <dd data-ru='Да. Код открыт под лицензией MIT, установщики бесплатны на странице GitHub Releases.'>Yes. It is open source under the MIT license, and the installers are free on the GitHub Releases page.</dd>
+  <dt data-ru='Подойдёт ли он моему принтеру?'>Does it work with my printer?</dt>
+  <dd data-ru='Он рассчитан на CAL-принтеры с вращающейся колбой и проектором. Один раз вы описываете колбу, иммерсионную ванну, проектор (разрешение, throw ratio, гамма, освещённость) и смолу, и SpinSlicer планирует печать под эту установку.'>It targets rotating-vial CAL printers driven by a projector. You describe the vial, the immersion bath,
   the projector (resolution, throw ratio, gamma, irradiance) and the resin once, and SpinSlicer plans for that setup.</dd>
-  <dt>How does it compare with VAMToolbox?</dt>
-  <dd>VAMToolbox is a scripting library for projection optimization; SpinSlicer is an end-to-end desktop
+  <dt data-ru='Чем он отличается от VAMToolbox?'>How does it compare with VAMToolbox?</dt>
+  <dd data-ru='VAMToolbox — библиотека для скриптов по оптимизации проекций; SpinSlicer — законченное настольное приложение со своим движком, виртуальной печатью, планом печати и выводом на проектор по таймеру.'>VAMToolbox is a scripting library for projection optimization; SpinSlicer is an end-to-end desktop
   application with its own engine, a virtual print, a print plan and timed projector output.</dd>
 </dl>
 
-<footer>
+<footer data-ru='SpinSlicer 0.6.0 · лицензия MIT · <a href="https://github.com/redbluecarrot/SpinSlicer">github.com/redbluecarrot/SpinSlicer</a> · <a href="https://github.com/redbluecarrot/SpinSlicer/issues">Сообщить о проблеме</a>'>
   SpinSlicer 0.6.0 · MIT license ·
   <a href="https://github.com/redbluecarrot/SpinSlicer">github.com/redbluecarrot/SpinSlicer</a> ·
   <a href="https://github.com/redbluecarrot/SpinSlicer/issues">Report an issue</a>
 </footer>
 </main>
+<script>
+(function () {
+  var RU_TITLE = "SpinSlicer — открытый слайсер для компьютерной осевой литографии (CAL)";
+  var RU_DESC = "SpinSlicer — бесплатный слайсер с открытым кодом (MIT) для компьютерной осевой литографии (CAL) и томографической объёмной 3D-печати: от STL до кадров проектора, виртуальная печать и вывод на проектор по таймеру. Windows и Linux.";
+  var nodes = document.querySelectorAll("[data-ru]");
+  var desc = document.querySelector('meta[name="description"]');
+  var en = { title: document.title, desc: desc.getAttribute("content") };
+  nodes.forEach(function (n) { n.setAttribute("data-en", n.innerHTML); });
+  var btn = document.getElementById("lang");
+  function apply(l) {
+    var ru = l === "ru";
+    nodes.forEach(function (n) { n.innerHTML = n.getAttribute(ru ? "data-ru" : "data-en"); });
+    document.documentElement.lang = l;
+    document.title = ru ? RU_TITLE : en.title;
+    desc.setAttribute("content", ru ? RU_DESC : en.desc);
+    btn.textContent = ru ? "EN" : "RU";
+  }
+  var lang = "";
+  try { lang = localStorage.getItem("lang") || ""; } catch (e) {}
+  if (lang !== "ru" && lang !== "en") lang = /^ru/i.test(navigator.language || "") ? "ru" : "en";
+  apply(lang);
+  btn.addEventListener("click", function () {
+    lang = lang === "ru" ? "en" : "ru";
+    apply(lang);
+    try { localStorage.setItem("lang", lang); } catch (e) {}
+  });
+})();
+</script>
 </body>
 </html>

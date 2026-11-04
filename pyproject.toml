@@ -9,7 +9,7 @@ description = "Open-source CAL slicer: projector frames, virtual print and proje
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 license = { text = "MIT" }
-authors = [{ name = "redbluecarrot" }, { name = "falcxe" }]
+authors = [{ name = "redbluecarrot" }, { name = "v0xeII" }]
 keywords = [
     "computed axial lithography",
     "CAL",
