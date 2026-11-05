@@ -373,6 +373,10 @@ class Viewport3D(QWidget):
             setattr(self.plotter, "render", lambda *args, **kwargs: None)
             if hasattr(self.plotter, "_render"):
                 setattr(self.plotter, "_render", lambda *args, **kwargs: None)
+            # Qt's own paint and resize events reach VTK past render(): without a display
+            # (headless Linux CI) that VTK render can segfault. Nothing is shown offscreen.
+            setattr(self.plotter, "paintEvent", lambda _event: None)
+            setattr(self.plotter, "resizeEvent", lambda _event: None)
         else:
             try:
                 plotter.enable_anti_aliasing("msaa")
