@@ -106,8 +106,6 @@ setup() {
         echo "Не удалось подготовить окружение. Проверь интернет и что установлен python."
         return 1
     fi
-    # Optional C++ SIRT backend (square cuvette only); the app works without it.
-    "$VENV/bin/python" tools/build_sirt.py >/dev/null 2>&1 || echo "(C++ SIRT не собран — не страшно)"
     remember "$VENV/bin/python"
     echo
     echo "Готово! Запускаю SpinSlicer…"

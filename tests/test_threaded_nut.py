@@ -6,7 +6,6 @@ import pytest
 from spinslicer.frame_io import load_manifest
 from spinslicer.slicing_engine import ResinSettings, SliceParams, SlicingEngine
 from spinslicer.threaded_nut import ThreadedNutParameters, create_threaded_nut
-from spinslicer.vam_backend import normalize_sinogram_shape
 
 
 def test_threaded_nut_is_closed_and_centered() -> None:
@@ -41,13 +40,6 @@ def test_threaded_nut_rejects_impossible_wall() -> None:
 
     with pytest.raises(ValueError, match="outer diameter"):
         create_threaded_nut(params)
-
-
-def test_vam_sinogram_layout_is_normalized() -> None:
-    raw = np.zeros((8, 12, 5), dtype=np.float32)
-    normalized = normalize_sinogram_shape(raw, grid_res=8, num_frames=12, num_layers=5)
-
-    assert normalized.shape == (5, 8, 12)
 
 
 def test_slice_params_preserve_internal_voids_by_default() -> None:

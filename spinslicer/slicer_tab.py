@@ -403,7 +403,6 @@ class SlicerTab(QWidget):
             fill_holes=self._process_panel.fill_holes.isChecked(),
             resin=resin,
             output_dir=out_dir,
-            projection_backend=self._process_panel.projection_backend_name(),
             optimizer_iterations=self._process_panel.optimizer_iterations_value(),
             preserve_internal_voids=self._process_panel.preserve_internal_voids.isChecked(),
             container_mode=self._process_panel.container_mode_value(),
@@ -425,9 +424,6 @@ class SlicerTab(QWidget):
         )
         if hasattr(self._process_panel, "frame_rate_hz_value"):
             params.frame_rate_hz = float(self._process_panel.frame_rate_hz_value())
-        vam_conda, vam_environment = self._process_panel.vam_runtime_config()
-        params.vam_conda_executable = vam_conda
-        params.vam_environment_name = vam_environment or params.vam_environment_name
         return params
 
     def _on_generate_clicked(self) -> None:
@@ -518,7 +514,7 @@ class SlicerTab(QWidget):
         params = self._slice_params(out_dir)
         angles = np.deg2rad((params.angle_offset_deg + params.angle_direction
                              * np.linspace(0.0, 360.0, params.num_frames, endpoint=False)) % 360.0)
-        if params.projection_backend != "physical" or not fastcal.supports(params.container_mode, angles):
+        if not fastcal.supports(params.container_mode, angles):
             QMessageBox.warning(self, tr("Калибровка экспозиции"),
                                 tr("Калибровка работает с физическим движком и круглой колбой."))
             return

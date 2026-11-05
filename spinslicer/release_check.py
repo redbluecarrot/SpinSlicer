@@ -13,7 +13,6 @@ import trimesh
 from PyQt6.QtCore import QTimer
 
 from spinslicer.frame_io import FrameRepository, load_manifest
-from spinslicer.optics.optimization import _load_cpp_backend
 from spinslicer.slicing_engine import ResinSettings, SliceParams
 from spinslicer.workers import GenerationWorker, VideoExportWorker
 
@@ -23,7 +22,6 @@ def check_release(app, window, output: Path) -> int:
     report = {"ok": False, "tabs": [type(window.tabs.widget(i)).__name__ for i in range(window.tabs.count())],
               "simulation_loaded": any(name in sys.modules for name in
                                        ("simulator_tab", "simulation_workbench_tab", "guided_simulation_tab", "printer_search"))}
-    report["native_backend"] = _load_cpp_backend() is not None
     workers = []  # Keep all QThreads alive until the controller has joined them.
 
     def finish(error=None):
@@ -35,8 +33,7 @@ def check_release(app, window, output: Path) -> int:
                         and report["tabs"] == ["SlicerTab", "ProjectorTab", "ProcessSettingsPanel"]
                         and report.get("frame_count") == report.get("video_frame_count") == 8
                         and report.get("manifest_complete") is True and report.get("output_forwarded") is True)
-        report["ok"] = (report["ok"] and report.get("dose_verified") is True
-                        and (not getattr(sys, "frozen", False) or report["native_backend"]))
+        report["ok"] = report["ok"] and report.get("dose_verified") is True
         (output / "self-check.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
             window.close()
@@ -92,7 +89,7 @@ def check_release(app, window, output: Path) -> int:
             params = SliceParams(diameter_mm=window.settings_tab.vat_diameter_mm(), grid_res=24,
                                  output_res=32, num_frames=8, fill_holes=True,
                                  resin=ResinSettings(), output_dir=str(output / "frames"),
-                                 projection_backend="physical", optimizer_iterations=3,
+                                 optimizer_iterations=3,
                                  cuvette_outer_mm=window.settings_tab.vat_diameter_mm(),
                                  cuvette_inner_mm=window.settings_tab.vat_diameter_mm()-4.0)
             context = {"source_path": str(source), "transform_matrix": node.matrix().tolist(), "units": "mm"}

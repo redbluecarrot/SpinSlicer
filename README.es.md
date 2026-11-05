@@ -99,7 +99,6 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python tools/build_sirt.py
 ```
 
 Ejecuta la aplicación con:
@@ -126,25 +125,20 @@ VAMToolbox:
 2. generar u optimizar una secuencia de proyecciones sobre ángulos equiespaciados;
 3. aplicar una escala común de proyección y exportar una secuencia de fotogramas para su reproducción.
 
-El backend por defecto de la interfaz traza rayos refractados según Snell a
-través del vial o la cubeta, integra los cruces de vóxeles y la atenuación de
-Beer–Lambert, y después ajusta proyecciones de dosis relativa no negativas con
-SIRT. La biblioteca nativa opcional acelera el mismo cálculo con C++/OpenMP. La
-API de Python conserva además rutas internas de Radon y de compatibilidad
-opcional con VAMToolbox.
+El motor FastCAL traza rayos refractados según Snell, con pérdidas de Fresnel,
+a través de un vial redondo (en aire o en un baño de inmersión), integra la
+atenuación de Beer–Lambert y ajusta proyecciones no negativas para que la dosis
+quede por encima del umbral de gelificación dentro de la pieza y por debajo
+fuera. La rotación del vial hace el operador circulante por bloques, así que el
+cálculo se reduce a FFT y productos matriciales por lotes con numpy/SciPy en
+todos los núcleos de la CPU: no hace falta compilador ni GPU.
 
 La previsualización reconstruye los valores de gris de los PNG exportados e
 informa del RMSE de forma de la dosis relativa tras ajustar una escala común.
-No es una predicción de curado calibrada. La reflexión de Fresnel, la
+No es una predicción de curado calibrada. La
 dispersión, la respuesta de curado del material y la dosis absoluta del hardware
 requieren calibración adicional. Consulta el [modelo y las comprobaciones
-reproducibles](docs/validation/physical-optics-v0.3.1.md).
-
-Las cubetas cuadradas usan un campo de proyección fijo igual a la diagonal
-exterior en cada ángulo. Este valor y el paso físico de píxel se registran en el
-manifiesto; la calibración del proyector debe usar ese valor. Consulta la
-[corrección del campo cuadrado y las comprobaciones de cobertura de
-esquinas](docs/validation/square-detector-field.md).
+reproducibles](docs/validation/engine-judge-2026-10-31.md).
 
 ## Formato de salida
 
@@ -182,8 +176,7 @@ un reproductor pueda consumir una ejecución. Las carpetas planas heredadas con
 | `spinslicer/threaded_nut.py` | Generador paramétrico heredado de tuercas, conservado por compatibilidad de API. |
 | `spinslicer/ui_panels.py` | Ajustes de impresora/proceso y controles compactos de transformación del modelo. |
 | `spinslicer/slicing_engine.py` | Rasterización de secciones, planificación de proyecciones y exportación PNG verificada. |
-| `spinslicer/optics/` | Rayos de Snell, integrales exactas de trayectoria por vóxel y SIRT de dosis relativa no negativa. |
-| `spinslicer/vam_backend.py` | Adaptador opcional de VAMToolbox CAL y normalización del diseño del sinograma. |
+| `spinslicer/optics/` | Motor FastCAL, rayos de Snell y la matriz de referencia exacta con la que los tests comprueban FastCAL. |
 | `spinslicer/video_tab.py` | Reproducción de fotogramas y exportación a MP4. |
 | `spinslicer/frame_io.py` | Almacenamiento validado de conjuntos de fotogramas, metadatos y manifiestos. |
 | `spinslicer/profiles.py` | Ajustes validados de máquina y resina registrados con cada ejecución. |

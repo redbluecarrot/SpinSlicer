@@ -41,7 +41,7 @@ and Linux, with ready installers on the [Releases page](https://github.com/redbl
 
 **In short:** STL in → optimized projector frames out (PNG or MP4) → virtual print
 of the cured part → timed output on the projector. Engine: FastCAL (exact optics
-of a round vial, all CPU cores); square cuvettes use a SIRT path.
+of a round vial in air or in an immersion bath, all CPU cores, pure Python).
 
 
 If SpinSlicer is useful to you, a ⭐ on GitHub helps other CAL builders find it.
@@ -125,7 +125,6 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python tools/build_sirt.py
 ```
 
 Run the application with:
@@ -147,17 +146,13 @@ The engine follows the usual stages of Tomo and VAMToolbox:
 3. apply one common gain, encode gray levels for the projector's gamma once, and
    export the frames; then run the virtual print and the print plan.
 
-FastCAL needs a round vial and equally spaced angles over a full turn. Square
-cuvettes use the sparse SIRT path (`optics/optimization.py`, optional C++/OpenMP
-library); the Python API also keeps the Radon and VAMToolbox paths.
+FastCAL needs a round vial (in air or in an immersion bath) and equally spaced
+angles over a full turn. It is pure Python: numpy and SciPy FFTs plus batched
+BLAS products, split across all CPU cores; no compiler and no GPU are needed.
 
 The dose model is relative: the absolute print time depends on the resin data
 and the projector's irradiance you enter, and on how well they are measured. The
 exposure calibration print is the way to pin it down for a new resin.
-
-Square cuvettes use a fixed projection field equal to the outer diagonal at
-every angle. See the [square-field correction and corner-coverage
-checks](docs/validation/square-detector-field.md).
 
 ## Performance
 
@@ -209,7 +204,7 @@ A run is published only after every PNG and the metadata pass validation.
 | `spinslicer/engine_process.py`, `spinslicer/workers.py` | The compute process and background workers. |
 | `spinslicer/slicing_engine.py`, `spinslicer/voxelizer.py` | Voxelization, planning, frame export. |
 | `spinslicer/optics/fastcal.py` | FastCAL engine for round vials. |
-| `spinslicer/optics/optimization.py`, `spinslicer/optics/ray_tracing.py` | Sparse SIRT path (square cuvettes) and ray tracing. |
+| `spinslicer/optics/system_matrix.py`, `spinslicer/optics/ray_tracing.py` | Exact sparse reference matrix that the tests check FastCAL against, and ray tracing. |
 | `spinslicer/optics/presharpen.py` | Compensation of the projector's row blur. |
 | `spinslicer/virtual_print.py`, `spinslicer/print_plan.py`, `spinslicer/calibration.py` | Virtual print, print time, exposure calibration. |
 | `spinslicer/pixel_game.py` | Mini-games shown while frames are computed. |

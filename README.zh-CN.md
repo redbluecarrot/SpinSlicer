@@ -94,7 +94,6 @@ python -m venv .venv
 # source .venv/bin/activate
 
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python tools/build_sirt.py
 ```
 
 运行应用：
@@ -117,16 +116,14 @@ python SpinSlicer.py
 2. 在等间隔角度上生成或优化投影序列；
 3. 应用统一的投影缩放，并导出用于播放的帧序列。
 
-界面默认后端会追踪经小瓶或比色皿并按斯涅尔定律折射的光线，对体素穿越和
-比尔–朗伯衰减进行积分，然后用 SIRT 拟合非负的相对剂量投影。可选的原生库使用
-C++/OpenMP 加速同一计算。Python API 还保留了内部 Radon 路径和可选的 VAMToolbox 兼容路径。
+FastCAL 引擎追踪经圆形小瓶（空气中或浸没浴中）按斯涅尔定律折射、并计入菲涅耳损耗的光线，
+对比尔–朗伯衰减进行积分，并拟合非负投影，使零件内部剂量高于凝胶阈值、外部低于阈值。
+小瓶旋转使算子成为块循环矩阵，因此计算归结为 numpy/SciPy 的 FFT 和批量矩阵乘法，
+在所有 CPU 核心上运行：不需要编译器，也不需要 GPU。
 
 预览会根据导出的 PNG 灰度值重建，并在拟合统一缩放后报告相对剂量形状 RMSE。
-这不是经过校准的固化预测。菲涅耳反射、散射、材料固化响应和硬件绝对剂量都需要额外校准。
-参见[模型与可复现检查](docs/validation/physical-optics-v0.3.1.md)。
-
-方形比色皿在每个角度都使用等于外部对角线的固定投影视场。该跨度和物理像素间距会记录在
-清单中；投影仪校准必须使用该跨度。参见[方形视场校正与角部覆盖检查](docs/validation/square-detector-field.md)。
+这不是经过校准的固化预测。散射、材料固化响应和硬件绝对剂量都需要额外校准。
+参见[模型与可复现检查](docs/validation/engine-judge-2026-10-31.md)。
 
 ## 输出格式
 
@@ -160,8 +157,7 @@ output_frames/
 | `spinslicer/threaded_nut.py` | 为保持 API 兼容而保留的旧版参数化螺母生成器。 |
 | `spinslicer/ui_panels.py` | 打印机/工艺设置和紧凑的模型变换控件。 |
 | `spinslicer/slicing_engine.py` | 网格截面光栅化、投影规划和经验证的 PNG 导出。 |
-| `spinslicer/optics/` | 斯涅尔光线、精确体素路径积分和非负相对剂量 SIRT。 |
-| `spinslicer/vam_backend.py` | 可选的 VAMToolbox CAL 适配器和正弦图布局归一化。 |
+| `spinslicer/optics/` | FastCAL 引擎、斯涅尔光线，以及测试用来校验 FastCAL 的精确参考矩阵。 |
 | `spinslicer/video_tab.py` | 帧播放和 MP4 导出。 |
 | `spinslicer/frame_io.py` | 经验证的帧集存储、元数据和清单。 |
 | `spinslicer/profiles.py` | 随每次投影运行记录的经验证的设备与树脂设置。 |

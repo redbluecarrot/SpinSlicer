@@ -623,7 +623,6 @@ class CALSlicerMainWindow(QMainWindow):
         self._log_panel.appendPlainText(f"[{stamp}] {text}")
 
     def closeEvent(self, event) -> None:  # noqa: N802 (имя метода задано Qt)
-        self.settings_tab.shutdown()
         self.projector_tab.stop_projector()
         if self._job_controller.shutdown():
             self.slicer_tab.viewport.shutdown()

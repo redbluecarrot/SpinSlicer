@@ -9,7 +9,7 @@ from spinslicer.optics.fastcal import (
     optimize_projections_fast,
     supports,
 )
-from spinslicer.optics.optimization import build_system_matrix, optimize_projections_sirt_volume
+from spinslicer.optics.system_matrix import build_system_matrix
 
 N, NT, SPAN, L_OUT, L_IN = 64, 72, 60.0, 60.0, 56.0
 
@@ -48,14 +48,13 @@ def test_adjoint_is_exact():
     assert abs(lhs - rhs) <= 1e-4 * abs(lhs)
 
 
-def test_engine_beats_sirt_on_thresholded_print_metric():
+def test_engine_prints_the_part_under_the_exact_reference_dose():
     angles = np.linspace(0, 2 * np.pi, NT, endpoint=False)
     target = np.repeat(_target()[:, :, None], 6, axis=2)
     kwargs = dict(L_out=L_OUT, L_in=L_IN, n_air=1.0, n_glass=1.51, n_liquid=1.45, n_resin=1.50,
                   alpha=0.0, grid_res=N, grid_span_mm=SPAN, container_mode=2)
     fast = optimize_projections_fast(target, angles, iterations=15, **kwargs)
-    sirt = optimize_projections_sirt_volume(target, angles, iterations=8, **kwargs)
-    assert fast.shape == sirt.shape == (6, N, NT)
+    assert fast.shape == (6, N, NT)
     assert np.isfinite(fast).all() and fast.min() >= 0 and np.isclose(fast.max(), 1)
     _, AT = build_system_matrix(angles, N, N, SPAN, L_OUT, L_IN, 1.0, 1.51, 1.45, 1.50, 0.0, 2)
 
@@ -65,7 +64,6 @@ def test_engine_beats_sirt_on_thresholded_print_metric():
         return max(np.count_nonzero((dose >= t) & part) / np.count_nonzero((dose >= t) | part)
                    for t in np.linspace(dose.max() * 0.05, dose.max(), 200))
 
-    assert best_iou(fast) > best_iou(sirt)
     assert best_iou(fast) > 0.95
 
 

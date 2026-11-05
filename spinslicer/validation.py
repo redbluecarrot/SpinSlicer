@@ -80,7 +80,6 @@ def validate_slice_parameters(
     num_frames: Any,
     resin: Any,
     fill_holes: Any = True,
-    projection_backend: Any = "internal",
     optimizer_iterations: Any = 8,
     preserve_internal_voids: Any = True,
     frame_rate_hz: Any = 24.0,
@@ -128,10 +127,6 @@ def validate_slice_parameters(
     if not 0.0 <= threshold <= 100.0:
         raise ValidationError("threshold must be between 0 and 100.")
 
-    if projection_backend not in {"internal", "auto", "vamtoolbox", "physical"}:
-        raise ValidationError(
-            "projection_backend must be one of: internal, auto, vamtoolbox, physical."
-        )
     iterations = _integer(optimizer_iterations, "optimizer_iterations")
     if not 1 <= iterations <= 100:
         raise ValidationError("optimizer_iterations must be between 1 and 100.")
@@ -219,22 +214,16 @@ def estimate_slicing_memory(
     layers: int,
     num_frames: int,
     output_res: int | None = None,
-    projection_backend: str = "internal",
     frame_height_px: int | None = None,
-    fastcal: bool = False,
 ) -> int:
-    """Estimate peak buffers used by forward slicing and PNG rendering.
+    """Estimate the peak memory of one FastCAL job and its PNG export.
 
-    ``fastcal`` is the round-vial physical path: a uint8 target, a float16
-    frame store and one rotation-symmetric operator instead of sparse matrices.
+    A uint8 target, a float16 frame store and one rotation-symmetric operator.
     """
 
     grid = max(1, int(grid_res))
     nz = max(1, int(layers))
     frames = max(1, int(num_frames))
-    float_bytes = 4
-    slices = grid * grid * nz * float_bytes
-    sinograms = nz * grid * frames * float_bytes
     anti_alias = (grid * ANTI_ALIAS_FACTOR) ** 2
     output_buffers = 0
     if output_res is not None:
@@ -246,29 +235,22 @@ def estimate_slicing_memory(
         # export, so count two output-sized buffers before adding headroom.
         output_buffers = output_pixels * (4 + 1)
     workspace = 32 * 1024**2
-    if projection_backend == "physical" and fastcal:
-        # Operator M: (frames/2+1) x N bins x Q polar cells, complex64; Q was
-        # measured as ~0.33 N + 0.0012 N^2 for the default vial optics. The
-        # half-resolution start engine and solver temporaries double it.
-        # Measured peak RSS: 491 / 781 / 1421 MiB at grid 256 / 384 / 512.
-        polar = 0.33 * grid + 0.0012 * grid * grid
-        from spinslicer.optics.fastcal import detector_bins
-        bins = detector_bins(grid, int(output_res or grid))
-        operator = (frames // 2 + 1) * bins * polar * 8 * 2.0
-        target = grid * grid * nz                      # uint8 coverage
-        frames_store = nz * bins * frames * 2          # float16 frames
-        # Solver batches: the engine takes up to a fifth of the free RAM for wider batches and
-        # falls back to 160 MB when memory is short, so the guaranteed minimum is counted.
-        batch = 160 * 1024**2
-        runtime = 192 * 1024**2                        # interpreter, numpy, mesh, caches
-        return int((target + frames_store + anti_alias + output_buffers + workspace) * 1.5
-                   + operator + batch + runtime)
-    matrices = 0
-    if projection_backend == "physical":
-        # Exact grid traversal crosses at most 2*N+1 segments per ray.
-        # Three CSR payloads conservatively cover assembly and transposition.
-        matrices = frames * grid * (2 * grid + 1) * 24
-    return int((slices + sinograms + anti_alias + output_buffers + workspace) * 1.5 + matrices)
+    # Operator M: (frames/2+1) x N bins x Q polar cells, complex64; Q was
+    # measured as ~0.33 N + 0.0012 N^2 for the default vial optics. The
+    # half-resolution start engine and solver temporaries double it.
+    # Measured peak RSS: 491 / 781 / 1421 MiB at grid 256 / 384 / 512.
+    polar = 0.33 * grid + 0.0012 * grid * grid
+    from spinslicer.optics.fastcal import detector_bins
+    bins = detector_bins(grid, int(output_res or grid))
+    operator = (frames // 2 + 1) * bins * polar * 8 * 2.0
+    target = grid * grid * nz                      # uint8 coverage
+    frames_store = nz * bins * frames * 2          # float16 frames
+    # Solver batches: the engine takes up to a fifth of the free RAM for wider batches and
+    # falls back to 160 MB when memory is short, so the guaranteed minimum is counted.
+    batch = 160 * 1024**2
+    runtime = 192 * 1024**2                        # interpreter, numpy, mesh, caches
+    return int((target + frames_store + anti_alias + output_buffers + workspace) * 1.5
+               + operator + batch + runtime)
 
 
 def preflight_mesh(
@@ -288,7 +270,6 @@ def preflight_mesh(
             params.num_frames,
             params.resin,
             params.fill_holes,
-            getattr(params, "projection_backend", "internal"),
             getattr(params, "optimizer_iterations", 8),
             getattr(params, "preserve_internal_voids", True),
             getattr(params, "frame_rate_hz", 24.0),
@@ -334,16 +315,14 @@ def preflight_mesh(
     diameter = float(params.diameter_mm)
     grid = int(params.grid_res)
     frames = int(params.num_frames)
-    projection_span = diameter
-    if getattr(params, "projection_backend", "internal") == "physical":
-        try:
-            projection_span = detector_span_mm(
-                float(getattr(params, "cuvette_outer_mm", diameter)),
-                getattr(params, "container_mode", 0),
-            )
-        except ValueError as exc:
-            errors.append(str(exc))
-            return PreflightReport(False, errors, warnings, triangle_count, bounds_mm, 0, 0)
+    try:
+        projection_span = detector_span_mm(
+            float(getattr(params, "cuvette_outer_mm", diameter) or diameter),
+            getattr(params, "container_mode", 0),
+        )
+    except ValueError as exc:
+        errors.append(str(exc))
+        return PreflightReport(False, errors, warnings, triangle_count, bounds_mm, 0, 0)
     pitch = min(diameter / grid, projection_span / int(params.output_res))
     estimated_layers = estimate_layer_count(float(bounds[0, 2]), float(bounds[1, 2]), pitch)
     if estimated_layers > MAX_LAYERS:
@@ -366,10 +345,7 @@ def preflight_mesh(
 
     estimated_memory = estimate_slicing_memory(
         grid, estimated_layers, frames, output_res=int(params.output_res),
-        projection_backend=getattr(params, "projection_backend", "internal"),
         frame_height_px=target_height,
-        # Frames are evenly spaced over a full turn, so a round vial runs FastCAL.
-        fastcal=getattr(params, "container_mode", 0) in (0, 2),
     )
     if estimated_memory > MAX_ESTIMATED_MEMORY_BYTES:
         errors.append(
@@ -379,16 +355,12 @@ def preflight_mesh(
 
     if vat_height_mm is not None:
         vat_height = _finite_number(vat_height_mm, "vat_height_mm")
-        physical = getattr(params, "projection_backend", "internal") == "physical"
-        resin_diameter = float(getattr(params, "cuvette_inner_mm", diameter)) if physical else diameter
-        if physical and getattr(params, "container_mode", 0) == 1:
-            radial = np.max(np.abs(vertices[:, :2]), axis=1)
-        else:
-            radial = np.hypot(vertices[:, 0], vertices[:, 1])
+        resin_diameter = float(getattr(params, "cuvette_inner_mm", diameter) or diameter)
+        radial = np.hypot(vertices[:, 0], vertices[:, 1])
         max_radius = float(np.max(radial)) if len(radial) else 0.0
         if max_radius > resin_diameter / 2.0 + 1e-6:
             errors.append(
-                f"Model exceeds the resin radius/half-width ({max_radius:.2f} mm > {resin_diameter / 2.0:.2f} mm)."
+                f"Model exceeds the resin radius ({max_radius:.2f} mm > {resin_diameter / 2.0:.2f} mm)."
             )
         z_abs = max(abs(float(bounds[0, 2])), abs(float(bounds[1, 2])))
         if z_abs > vat_height / 2.0 + 1e-6:

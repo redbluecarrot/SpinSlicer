@@ -50,7 +50,7 @@ def test_print_plan_takes_its_exposure_from_the_virtual_print():
 def test_slicing_writes_a_virtual_print_that_matches_the_part(tmp_path):
     mesh = trimesh.creation.box(extents=(14.0, 10.0, 4.0))
     params = SliceParams(diameter_mm=60.0, grid_res=64, output_res=64, num_frames=72, fill_holes=True,
-                         resin=ResinSettings(), output_dir=str(tmp_path), projection_backend="physical",
+                         resin=ResinSettings(), output_dir=str(tmp_path),
                          optimizer_iterations=15, container_mode=2, cuvette_outer_mm=60.0,
                          cuvette_inner_mm=56.0, alpha=0.01, resin_gel_dose_mj_cm3=100.0,
                          projector_irradiance_mw_cm2=10.0)

@@ -28,7 +28,7 @@ def test_ladder_geometry_fits_and_pillars_are_told_apart_by_height():
 
 def test_ladder_job_plans_increasing_pillar_doses(tmp_path):
     params = SliceParams(diameter_mm=60.0, grid_res=96, output_res=96, num_frames=120, fill_holes=True,
-                         resin=ResinSettings(), output_dir=str(tmp_path), projection_backend="physical",
+                         resin=ResinSettings(), output_dir=str(tmp_path),
                          optimizer_iterations=20, container_mode=2, cuvette_outer_mm=60.0, cuvette_inner_mm=56.0,
                          alpha=0.01, resin_gel_dose_mj_cm3=100.0, projector_irradiance_mw_cm2=10.0)
     ladder = Ladder()

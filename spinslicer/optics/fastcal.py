@@ -11,7 +11,7 @@ A DFT along that index splits it into ~N_theta/2 small dense matrices M_k
 (detector bins x radial cells).
 
 * Rays are traced for ONE angle only. No full sparse system matrix is stored
-  (the 256 x 360 SIRT matrix pair needs ~315 MiB; M_k needs ~66 MiB).
+  (the 256 x 360 sparse matrix pair needs ~315 MiB; M_k needs ~66 MiB).
 * Forward and back projection are FFTs plus batched dense products (BLAS).
 * The unconstrained weighted least-squares problem is solved exactly per
   frequency. This is a refraction- and attenuation-exact analogue of FBP
@@ -36,7 +36,7 @@ every 16th layer from scratch, then the layers between them start from
 interpolated neighbour solutions. Layers whose geometry differs from that
 interpolation are detected and solved from scratch.
 
-Units and conventions are the same as optics.optimization: millimetres;
+Units and conventions are the same as optics.system_matrix: millimetres;
 target volume [x, y, z] with flat pixel index x*N + y; output projections
 [z, detector, angle] normalised to a global maximum of 1. The model is a
 relative linear dose. It is not a calibrated cure prediction.
@@ -401,7 +401,7 @@ class CirculantVialProjector:
     """A: polar field f[j, q, z] -> projections P[m, s, z]  (and exact A^T).
 
     angle_m = angle0 + direction * m * 2*pi / n_theta. With LEGACY_OPTICS
-    the rays are exactly those of the sparse SIRT matrix builder.
+    the rays are exactly those of the reference matrix (optics.system_matrix).
     """
 
     def __init__(self, n_theta: int, num_s: int, L_out: float, L_in: float,
@@ -1296,7 +1296,7 @@ def optimize_projections_fast(
     num_s: Optional[int] = None, engine_out: Optional[list] = None,
     optics: Optional[OpticsOptions] = None,
 ) -> np.ndarray:
-    """Drop-in replacement for optimize_projections_sirt_volume (round vials).
+    """Plan projections for a whole target volume in a round vial.
 
     `iterations` is used for layers solved from scratch. Warm-started layers
     use the shorter tail of DEFAULT_SCHEDULE.

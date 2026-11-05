@@ -4,7 +4,7 @@ ui_panels.py
 Виджеты настроек и управления моделью.
 
   ProcessSettingsPanel — настройки принтера и процесса, вынесенные в
-    отдельную вкладку приложения, включая опциональную установку VAMToolbox.
+    отдельную вкладку приложения.
   TransformToolbar — компактное управление gizmo над 3D-вьюпортом.
   ScaleControls — компактная Fusion-style панель процентов и размеров.
   ObjectPanel — прежняя расширенная панель объекта, оставленная для обратной
@@ -16,11 +16,10 @@ ui_panels.py
 from __future__ import annotations
 
 import math
-import subprocess
 from typing import Callable, Optional, Sequence
 
 import numpy as np
-from PyQt6.QtCore import QProcess, QSettings, QSignalBlocker, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QSettings, QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
@@ -32,7 +31,6 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -65,13 +63,6 @@ from spinslicer.projector_canvas import (
 from spinslicer.sketch_scene import SceneParams
 from spinslicer.theme import AXIS_X, AXIS_Y, AXIS_Z
 from spinslicer.ui_kit import Metric, Segmented, SettingRow, Stepper, Switch, section_head
-from spinslicer.vam_backend import (
-    DEFAULT_VAM_ENV_NAME,
-    build_vam_install_command,
-    build_vam_probe_command,
-    find_conda_executable,
-    is_vamtoolbox_available,
-)
 
 
 def _scroll_wrap(inner: QWidget) -> QScrollArea:
@@ -250,17 +241,6 @@ class ProcessSettingsPanel(QWidget):
         self.setObjectName("sidePanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._settings = QSettings(APP_ORG, APP_TITLE)
-        self._vam_process: Optional[QProcess] = None
-        self._vam_process_stage = ""
-        self._vam_conda_executable = str(self._settings.value("vam/conda_executable", "") or "")
-        if not self._vam_conda_executable:
-            self._vam_conda_executable = find_conda_executable() or ""
-        self._vam_environment_name = str(
-            self._settings.value("vam/environment_name", DEFAULT_VAM_ENV_NAME) or DEFAULT_VAM_ENV_NAME)
-        ready_value = self._settings.value("vam/ready", False)
-        self._vam_ready = str(ready_value).lower() in {"1", "true", "yes"}
-        self.vam_status = QLabel()
-        self.vam_install_btn = QPushButton()
 
         self._page = "model"
         self._has_model = False
@@ -770,18 +750,8 @@ class ProcessSettingsPanel(QWidget):
     def vat_diameter_mm(self) -> float:
         return self.diameter.value()
 
-    def projection_backend_name(self) -> str:
-        return "physical"
-
     def optimizer_iterations_value(self) -> int:
         return self.optimizer_iterations.value_int()
-
-    def vam_runtime_config(self) -> tuple[str, str]:
-        if is_vamtoolbox_available():
-            return "", ""
-        if self._vam_ready and self._vam_conda_executable:
-            return self._vam_conda_executable, self._vam_environment_name
-        return "", ""
 
     def has_bath(self) -> bool:
         return self.placement.value_int() == 1
@@ -1237,153 +1207,6 @@ class ProcessSettingsPanel(QWidget):
             self.set_fit(self._fits, self._fit_text)
         self.game.update()
         self.game_print.update()
-
-    def shutdown(self) -> None:
-        """Stop an in-progress optional dependency installation."""
-
-        process = self._vam_process
-        if process is None or process.state() == QProcess.ProcessState.NotRunning:
-            return
-        process.terminate()
-        if not process.waitForFinished(1000):
-            process.kill()
-            process.waitForFinished(1000)
-
-    def _refresh_vam_status(self) -> None:
-        if is_vamtoolbox_available():
-            self._vam_ready = True
-            self.vam_status.setText("VAMToolbox доступен в текущем Python-окружении.")
-            self.vam_install_btn.setText("VAMToolbox уже доступен")
-            self.vam_install_btn.setEnabled(False)
-            return
-
-        if self._vam_ready and self._vam_conda_executable:
-            self.vam_status.setText(
-                f"Проверенное окружение: {self._vam_environment_name}. "
-                "Его можно выбрать как движок проекций."
-            )
-            self.vam_install_btn.setText("Проверить окружение VAMToolbox")
-            self.vam_install_btn.setEnabled(False)
-            QTimer.singleShot(0, self._start_vam_probe)
-            return
-
-        if self._vam_conda_executable:
-            self.vam_status.setText(
-                "Conda найдена. Установщик создаст отдельное окружение "
-                f"«{self._vam_environment_name}» и не изменит внутренний Radon."
-            )
-            self.vam_install_btn.setEnabled(True)
-        else:
-            self.vam_status.setText(
-                "Conda не найдена. Установите Miniconda или Anaconda, "
-                "перезапустите приложение и повторите установку."
-            )
-            self.vam_install_btn.setEnabled(False)
-
-    def _qprocess_argv(self, command: list[str]) -> tuple[str, list[str]]:
-        executable = command[0]
-        if executable.lower().endswith((".bat", ".cmd")):
-            return "cmd.exe", ["/d", "/s", "/c", subprocess.list2cmdline(command)]
-        return executable, command[1:]
-
-    def _run_vam_process(self, command: list[str], stage: str) -> None:
-        if self._vam_process is not None:
-            return
-        program, arguments = self._qprocess_argv(command)
-        process = QProcess(self)
-        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        process.readyReadStandardOutput.connect(self._on_vam_output)
-        process.finished.connect(self._on_vam_process_finished)
-        self._vam_process = process
-        self._vam_process_stage = stage
-        process.start(program, arguments)
-
-    def _on_vam_output(self) -> None:
-        process = self._vam_process
-        if process is None:
-            return
-        raw = process.readAllStandardOutput().data().decode("utf-8", errors="replace")
-        lines = [line.strip() for line in raw.splitlines() if line.strip()]
-        if lines:
-            self.vam_status.setText(lines[-1][-240:])
-
-    def _on_vam_process_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
-        process = self._vam_process
-        stage = self._vam_process_stage
-        self._vam_process = None
-        self._vam_process_stage = ""
-        if process is not None:
-            process.deleteLater()
-
-        if stage == "install":
-            if exit_code != 0:
-                self._vam_ready = False
-                self.vam_status.setText(
-                    "Установка VAMToolbox завершилась с ошибкой. "
-                    "Проверьте вывод команды и каналы Conda."
-                )
-                self.vam_install_btn.setEnabled(bool(self._vam_conda_executable))
-                return
-            self.vam_status.setText("Проверяю установленный VAMToolbox...")
-            self._start_vam_probe()
-            return
-
-        if stage == "probe":
-            self._vam_ready = exit_code == 0
-            self._settings.setValue("vam/ready", self._vam_ready)
-            self._settings.setValue("vam/conda_executable", self._vam_conda_executable)
-            self._settings.setValue("vam/environment_name", self._vam_environment_name)
-            if self._vam_ready:
-                self.vam_status.setText(
-                    f"VAMToolbox установлен в окружении «{self._vam_environment_name}»."
-                )
-                self.vam_install_btn.setText("VAMToolbox установлен")
-                self.vam_install_btn.setEnabled(False)
-                self.settingsChanged.emit()
-            else:
-                self.vam_status.setText(
-                    "Не удалось импортировать VAMToolbox из окружения. "
-                    "Переустановите его или используйте внутренний Radon."
-                )
-                self.vam_install_btn.setEnabled(bool(self._vam_conda_executable))
-
-    def _start_vam_install(self) -> None:
-        if self._vam_process is not None:
-            return
-        self._vam_conda_executable = find_conda_executable() or self._vam_conda_executable
-        if not self._vam_conda_executable:
-            QMessageBox.information(
-                self,
-                tr("VAMToolbox — альтернативный движок"),
-                "Установите Miniconda или Anaconda с официального сайта, "
-                "добавьте Conda в PATH и перезапустите приложение.",
-            )
-            return
-
-        self._vam_ready = False
-        self.vam_install_btn.setEnabled(False)
-        self.vam_status.setText(
-            f"Устанавливаю VAMToolbox в окружение «{self._vam_environment_name}». "
-            "Это может занять несколько минут..."
-        )
-        self._run_vam_process(
-            build_vam_install_command(
-                self._vam_conda_executable,
-                self._vam_environment_name,
-            ),
-            "install",
-        )
-
-    def _start_vam_probe(self) -> None:
-        if self._vam_process is not None or not self._vam_conda_executable:
-            return
-        self._run_vam_process(
-            build_vam_probe_command(
-                self._vam_conda_executable,
-                self._vam_environment_name,
-            ),
-            "probe",
-        )
 
 
 class ScaleControls(QFrame):

@@ -7,7 +7,7 @@ slicing_engine.py
 математика и обработка изображений. Он принимает уже готовый (трансформированный)
 trimesh.Trimesh и параметры, а сообщает о прогрессе через простой callback.
 
-Сечения растеризуются в порядке [x, y, z]. Физический backend подбирает
+Сечения растеризуются в порядке [x, y, z]. FastCAL (optics/fastcal.py) подбирает
 неотрицательные проекции для относительной линейной дозы. Проверка дозы
 использует экспортированные PNG; модель отверждения без калибровки не задаётся.
 """
@@ -23,13 +23,13 @@ import numpy as np
 import trimesh
 from PIL import Image, ImageDraw
 from scipy.ndimage import binary_fill_holes
-from skimage.transform import radon
 from skimage.transform import resize as sk_resize
 
 from spinslicer.constants import (
     ANTI_ALIAS_FACTOR,
     DEFAULT_ANGLE_OFFSET_DEG,
     DEFAULT_FRAME_RATE_HZ,
+    DEFAULT_GLASS_WALL_MM,
     VAT_HEIGHT_RATIO,
 )
 from spinslicer.frame_io import (
@@ -55,54 +55,9 @@ from spinslicer.validation import (
     validate_slice_parameters,
     validate_stl_path,
 )
-from spinslicer.vam_backend import (
-    DEFAULT_VAM_ENV_NAME,
-    VAMToolboxUnavailable,
-    optimize_sinograms,
-)
 
 ProgressCallback = Callable[[float, str], None]
 CancelCheck = Callable[[], bool]
-
-
-def _radon_sinograms(
-    slices: np.ndarray,
-    angles: np.ndarray,
-    grid_res: int,
-    num_frames: int,
-    report: ProgressCallback,
-    cancelled: CancelCheck,
-) -> np.ndarray:
-    """Calculate the deterministic internal projection sequence with multi-threaded speed."""
-    import os
-    from concurrent.futures import ThreadPoolExecutor
-
-    num_layers = int(slices.shape[2])
-    report_step = max(1, num_layers // 25)
-    sinograms = np.zeros((num_layers, grid_res, num_frames), dtype=np.float32)
-
-    max_workers = min(os.cpu_count() or 4, 16)
-
-    def _process_slice(i: int):
-        if cancelled():
-            raise SliceCancelled()
-        sino = radon(slices[:, :, i], theta=angles, circle=True)
-        return i, sino
-
-    done_count = 0
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for i, sino in executor.map(_process_slice, range(num_layers)):
-            if cancelled():
-                raise SliceCancelled()
-            if sino.shape != (grid_res, num_frames):
-                raise ValueError(
-                    f"Unexpected Radon shape {sino.shape}; expected {(grid_res, num_frames)}."
-                )
-            sinograms[i] = sino
-            done_count += 1
-            if done_count % report_step == 0 or done_count == num_layers:
-                report(0.30 + 0.50 * (done_count / num_layers), f"Radon {done_count}/{num_layers}...")
-    return sinograms
 
 
 def _projection_gray(frame: np.ndarray, maximum: float, resin: ResinSettings) -> np.ndarray:
@@ -163,21 +118,16 @@ class SliceParams:
     fill_holes: bool
     resin: ResinSettings
     output_dir: str
-    projection_backend: str = "internal"
     optimizer_iterations: int = 30
-    # Optional isolated Conda runtime for VAMToolbox.  The internal Radon
-    # backend never needs these values.
-    vam_conda_executable: str = ""
-    vam_environment_name: str = DEFAULT_VAM_ENV_NAME
     # A valid nut is defined by its cavity. Keep internal voids by default so
     # every imported threaded STL follows the same path as any other model.
     preserve_internal_voids: bool = True
     frame_rate_hz: float = DEFAULT_FRAME_RATE_HZ
     angle_offset_deg: float = DEFAULT_ANGLE_OFFSET_DEG
     angle_direction: int = 1
-    container_mode: int = 0
-    cuvette_outer_mm: float = 0.0
-    cuvette_inner_mm: float = 0.0
+    container_mode: int = 0                 # 0 = round vial in air, 2 = in an immersion bath
+    cuvette_outer_mm: float = 0.0           # 0 = the vat diameter
+    cuvette_inner_mm: float = 0.0           # 0 = outer minus two DEFAULT_GLASS_WALL_MM walls
     n_air: float = 1.0
     n_glass: float = 1.51
     n_liquid: float = 1.45
@@ -192,6 +142,12 @@ class SliceParams:
     projector_blur_mm: float = 0.0          # Gaussian blur sigma between frame rows; 0 = sharp
     resin_gel_dose_mj_cm3: float = 0.0      # absorbed energy at the gel point
 
+    def __post_init__(self) -> None:
+        if not self.cuvette_outer_mm:
+            self.cuvette_outer_mm = float(self.diameter_mm)
+        if not self.cuvette_inner_mm:
+            self.cuvette_inner_mm = float(self.cuvette_outer_mm) - 2 * DEFAULT_GLASS_WALL_MM
+
     def validate(self) -> None:
         """Validate values before they can determine array dimensions."""
 
@@ -202,7 +158,6 @@ class SliceParams:
             self.num_frames,
             self.resin,
             self.fill_holes,
-            self.projection_backend,
             self.optimizer_iterations,
             self.preserve_internal_voids,
             self.frame_rate_hz,
@@ -230,17 +185,16 @@ class SliceParams:
             raise ValidationError("projector_blur_mm must be between 0 and 2 mm.")
         if 0 < self.projector_throw_mm <= max(self.cuvette_outer_mm, self.diameter_mm):
             raise ValidationError("projector_throw_mm must be larger than the vial (or 0).")
-        if self.projection_backend == "physical":
-            from spinslicer.optics.optimization import _validate_geometry
-            try:
-                _validate_geometry(
-                    np.array([0.0]), self.grid_res, self.grid_res, self.diameter_mm,
-                    self.cuvette_outer_mm, self.cuvette_inner_mm,
-                    (self.n_air, self.n_glass, self.n_liquid, self.n_resin),
-                    self.alpha, self.container_mode,
-                )
-            except ValueError as exc:
-                raise ValidationError(str(exc)) from exc
+        from spinslicer.optics.system_matrix import _validate_geometry
+        try:
+            _validate_geometry(
+                np.array([0.0]), self.grid_res, self.grid_res, self.diameter_mm,
+                self.cuvette_outer_mm, self.cuvette_inner_mm,
+                (self.n_air, self.n_glass, self.n_liquid, self.n_resin),
+                self.alpha, self.container_mode,
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
 
 
 def _coverage(values: np.ndarray) -> np.ndarray:
@@ -521,10 +475,7 @@ class SlicingEngine:
         fill_holes = params.fill_holes
         preserve_internal_voids = params.preserve_internal_voids
         resin = params.resin
-        projection_span = (
-            detector_span_mm(params.cuvette_outer_mm, params.container_mode)
-            if params.projection_backend == "physical" else diameter_mm
-        )
+        projection_span = detector_span_mm(params.cuvette_outer_mm, params.container_mode)
 
         z_min, z_max = mesh.bounds[0][2], mesh.bounds[1][2]
         # Decouple Z-resolution from X/Y grid_res to eliminate Z stair-stepping.
@@ -539,10 +490,10 @@ class SlicingEngine:
         angles = (
             params.angle_offset_deg + params.angle_direction * base_angles
         ) % 360.0
-        from spinslicer.optics import fastcal as _fastcal
-        # FastCAL reads coverage as uint8 (0..255): a quarter of the float32 volume.
-        compact = params.projection_backend == "physical" and _fastcal.supports(
-            params.container_mode, np.deg2rad(angles))
+        angles_rad = np.deg2rad(angles)
+        from spinslicer.optics import fastcal
+        if not fastcal.supports(params.container_mode, angles_rad):
+            raise ValidationError("FastCAL needs a round vial and equally spaced angles over a full turn.")
 
         report(0.05, "Нарезка сечений...")
         # Exact-coverage vectorised voxelizer (non-zero winding). Layers where
@@ -551,7 +502,7 @@ class SlicingEngine:
         voxels = voxelize(
             mesh, z_levels, grid_res, diameter_mm, cancelled=cancelled,
             progress=lambda f: report(0.05 + 0.2 * f, "Нарезка сечений..."),
-            out_dtype=np.uint8 if compact else np.float32,
+            out_dtype=np.uint8,      # FastCAL reads coverage as 0..255: a quarter of float32
         )
         slices = voxels.volume
         for n_fixed, i in enumerate(voxels.open_layers):
@@ -561,12 +512,12 @@ class SlicingEngine:
                 mesh, float(z_levels[i]), int(i), grid_res, diameter_mm,
                 fill_holes, preserve_internal_voids,
             )
-            slices[:, :, i] = np.rint(layer * 255) if compact else layer
+            slices[:, :, i] = np.rint(layer * 255)
             report(0.25 + 0.05 * (n_fixed + 1) / len(voxels.open_layers),
                    f"Ремонт открытых сечений {n_fixed + 1}/{len(voxels.open_layers)}...")
         if fill_holes and not preserve_internal_voids:
             closed = np.setdiff1d(np.arange(nz), voxels.open_layers)
-            full = 255 if compact else 1.0
+            full = 255
             for i in closed:
                 solid = binary_fill_holes(slices[:, :, i] >= 0.5 * full)
                 slices[:, :, i] = np.maximum(slices[:, :, i], solid.astype(slices.dtype) * full)
@@ -576,83 +527,33 @@ class SlicingEngine:
             # Exposure ladder (calibration.py): every pillar gets its own planned dose.
             calibration.apply_levels(slices, diameter_mm)
 
-        # --- Проекционный backend ------------------------------------------
-        backend = params.projection_backend
-        use_fastcal = False
-        detector = grid_res                 # detector bins of the planned frames
-        optimizer_name = backend
-
-        if backend == "physical":
-            report(0.30, "Физическая оптика: трассировка лучей и оптимизация...")
-            from spinslicer.optics.optimization import optimize_projections_sirt_volume
-            angles_rad = np.deg2rad(angles)
-            L_out = params.cuvette_outer_mm
-            L_in = params.cuvette_inner_mm
-
-            from spinslicer.optics import fastcal
-            use_fastcal = fastcal.supports(params.container_mode, angles_rad)
-            optimizer_name = "fastcal-band" if use_fastcal else "sirt"
-            optimize = fastcal.optimize_projections_fast if use_fastcal else optimize_projections_sirt_volume
-            fast_engines: list[Any] = []
-            extra: dict[str, Any] = {}
-            if use_fastcal:
-                detector = fastcal.detector_bins(grid_res, output_res)
-                extra = {"engine_out": fast_engines, "num_s": detector,
-                         "optics": fastcal.OpticsOptions(throw_mm=fastcal.apparent_throw_mm(
-                             params.projector_throw_mm, L_out, params.n_air, params.n_liquid,
-                             params.container_mode))}
-            sinograms = optimize(
-                slices,
-                angles_rad,
-                L_out=L_out,
-                L_in=L_in,
-                n_air=params.n_air,
-                n_glass=params.n_glass,
-                n_liquid=params.n_liquid,
-                n_resin=params.n_resin,
-                alpha=params.alpha,
-                grid_res=grid_res,
-                grid_span_mm=params.diameter_mm,
-                iterations=params.optimizer_iterations,
-                container_mode=params.container_mode,
-                report_cb=report,
-                cancelled_cb=cancelled,
-                **extra,
-            )
-        elif backend in {"auto", "vamtoolbox"}:
-            report(0.30, "Optimizing projections with VAMToolbox CAL...")
-            try:
-                # VAMToolbox consumes the complete voxel target and returns a
-                # projection sequence.  The adapter normalizes its layout to
-                # the same (z, detector, angle) convention used by the
-                # internal Radon path.
-                sinograms = optimize_sinograms(
-                    slices,
-                    angles,
-                    iterations=params.optimizer_iterations,
-                    conda_executable=params.vam_conda_executable or None,
-                    environment_name=params.vam_environment_name or DEFAULT_VAM_ENV_NAME,
-                )
-                report(0.78, "VAMToolbox projection optimization complete.")
-            except VAMToolboxUnavailable as exc:
-                if backend == "vamtoolbox":
-                    raise ValidationError(str(exc)) from exc
-                report(0.30, "VAMToolbox is unavailable; using internal Radon backend.")
-                sinograms = _radon_sinograms(
-                    slices, angles, grid_res, num_frames, report, cancelled
-                )
-            except Exception:
-                if backend == "vamtoolbox":
-                    raise
-                report(0.30, "VAMToolbox failed; using internal Radon backend.")
-                sinograms = _radon_sinograms(
-                    slices, angles, grid_res, num_frames, report, cancelled
-                )
-        else:
-            report(0.30, "Calculating Radon projections...")
-            sinograms = _radon_sinograms(
-                slices, angles, grid_res, num_frames, report, cancelled
-            )
+        # --- FastCAL: refraction-exact dose planning --------------------------
+        report(0.30, "Физическая оптика: трассировка лучей и оптимизация...")
+        detector = fastcal.detector_bins(grid_res, output_res)     # detector bins of the planned frames
+        optimizer_name = "fastcal-band"
+        fast_engines: list[Any] = []
+        sinograms = fastcal.optimize_projections_fast(
+            slices,
+            angles_rad,
+            L_out=params.cuvette_outer_mm,
+            L_in=params.cuvette_inner_mm,
+            n_air=params.n_air,
+            n_glass=params.n_glass,
+            n_liquid=params.n_liquid,
+            n_resin=params.n_resin,
+            alpha=params.alpha,
+            grid_res=grid_res,
+            grid_span_mm=params.diameter_mm,
+            iterations=params.optimizer_iterations,
+            container_mode=params.container_mode,
+            report_cb=report,
+            cancelled_cb=cancelled,
+            engine_out=fast_engines,
+            num_s=detector,
+            optics=fastcal.OpticsOptions(throw_mm=fastcal.apparent_throw_mm(
+                params.projector_throw_mm, params.cuvette_outer_mm, params.n_air, params.n_liquid,
+                params.container_mode)),
+        )
 
         if params.projector_blur_mm > 0 and nz > 1:
             # The projector blurs rows into each other: show it frames that it blurs back
@@ -726,25 +627,9 @@ class SlicingEngine:
             raise SliceCancelled()
         # Reconstruct actual saved drive values, including user gain, cutoff,
         # resampling, saturation and PNG quantization.
-        if backend == "physical" and use_fastcal:
-            # Same rotation-symmetric operator that planned the frames; no
-            # full sparse system matrix is built just for the preview.
-            dose_mid = fast_engines[0].layer_dose(exported_mid_sinograms)
-        elif backend == "physical":
-            from spinslicer.optics.optimization import build_system_matrix
-            _, adjoint = build_system_matrix(
-                angles_rad, num_s=grid_res, grid_res=grid_res, grid_span_mm=diameter_mm,
-                L_out=params.cuvette_outer_mm, L_in=params.cuvette_inner_mm,
-                n_air=params.n_air, n_glass=params.n_glass, n_liquid=params.n_liquid,
-                n_resin=params.n_resin, alpha=params.alpha, container_mode=params.container_mode,
-                cancelled_cb=cancelled,
-            )
-            dose_mid = (adjoint @ exported_mid_sinograms.T.ravel()).reshape(grid_res, grid_res)
-        else:
-            from skimage.transform import iradon
-            # Optical exposure accumulates positive frames; a ramp-filtered CT
-            # inversion would hide backprojection blur and is not delivered dose.
-            dose_mid = iradon(exported_mid_sinograms, theta=angles, circle=True, filter_name=None)
+        # Same rotation-symmetric operator that planned the frames; no
+        # full sparse system matrix is built just for the preview.
+        dose_mid = fast_engines[0].layer_dose(exported_mid_sinograms)
         target_mid = _coverage(slices[:, :, mid_z])
         relative_dose, dose_rmse, dose_scale = _relative_dose_fit(dose_mid, target_mid)
         # Numeric artifacts allow the score to be reproduced independently.
@@ -762,15 +647,13 @@ class SlicingEngine:
                 f"optimizer={optimizer_name}\n"
             )
 
-        print_plan_data: dict[str, Any] = {}
-        if backend == "physical" and use_fastcal:
-            report(0.995, "План печати...")
-            print_plan_data = _build_print_plan(
-                fast_engines[0], slices, sinograms, global_max, resin, params,
-                z_levels=z_levels, out_dir=out_dir, cancelled=cancelled, calibration=calibration,
-            )
-            with open(os.path.join(out_dir, "print_plan.json"), "w", encoding="utf-8") as handle:
-                json.dump(print_plan_data, handle, ensure_ascii=False, indent=2)
+        report(0.995, "План печати...")
+        print_plan_data = _build_print_plan(
+            fast_engines[0], slices, sinograms, global_max, resin, params,
+            z_levels=z_levels, out_dir=out_dir, cancelled=cancelled, calibration=calibration,
+        )
+        with open(os.path.join(out_dir, "print_plan.json"), "w", encoding="utf-8") as handle:
+            json.dump(print_plan_data, handle, ensure_ascii=False, indent=2)
 
         # Metadata становится видимым только после того, как все PNG уже
         # записаны. Manifest публикуется после проверки полного frame-set.
@@ -829,7 +712,6 @@ class SlicingEngine:
                     "output_res": params.output_res,
                     "num_frames": params.num_frames,
                     "fill_holes": params.fill_holes,
-                    "projection_backend": params.projection_backend,
                     "optimizer_iterations": params.optimizer_iterations,
                     "raster_layers": nz,
                     "voxel_pitch_z_mm": pitch,

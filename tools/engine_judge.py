@@ -52,12 +52,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from spinslicer.optics.fastcal import FastVialEngine, OpticsOptions  # noqa: E402
-from spinslicer.optics.optimization import (  # noqa: E402
-    _load_cpp_backend,
-    _project,
-    build_system_matrix,
-)
+from spinslicer.optics.system_matrix import build_system_matrix  # noqa: E402
 from spinslicer.voxelizer import voxelize  # noqa: E402
+
+
+def _project(matrix, values: np.ndarray) -> np.ndarray:
+    """Sparse product with the reference matrix (float32 in, float32 out)."""
+    return np.asarray(matrix @ values, dtype=np.float32)
 
 SPAN, L_OUT, L_IN, N_GLASS, N_LIQUID, N_RESIN = 60.0, 60.0, 56.0, 1.51, 1.45, 1.50
 FRAMES = 360
@@ -150,13 +151,12 @@ class Siddon:
         self.ns = int(num_s or n)
         self.A, self.AT = build_system_matrix(angles_rad(), self.ns, n, SPAN, L_OUT, L_IN, 1.0, N_GLASS, N_LIQUID,
                                               N_RESIN, alpha, mode, memory_budget_bytes=12 * 2**30)
-        self.lib = _load_cpp_backend()
 
     def fwd(self, x: np.ndarray) -> np.ndarray:
-        return _project(self.A, np.ascontiguousarray(x, dtype=np.float32), self.lib)
+        return _project(self.A, np.ascontiguousarray(x, dtype=np.float32))
 
     def bwd(self, b: np.ndarray) -> np.ndarray:
-        return _project(self.AT, np.ascontiguousarray(b, dtype=np.float32), self.lib)
+        return _project(self.AT, np.ascontiguousarray(b, dtype=np.float32))
 
 
 def resin_mask(n: int, margin_mm: float = 0.0) -> np.ndarray:

@@ -42,7 +42,7 @@ def test_generation_writes_a_print_plan(tmp_path):
     mesh = trimesh.creation.cylinder(6, 8, sections=64)
     params = SliceParams(
         diameter_mm=40.0, grid_res=32, output_res=64, num_frames=24, fill_holes=True,
-        resin=ResinSettings(), output_dir=str(tmp_path), projection_backend="physical",
+        resin=ResinSettings(), output_dir=str(tmp_path),
         optimizer_iterations=4, container_mode=2, cuvette_outer_mm=40.0, cuvette_inner_mm=36.0,
         alpha=0.02, projector_gamma=2.2, projector_irradiance_mw_cm2=5.0,
         projector_contrast=1000.0, resin_gel_dose_mj_cm3=50.0,

@@ -36,12 +36,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from spinslicer.optics.fastcal import LEGACY_OPTICS, FastVialEngine  # noqa: E402
-from spinslicer.optics.optimization import (  # noqa: E402
-    _load_cpp_backend,
-    _project,
-    build_system_matrix,
-)
+from spinslicer.optics.system_matrix import build_system_matrix  # noqa: E402
 from spinslicer.voxelizer import voxelize  # noqa: E402
+
+
+def _project(matrix, values: np.ndarray) -> np.ndarray:
+    """Sparse product with the reference matrix (float32 in, float32 out)."""
+    return np.asarray(matrix @ values, dtype=np.float32)
 
 SPAN, L_OUT, L_IN, N_GLASS, N_LIQUID, N_RESIN = 60.0, 60.0, 56.0, 1.51, 1.45, 1.50
 FRAMES = 360
@@ -67,11 +68,11 @@ def operator(n: int, mode: int):
     return angles, A, AT
 
 
-def run_osmo(target: np.ndarray, A, AT, lib) -> np.ndarray:
+def run_osmo(target: np.ndarray, A, AT) -> np.ndarray:
     import scipy.fft as sfft
     N, _, NZ = target.shape
-    fwd = lambda x: _project(A, np.ascontiguousarray(x.reshape(N * N, NZ), dtype=np.float32), lib)  # noqa: E731
-    bwd = lambda b: _project(AT, np.ascontiguousarray(b, dtype=np.float32), lib).reshape(N, N, NZ)  # noqa: E731
+    fwd = lambda x: _project(A, np.ascontiguousarray(x.reshape(N * N, NZ), dtype=np.float32))  # noqa: E731
+    bwd = lambda b: _project(AT, np.ascontiguousarray(b, dtype=np.float32)).reshape(N, N, NZ)  # noqa: E731
     c = (np.arange(N) + 0.5) * SPAN / N - SPAN / 2
     X, Y = np.meshgrid(c, c, indexing="ij")
     circle = (X**2 + Y**2 < (L_IN / 2) ** 2)[:, :, None]
@@ -97,10 +98,10 @@ def run_osmo(target: np.ndarray, A, AT, lib) -> np.ndarray:
     return b.reshape(FRAMES, N, NZ).transpose(2, 1, 0)          # [z, s, angle]
 
 
-def run_bclp(target: np.ndarray, A, AT, lib, iterations: int, lr: float) -> np.ndarray:
+def run_bclp(target: np.ndarray, A, AT, iterations: int, lr: float) -> np.ndarray:
     N, _, NZ = target.shape
-    fwd = lambda x: _project(A, np.ascontiguousarray(x.reshape(N * N, NZ), dtype=np.float32), lib)  # noqa: E731
-    bwd = lambda b: _project(AT, np.ascontiguousarray(b, dtype=np.float32), lib).reshape(N, N, NZ)  # noqa: E731
+    fwd = lambda x: _project(A, np.ascontiguousarray(x.reshape(N * N, NZ), dtype=np.float32))  # noqa: E731
+    bwd = lambda b: _project(AT, np.ascontiguousarray(b, dtype=np.float32)).reshape(N, N, NZ)  # noqa: E731
     c = (np.arange(N) + 0.5) * SPAN / N - SPAN / 2
     X, Y = np.meshgrid(c, c, indexing="ij")
     w = (X**2 + Y**2 < (L_IN / 2) ** 2)[:, :, None].astype(np.float32)
@@ -124,11 +125,11 @@ def run_bclp(target: np.ndarray, A, AT, lib, iterations: int, lr: float) -> np.n
     return g.reshape(FRAMES, N, NZ).transpose(2, 1, 0)
 
 
-def judge(frames: np.ndarray, fine: np.ndarray, AT, lib) -> dict:
+def judge(frames: np.ndarray, fine: np.ndarray, AT) -> dict:
     N, _, NZ = fine.shape
     s = np.rint(np.clip(frames / frames.max(), 0, 1) * 255) / 255
     s = s[:, (np.arange(N) * s.shape[1]) // N, :]
-    D = _project(AT, np.ascontiguousarray(s.transpose(2, 1, 0).reshape(FRAMES * N, NZ), dtype=np.float32), lib)
+    D = _project(AT, np.ascontiguousarray(s.transpose(2, 1, 0).reshape(FRAMES * N, NZ), dtype=np.float32))
     c = (np.arange(N) + 0.5) * SPAN / N - SPAN / 2
     X, Y = np.meshgrid(c, c, indexing="ij")
     resin = (X**2 + Y**2 < (L_IN / 2 - 0.5) ** 2).ravel()
@@ -178,7 +179,6 @@ def main() -> None:
     z = np.arange(mesh.bounds[0, 2] + pitch / 2, mesh.bounds[1, 2], pitch)
     target = voxelize(mesh, z, N, SPAN, sub_z=2, z_pitch=pitch).volume
     fine = voxelize(mesh, z, 2 * N, SPAN).volume
-    lib = _load_cpp_backend()
     angles, A, AT = operator(N, mode)
     results: dict = {}
 
@@ -191,10 +191,10 @@ def main() -> None:
                                  optics=LEGACY_OPTICS)
             frames["FastCAL"] = np.asarray(eng.optimize_volume(target), np.float32)
         elif name == "osmo":
-            frames["OSMO"] = run_osmo(target, A, AT, lib)
+            frames["OSMO"] = run_osmo(target, A, AT)
         elif name == "bclp":
             lr = args.bclp_lr if args.bclp_lr is not None else 0.01 * (N / 256) ** 2
-            frames["BCLP"] = run_bclp(target, A, AT, lib, args.bclp_iters, lr)
+            frames["BCLP"] = run_bclp(target, A, AT, args.bclp_iters, lr)
         else:
             raise SystemExit(f"unknown engine {name}")
         results[list(frames)[-1]] = {"seconds": round(time.perf_counter() - t0, 1)}
@@ -202,7 +202,7 @@ def main() -> None:
     _, A2, AT2 = operator(2 * N, mode)
     del A2
     for name, f in frames.items():
-        results[name].update(judge(f, fine, AT2, lib))
+        results[name].update(judge(f, fine, AT2))
     if "FastCAL" in frames:
         results["frame_similarity_to_FastCAL"] = {k: similarity(frames["FastCAL"], f)
                                                   for k, f in frames.items() if k != "FastCAL"}

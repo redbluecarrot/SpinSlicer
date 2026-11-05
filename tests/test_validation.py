@@ -15,7 +15,6 @@ from spinslicer.validation import (
 
 def test_physical_preflight_does_not_allow_model_in_glass_wall() -> None:
     params = valid_params()
-    params.projection_backend = "physical"
     params.cuvette_outer_mm, params.cuvette_inner_mm = 60., 56.
     vertices = np.array([[29., 0., -1.], [29., 0.5, 1.], [28., -0.5, 0.]])
     report = preflight_mesh(make_mesh(vertices), params, vat_height_mm=96.)
@@ -23,27 +22,17 @@ def test_physical_preflight_does_not_allow_model_in_glass_wall() -> None:
     assert any("resin" in error for error in report.errors)
 
 
-def test_physical_memory_budget_counts_sparse_matrices() -> None:
-    basic = estimate_slicing_memory(256, 256, 360, output_res=720)
-    physical = estimate_slicing_memory(256, 256, 360, output_res=720, projection_backend="physical")
-    # The measured matrix pair alone is over 300 MiB at this resolution.
-    assert physical > basic + 300 * 1024**2
-
-
 def test_fastcal_memory_budget_allows_fine_grids() -> None:
     from spinslicer.constants import MAX_ESTIMATED_MEMORY_BYTES
-    sirt = estimate_slicing_memory(384, 432, 360, output_res=720, projection_backend="physical")
-    fast = estimate_slicing_memory(384, 432, 360, output_res=720, projection_backend="physical",
-                                   fastcal=True)
-    assert fast < sirt / 2
+    coarse = estimate_slicing_memory(256, 256, 360, output_res=720)
+    fine = estimate_slicing_memory(384, 432, 360, output_res=720)
+    assert fine > coarse
     # A 512 grid on a round vial stays inside the preflight limit.
-    assert estimate_slicing_memory(512, 576, 360, output_res=1080, projection_backend="physical",
-                                   fastcal=True) < MAX_ESTIMATED_MEMORY_BYTES
+    assert estimate_slicing_memory(512, 576, 360, output_res=1080) < MAX_ESTIMATED_MEMORY_BYTES
 
 
 def test_physical_params_reject_invalid_absorption_before_slicing() -> None:
     params = valid_params()
-    params.projection_backend = "physical"
     params.cuvette_outer_mm, params.cuvette_inner_mm = 60., 56.
     params.alpha = -0.01
     with pytest.raises(ValidationError, match="Absorption"):

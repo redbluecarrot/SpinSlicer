@@ -47,22 +47,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller==6.22.2
 
-      - name: Set up MSVC
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Build C++ backend (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          python tools/build_sirt.py
-
-      - name: Build C++ backend (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          python tools/build_sirt.py
-
       - name: Build Windows executable
         if: runner.os == 'Windows'
         shell: pwsh

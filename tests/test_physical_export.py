@@ -6,8 +6,8 @@ import pytest
 import trimesh
 from PIL import Image
 
-from spinslicer.frame_io import FrameRepository, load_manifest
-from spinslicer.optics.optimization import build_system_matrix
+from spinslicer.frame_io import load_manifest
+from spinslicer.optics.system_matrix import build_system_matrix
 from spinslicer.slicing_engine import (
     ResinSettings,
     SliceParams,
@@ -22,7 +22,7 @@ def parameters(tmp_path):
     return SliceParams(
         diameter_mm=50., grid_res=24, output_res=48, num_frames=16,
         fill_holes=True, resin=ResinSettings(), output_dir=str(tmp_path),
-        projection_backend="physical", optimizer_iterations=3,
+        optimizer_iterations=3,
         cuvette_outer_mm=50., cuvette_inner_mm=46.,
         n_air=1., n_glass=1., n_liquid=1., n_resin=1.,
     )
@@ -104,35 +104,6 @@ def test_ring_rasterization_preserves_area_and_bore_without_half_mm_outline(tmp_
     assert area == pytest.approx(np.pi * (6**2 - 2**2), rel=0.05)
     centres = (np.arange(params.grid_res) + 0.5) * pitch - params.diameter_mm / 2
     assert target[np.argmin(abs(centres-2)), np.argmin(abs(centres+1))] == 0
-
-
-def test_square_corner_export_has_diagonal_field_and_correct_physical_aspect(tmp_path):
-    mesh = trimesh.creation.box(extents=(2., 2., 14.))
-    mesh.apply_translation((21., -21., 0.))
-    params = replace(parameters(tmp_path), grid_res=64, output_res=128,
-                     container_mode=1, angle_offset_deg=0.)
-    _, directory = SlicingEngine.run(mesh, params)
-    info = FrameRepository.validate(directory)
-    manifest = load_manifest(directory)
-    field = 50 * np.sqrt(2)
-    assert info.width == 128
-    assert info.height == round(128 * 14 / field)
-    assert manifest is not None
-    assert info.nz == manifest.slice_parameters["raster_layers"]
-    assert manifest.slice_parameters["voxel_pitch_z_mm"] == pytest.approx(field / 128)
-    geometry = manifest.slice_parameters["optics"]
-    assert geometry["detector_span_mm"] == pytest.approx(field)
-    assert geometry["detector_spacing_mm"] == pytest.approx(field / 64)
-    assert geometry["output_pixel_pitch_mm"] == pytest.approx(field / 128)
-    assert geometry["voxel_grid_span_mm"] == 50
-    for index, theta in ((0, 0.), (2, np.pi/4)):
-        with Image.open(Path(directory) / f"frame_{index:04d}.png") as image:
-            gray = np.asarray(image)
-        assert gray.any()  # the corner was completely absent at 45 degrees
-        peak_column = np.argmax(gray.sum(axis=0))
-        expected_position = 21 * np.cos(theta) + 21 * np.sin(theta)
-        expected_column = (expected_position / field + 0.5) * params.output_res - 0.5
-        assert abs(peak_column - expected_column) < 4
 
 
 @pytest.mark.parametrize("height", [6.0, 8.8542, 9.8958])
