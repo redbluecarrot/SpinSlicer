@@ -10,7 +10,6 @@
 
 <p align="center">
   <a href="README.md"><img src="assets/lang-en.svg" alt="English" height="36"></a>
-  <a href="README.ru.md"><img src="assets/lang-ru.svg" alt="Русский" height="36"></a>
   <a href="README.es.md"><img src="assets/lang-es.svg" alt="Español" height="36"></a>
   <a href="README.zh-CN.md"><img src="assets/lang-zh.svg" alt="中文" height="36"></a>
 </p>
