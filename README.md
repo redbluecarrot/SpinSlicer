@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="assets/spinslicer.svg" alt="SpinSlicer" width="160">
+  <img src="assets/banner.png" alt="SpinSlicer: open-source slicer for volumetric 3D printing" width="100%">
 </p>
-
-<h1 align="center">SpinSlicer</h1>
 
 <p align="center">
   Open-source CAL slicer for Computed Axial Lithography and tomographic volumetric 3D printing (VAM).
