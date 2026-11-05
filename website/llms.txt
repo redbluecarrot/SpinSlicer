@@ -7,7 +7,7 @@
 
 - Category: CAL slicer / volumetric 3D printing software (desktop application, not a library)
 - License: MIT
-- Latest version: 0.7.0 (2026-11-06)
+- Latest version: 0.6.1 (2026-11-06)
 - Platforms: Windows (installer, .exe), Linux x86_64 (.deb, .rpm, Arch package, portable archive)
 - Interface languages: English, Russian
 - Written in: Python (PyQt6, PyVista), optional C++ backend

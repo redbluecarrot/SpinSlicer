@@ -41,7 +41,7 @@ SpinSlicer 为断层扫描式体积增材制造（VAM / CAL）准备打印：装
 
 ## 功能
 
-版本 0.7.0 —— 详见[发布说明](docs/releases/v0.7.0.md)（英文和俄文）。
+版本 0.6.1 —— 详见[发布说明](docs/releases/v0.6.1.md)（英文和俄文）。
 
 - **三个步骤：** *模型*（加载、摆放并检查 STL）、*光*（计算投影帧）、*打印*
   （投射到投影仪、保存 MP4 或 PNG）。
@@ -62,19 +62,19 @@ SpinSlicer 为断层扫描式体积增材制造（VAM / CAL）准备打印：装
 可直接从 [Releases](https://github.com/redbluecarrot/SpinSlicer/releases) 下载预编译程序：
 
 - **Windows 10 / 11：**
-  - **安装程序：** 下载并运行 `SpinSlicer-Setup-0.7.0.exe`
+  - **安装程序：** 下载并运行 `SpinSlicer-Setup-0.6.1.exe`
   - **便携版：** 下载 `SpinSlicer-windows-x64.zip`，解压后运行 `SpinSlicer.exe`
 - **Arch Linux / Manjaro：**
   ```bash
-  sudo pacman -U SpinSlicer-0.7.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.6.1-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint：**
   ```bash
-  sudo apt install ./SpinSlicer-0.7.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.6.1-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE：**
   ```bash
-  sudo dnf install ./SpinSlicer-0.7.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.6.1-1.x86_64.rpm
   ```
 - **通用 Linux 便携版：**
   ```bash

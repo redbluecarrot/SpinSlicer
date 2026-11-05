@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spinslicer"
-version = "0.7.0"
+version = "0.6.1"
 description = "Open-source CAL slicer: projector frames, virtual print and projector output for Computed Axial Lithography (tomographic volumetric 3D printing)"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"

@@ -43,7 +43,7 @@ Si SpinSlicer te resulta útil, una ⭐ en GitHub ayuda a que otros lo encuentre
 
 ## Características
 
-Versión 0.7.0 — consulta las [notas de la versión](docs/releases/v0.7.0.md) (en inglés y ruso).
+Versión 0.6.1 — consulta las [notas de la versión](docs/releases/v0.6.1.md) (en inglés y ruso).
 
 - **Tres pasos:** *Modelo* (cargar, colocar y comprobar el STL), *Luz* (calcular los
   fotogramas) e *Impresión* (proyectar, guardar MP4 o PNG).
@@ -67,19 +67,19 @@ Versión 0.7.0 — consulta las [notas de la versión](docs/releases/v0.7.0.md) 
 Descarga los binarios desde [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Instalador:** descarga y ejecuta `SpinSlicer-Setup-0.7.0.exe`
+  - **Instalador:** descarga y ejecuta `SpinSlicer-Setup-0.6.1.exe`
   - **Portable:** descarga `SpinSlicer-windows-x64.zip`, extráelo y ejecuta `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.7.0-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.6.1-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.7.0-amd64.deb
+  sudo apt install ./SpinSlicer-0.6.1-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.7.0-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.6.1-1.x86_64.rpm
   ```
 - **Linux portable genérico:**
   ```bash
