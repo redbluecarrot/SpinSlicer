@@ -413,7 +413,8 @@ class ProcessSettingsPanel(QWidget):
         self.r_throw = self._row("Throw ratio", self.throw_ratio, hint="есть в паспорте проектора, обычно 1,1–1,6")
         self.r_blur = self._row("Размытие пятна", self.projector_blur, hint="не знаете? оставьте 0")
         self.r_comp = self._row("Компенсация размытия", self.blur_compensation)
-        self.r_alpha = self._row("Поглощение смолы", self.alpha_absorption)
+        self.r_alpha = self._row("Поглощение смолы", self.alpha_absorption,
+                                 hint="натуральный логарифм: α = 2,303·A на 1 мм = 1 / Dp")
         self.r_nresin = self._row("Преломление смолы", self.n_resin)
         self.r_gel = self._row("Доза геля", self.gel_dose, hint="не знаете? напечатайте шкалу ↓")
         self.r_calib = self._row("Калибровка", self._link("напечатать шкалу →", "calibrate"),

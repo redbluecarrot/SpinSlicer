@@ -35,16 +35,47 @@ def blur_rows(frames: np.ndarray, sigma_rows: float) -> np.ndarray:
     return gaussian_filter1d(x, sigma_rows, axis=0, mode="nearest", truncate=3.0)
 
 
+def _blur_last(x: np.ndarray, sigma: float) -> np.ndarray:
+    """K: the projector's row blur along the last axis (clamped edges, as blur_rows)."""
+    return gaussian_filter1d(x, sigma, axis=-1, mode="nearest", truncate=3.0)
+
+
+def _blur_last_adjoint(y: np.ndarray, sigma: float) -> np.ndarray:
+    """K^T. With clamped edges K is not symmetric: the light K takes from beyond an edge
+    row comes from that row, so K^T returns it there. Exact adjoint of _blur_last."""
+    radius = int(3.0 * float(sigma) + 0.5)          # scipy's kernel radius for truncate=3
+    if radius == 0:
+        return np.asarray(y, np.float32)
+    n = y.shape[-1]
+    pad = [(0, 0)] * (y.ndim - 1) + [(radius, radius)]
+    full = gaussian_filter1d(np.pad(y, pad), sigma, axis=-1, mode="constant", truncate=3.0)
+    out = np.ascontiguousarray(full[..., radius:radius + n])
+    out[..., 0] += full[..., :radius].sum(axis=-1)
+    out[..., -1] += full[..., radius + n:].sum(axis=-1)
+    return out
+
+
+def _lipschitz(n: int, sigma: float) -> float:
+    """L = ||K^T K|| for n rows (power iteration, 1 % margin). Just above 1: the clamped
+    edges add a little (1.004 at sigma 1.5 rows, 1.065 at 3), so step 1 could overshoot."""
+    v = np.linspace(1.0, 2.0, n)
+    lam = 1.0
+    for _ in range(30):
+        w = _blur_last_adjoint(_blur_last(v, sigma), sigma)
+        lam = float(np.linalg.norm(w) / max(float(np.linalg.norm(v)), 1e-30))
+        v = w / max(float(np.linalg.norm(w)), 1e-30)
+    return max(1.0, 1.01 * lam)
+
+
 def _presharpen_block(P: np.ndarray, sigma: float, iterations: int) -> np.ndarray:
     """P: [..., row] with rows on the last (contiguous) axis."""
-    def K(x: np.ndarray) -> np.ndarray:
-        return gaussian_filter1d(x, sigma, axis=-1, mode="nearest", truncate=3.0)
+    step = np.float32(1.0 / _lipschitz(P.shape[-1], sigma))
 
     X = P.copy()
     Y = X.copy()
     t = 1.0
-    for _ in range(iterations):                 # FISTA, step 1 (||K|| <= 1)
-        X_new = Y - K(K(Y) - P)
+    for _ in range(iterations):                 # FISTA on 1/2 ||K X - P||^2, X >= 0
+        X_new = Y - step * _blur_last_adjoint(_blur_last(Y, sigma) - P, sigma)
         np.maximum(X_new, 0, out=X_new)
         t_new = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * t * t))
         Y = X_new + np.float32((t - 1.0) / t_new) * (X_new - X)

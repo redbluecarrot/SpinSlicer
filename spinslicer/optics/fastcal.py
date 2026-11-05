@@ -812,6 +812,20 @@ def band_pqn(planner: VialDosePlanner, t: np.ndarray, iterations: int = 30,
             if f_new <= f + 1e-4 * dot(g, s_):
                 break
             step *= 0.3
+        else:
+            if not f_new < f:
+                # No step lowered the objective: keep x. The curvature history gave a bad
+                # direction, so restart from a scaled projected gradient; if that already
+                # failed, x is as good as this direction search gets.
+                if not S_hist:
+                    break
+                S_hist.clear()
+                Y_hist.clear()
+                rho.clear()
+                stalls += 1
+                if rtol > 0 and stalls >= 2:
+                    break
+                continue
         y_ = np.subtract(g_new, g)
         sy = dot(s_, y_)
         if sy > 1e-12 * dot(y_, y_):

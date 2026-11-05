@@ -1,5 +1,6 @@
 """Projector row blur: model and pre-compensation."""
 import numpy as np
+import pytest
 
 from spinslicer.optics.presharpen import blur_rows, blurred_rows_getter, presharpen_rows, row_sigma
 
@@ -37,3 +38,16 @@ def test_blurred_getter_matches_the_blur_model():
     getter = blurred_rows_getter(lambda rows: plan[rows], plan.shape[0], 1.2)
     rows = [0, 5, 20, 59]
     np.testing.assert_allclose(getter(rows), blur_rows(plan, 1.2)[rows], atol=2e-3)
+
+
+def test_presharpen_uses_the_exact_adjoint_of_the_clamped_blur():
+    """With clamped edges the blur is not symmetric; the gradient needs its true transpose."""
+    from spinslicer.optics.presharpen import _blur_last, _blur_last_adjoint, _lipschitz
+
+    rng = np.random.default_rng(5)
+    for sigma in (0.4, 1.5, 3.0):
+        x, y = rng.random((4, 50)), rng.random((4, 50))
+        assert np.vdot(_blur_last(x, sigma), y) == pytest.approx(np.vdot(x, _blur_last_adjoint(y, sigma)),
+                                                                 rel=1e-12)
+        dense = _blur_last(np.eye(50), sigma)
+        assert np.linalg.norm(dense, 2) ** 2 <= _lipschitz(50, sigma) <= 1.02 * np.linalg.norm(dense, 2) ** 2

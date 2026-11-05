@@ -206,6 +206,8 @@ _EN.update({
     "сколько пикселей проектора по ширине занимает колба — проверьте разметкой":
         "how many projector pixels the vial spans — check with the pattern",
     "не знаете? напечатайте шкалу ↓": "not sure? print the ladder ↓", "напечатать шкалу →": "print the ladder →",
+    "натуральный логарифм: α = 2,303·A на 1 мм = 1 / Dp":
+        "natural log: α = 2.303·A per 1 mm = 1 / Dp",
     "ниже деталь — меньше слоёв и точнее": "a lower part means fewer layers and more accuracy",
     "в центр": "to centre", "вписать в колбу": "fit into vial", "для первой печати хватит «Норма»": "“Normal” is enough for a first print",
     "разметка колбы": "vial pattern", "тест серого": "gray test",

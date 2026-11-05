@@ -54,3 +54,36 @@ def test_generation_writes_a_print_plan(tmp_path):
     assert plan["print_time_s"] > 0 and plan["revolutions"] > 0
     assert manifest.slice_parameters["optics"]["projector_gamma"] == 2.2
     assert (tmp_path / directory / "print_plan.json").exists()
+
+
+def test_absolute_dose_and_print_time_match_beer_lambert():
+    """Uniform full white, index-matched vial (straight rays), weak absorption.
+
+    Physics: each frame deposits alpha * I0 * exp(-alpha * depth) per unit time; near the
+    axis the depth averages to the resin radius. The FastCAL dose units and the print-plan
+    conversion (print_plan.py) must give exactly that, independently of the grid.
+    """
+    from spinslicer.optics.fastcal import CirculantVialProjector, OpticsOptions, VialDosePlanner
+
+    n_theta, num_s, diameter, alpha = 90, 64, 20.0, 0.002
+    pitch = diameter / num_s
+    optics = OpticsOptions(fresnel=False, pixel_profile="box", sub_rays=4, rotation_smear=False)
+    op = CirculantVialProjector(n_theta, num_s, L_out=diameter * 1.05, L_in=diameter, n_air=1.0,
+                                n_glass=1.0, n_liquid=1.0, n_resin=1.0, alpha=alpha,
+                                container_mode=0, pitch=pitch, optics=optics)
+    dose = VialDosePlanner(op, pitch).dose(np.ones((n_theta, num_s, 1), np.float32))[:, :, 0]
+    ring_radius = (np.arange(op.grid.n_rings) + 0.5) * op.grid.dr
+    central = np.repeat(ring_radius, op.grid.L) < 0.3 * diameter / 2
+    relative = float(dose[:, central].mean())
+
+    irradiance_mw_cm2, gel_dose_mj_cm3, frame_rate = 100.0, 10.0, 50.0
+    plan = compute_print_plan(
+        {"threshold": relative, "window": 0.1, "misprinted_fraction": 0.0,
+         "background_per_unit_black": 0.0},
+        alpha_per_mm=alpha, irradiance_mw_cm2=irradiance_mw_cm2, gel_dose_mj_cm3=gel_dose_mj_cm3,
+        detector_bin_mm=op.detector_span / num_s, voxel_pitch_mm=pitch, frame_rate_hz=frame_rate,
+        num_frames=n_theta, coverage_radius_mm=diameter / 2, part_radius_mm=1.0,
+        part_fraction_outside=0.0, projector_contrast=0.0)
+    # mJ/cm^3 per second of every frame shown: 1000 mm^3/cm^3 * alpha[1/mm] * I0[mW/mm^2] * frames
+    per_second = 1000 * alpha * irradiance_mw_cm2 / 100 * n_theta * np.exp(-alpha * diameter / 2)
+    assert plan["frame_exposure_total_s"] == pytest.approx(gel_dose_mj_cm3 / per_second, rel=5e-3)
