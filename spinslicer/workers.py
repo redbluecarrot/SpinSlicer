@@ -8,6 +8,7 @@ Qt-сигналы — без ручных queue.Queue и after()-поллинг�
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import sys
@@ -329,6 +330,10 @@ class VideoExportWorker(QThread):
 
     ``frames`` are grayscale arrays or paths of PNG files. Paths are read one at a time
     at full resolution (the file for the printer); arrays are used as given.
+
+    ``metadata`` (the print plan, ProcessSettingsPanel.print_info) goes into the MP4
+    comment tag and into ``<name>.spin.json`` beside the video, so a printer knows the
+    exposure without the operator retyping it.
     """
 
     progress = pyqtSignal(float, str)
@@ -338,9 +343,10 @@ class VideoExportWorker(QThread):
 
     def __init__(self, frames: Sequence[Union[np.ndarray, str]], fps: float, out_path: str,
                  parent=None, video_range: str = "full", canvas: Optional[Any] = None,
-                 lut: Optional[np.ndarray] = None):
+                 lut: Optional[np.ndarray] = None, metadata: Optional[dict] = None):
         super().__init__(parent)
         self.frames = frames
+        self.metadata = dict(metadata) if metadata else None
         # Gray → gray table (projector brightness, video_tab.brightness_lut) or None.
         self.lut = lut
         # projector_canvas.CanvasGeometry: place every frame 1:1 on the projector's
@@ -403,8 +409,11 @@ class VideoExportWorker(QThread):
             "-vf", f"pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=in_range=full:out_range={self.video_range}",
             "-c:v", "libx264", "-preset", "medium", "-crf", str(H264_CRF), "-pix_fmt", "yuv420p",
             "-color_range", "pc" if self.video_range == "full" else "tv",
-            "-movflags", "+faststart", "-f", "mp4", path,
+            "-movflags", "+faststart",
         ]
+        if self.metadata:
+            command += ["-metadata", "comment=" + json.dumps(self.metadata, separators=(",", ":"))]
+        command += ["-f", "mp4", path]
         flags = 0x08000000 if sys.platform == "win32" else 0  # no console flash in the GUI
         with tempfile.TemporaryFile() as errors:
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
@@ -489,6 +498,11 @@ class VideoExportWorker(QThread):
                 return
             os.replace(temporary_path, output_path)
             published = True
+            if self.metadata:
+                sidecar = output_path.with_suffix(".spin.json")
+                tmp_sidecar = sidecar.with_name("." + sidecar.name + ".tmp")
+                tmp_sidecar.write_text(json.dumps(self.metadata, ensure_ascii=False, indent=1), encoding="utf-8")
+                os.replace(tmp_sidecar, sidecar)
             self.finished_ok.emit(str(output_path))
         except Exception as exc:
             self.failed.emit(f"{exc}\n{traceback.format_exc(limit=4)}")

@@ -439,6 +439,7 @@ class CALSlicerMainWindow(QMainWindow):
             self.slicer_tab._on_autofit()
         elif action == "export":
             self._apply_output_light()
+            self.projector_tab.set_print_info(self.settings_tab.print_info())
             self.projector_tab._on_save_clicked()
         elif action == "ramp":
             self.projector_tab._on_ramp_clicked()

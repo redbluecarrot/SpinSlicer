@@ -596,6 +596,28 @@ class ProcessSettingsPanel(QWidget):
         base = revs * self.frames.value_int() / self.frame_rate_hz_value()
         return base * self._exposure / max(self.brightness_factor(), 0.05)
 
+    def print_info(self) -> dict:
+        """What the printer needs to expose this video correctly; travels with the exported MP4.
+
+        A printer (SpinPi) reads it to set the exposure as whole revolutions, so every
+        angle gets the same dose, instead of guessing or running until stopped.
+        """
+        fps = self.frame_rate_hz_value()
+        frames = self.frames.value_int()
+        info: dict = {"format": "spinslicer-print/1", "fps": fps, "frames": frames,
+                      "revolution_s": frames / fps, "exposure_factor": self._exposure,
+                      "brightness": self.brightness_factor()}
+        duration = self.print_duration_s()
+        if duration > 0:
+            info["print_time_s"] = duration
+            info["revolutions"] = duration * fps / frames
+        plan = self._plan or {}
+        if plan.get("exposure_tolerance_pct") is not None:
+            info["tolerance_pct"] = float(plan["exposure_tolerance_pct"])
+        if plan.get("calibration"):
+            info["calibration"] = True
+        return info
+
     def set_projecting(self, elapsed: Optional[float], total: float = 0.0) -> None:
         """Projection state from the screen: None = stopped, else elapsed / planned seconds."""
         self._projecting = None if elapsed is None else (float(elapsed), float(total))

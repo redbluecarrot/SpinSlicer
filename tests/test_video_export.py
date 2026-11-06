@@ -59,3 +59,28 @@ def test_calibration_ramp_covers_both_ends():
     ramp = calibration_ramp(290, 10)
     assert ramp.min() == 0 and ramp.max() == 255
     assert len(np.unique(ramp)) == len(workers.CALIBRATION_LEVELS)
+
+
+def test_print_plan_travels_with_the_video(tmp_path):
+    """The exposure plan goes into the MP4 comment tag and a .spin.json beside it."""
+    import json
+    import shutil
+    import subprocess
+
+    if workers._ffmpeg_executable() is None:
+        pytest.skip("no ffmpeg")
+    meta = {"format": "spinslicer-print/1", "fps": 30.0, "frames": 5, "revolutions": 7.5, "print_time_s": 1.25}
+    frame = np.zeros((16, 16), np.uint8)
+    path = _run(tmp_path, [frame] * 5, metadata=meta)
+    sidecar = path.with_suffix(".spin.json")
+    assert json.loads(sidecar.read_text(encoding="utf-8")) == meta
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe:
+        out = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format_tags=comment", "-of", "json",
+                              str(path)], capture_output=True, text=True).stdout
+        assert json.loads(json.loads(out)["format"]["tags"]["comment"]) == meta
+
+
+def test_no_sidecar_without_a_plan(tmp_path):
+    path = _run(tmp_path, [np.zeros((16, 16), np.uint8)] * 3)
+    assert not path.with_suffix(".spin.json").exists()

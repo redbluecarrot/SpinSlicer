@@ -477,6 +477,7 @@ class ProjectorTab(QWidget):
         self._brightness = 1.0
         self._gamma = 2.2
         self._one_turn = False
+        self._print_info: Optional[dict] = None  # exposure plan written next to the MP4
         self._timer = QTimer(self)
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._advance_frame)
@@ -541,6 +542,9 @@ class ProjectorTab(QWidget):
         self._geometry = geometry
         self.preview.set_geometry(geometry)
         self._refresh_info()
+
+    def set_print_info(self, info: Optional[dict]) -> None:
+        self._print_info = dict(info) if info else None
 
     def set_fps(self, fps: float) -> None:
         self._fps = max(0.1, float(fps))
@@ -743,7 +747,7 @@ class ProjectorTab(QWidget):
         if not path:
             return
         self.progress.emit(0.0, "Экспорт в MP4...")
-        self._start_export(frames, self._fps, path, g, self._lut())
+        self._start_export(frames, self._fps, path, g, self._lut(), metadata=self._print_info)
 
     def _on_ramp_clicked(self) -> None:
         g = self._geometry
@@ -755,8 +759,9 @@ class ProjectorTab(QWidget):
         self._start_export([ramp] * int(BASE_FPS * 10), BASE_FPS, path, None)
 
     def _start_export(self, frames: list, fps: float, path: str, canvas: Optional[CanvasGeometry],
-                      lut: Optional[np.ndarray] = None) -> None:
-        self._export_worker = VideoExportWorker(frames, fps, path, self, canvas=canvas, lut=lut)
+                      lut: Optional[np.ndarray] = None, metadata: Optional[dict] = None) -> None:
+        self._export_worker = VideoExportWorker(frames, fps, path, self, canvas=canvas, lut=lut,
+                                                metadata=metadata)
         self._job_controller.register(self._export_worker)
         self._export_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
         self._export_worker.finished_ok.connect(self._on_export_done)
