@@ -349,6 +349,14 @@ def _scale_matrix_from_box(
     )
 
 
+class _OffscreenPlotter(pv.Plotter):
+    """Off-screen plotter exposing the ``interactor`` widget slot QtInteractor has."""
+
+    def __init__(self, interactor: QWidget) -> None:
+        super().__init__(off_screen=True)
+        self.interactor = interactor
+
+
 class Viewport3D(QWidget):
     """Qt-виджет со сценой, gizmo трансформации и навигационным ViewCube."""
 
@@ -362,21 +370,23 @@ class Viewport3D(QWidget):
 
         # auto_update=False: pyvistaqt otherwise redraws the scene 5×/s forever even
         # when nothing changed. Every change here asks for its own frame (request_render).
-        self.plotter: Any = QtInteractor(self, auto_update=False)
+        self._offscreen = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
+        if self._offscreen:
+            # Headless (CI): QtInteractor builds a QOpenGLWidget, which the offscreen Qt
+            # platform lacks and which then segfaults. A plain off-screen plotter plus a
+            # placeholder widget keeps every other code path identical.
+            self.plotter: Any = _OffscreenPlotter(QWidget(self))
+        else:
+            self.plotter = QtInteractor(self, auto_update=False)
         layout.addWidget(self.plotter.interactor)
 
         plotter = cast(Any, self.plotter)
         plotter.set_background(theme.current().view)
-        self._offscreen = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
         self._boil_until = 0.0
         if self._offscreen:
             setattr(self.plotter, "render", lambda *args, **kwargs: None)
             if hasattr(self.plotter, "_render"):
                 setattr(self.plotter, "_render", lambda *args, **kwargs: None)
-            # Qt's own paint and resize events reach VTK past render(): without a display
-            # (headless Linux CI) that VTK render can segfault. Nothing is shown offscreen.
-            setattr(self.plotter, "paintEvent", lambda _event: None)
-            setattr(self.plotter, "resizeEvent", lambda _event: None)
         else:
             try:
                 plotter.enable_anti_aliasing("msaa")
