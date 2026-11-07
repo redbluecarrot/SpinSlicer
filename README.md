@@ -93,19 +93,19 @@ See the [release notes](docs/releases/) for what changed in each version.
 Download pre-built binaries directly from [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Installer:** Download and run `SpinSlicer-Setup-0.6.1.exe`
+  - **Installer:** Download and run `SpinSlicer-Setup-0.7.1.exe`
   - **Portable:** Download `SpinSlicer-windows-x64.zip`, extract and run `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.6.1-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.7.1-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.6.1-amd64.deb
+  sudo apt install ./SpinSlicer-0.7.1-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.6.1-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.7.1-1.x86_64.rpm
   ```
 - **Generic Linux Portable:**
   ```bash

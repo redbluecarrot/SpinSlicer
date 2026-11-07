@@ -78,19 +78,19 @@ SpinSlicer — бесплатный открытый (MIT) слайсер для
 Скачайте готовые сборки со страницы [Releases](https://github.com/redbluecarrot/SpinSlicer/releases):
 
 - **Windows 10 / 11:**
-  - **Установщик:** скачайте и запустите `SpinSlicer-Setup-0.6.1.exe`
+  - **Установщик:** скачайте и запустите `SpinSlicer-Setup-0.7.1.exe`
   - **Портативная версия:** скачайте `SpinSlicer-windows-x64.zip`, распакуйте и запустите `SpinSlicer.exe`
 - **Arch Linux / Manjaro:**
   ```bash
-  sudo pacman -U SpinSlicer-0.6.1-1-x86_64.pkg.tar.zst
+  sudo pacman -U SpinSlicer-0.7.1-1-x86_64.pkg.tar.zst
   ```
 - **Ubuntu / Debian / Mint:**
   ```bash
-  sudo apt install ./SpinSlicer-0.6.1-amd64.deb
+  sudo apt install ./SpinSlicer-0.7.1-amd64.deb
   ```
 - **Fedora / RHEL / openSUSE:**
   ```bash
-  sudo dnf install ./SpinSlicer-0.6.1-1.x86_64.rpm
+  sudo dnf install ./SpinSlicer-0.7.1-1.x86_64.rpm
   ```
 - **Портативная сборка для Linux:**
   ```bash
