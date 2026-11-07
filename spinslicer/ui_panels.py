@@ -401,6 +401,11 @@ class ProcessSettingsPanel(QWidget):
         self.blur_compensation = Switch(True)
         self.line_style = Segmented([("прямые", "straight"), ("от руки", "sketch"), ("живые", "live")], 0)
         self.language_box = NoScrollComboBox()
+        # The printer on the network (printer_link): its profile fills the settings below.
+        self.printer_box = NoScrollComboBox()
+        self.printer_box.setMinimumWidth(150)
+        self.printer_box.addItem(tr("не выбран"), None)
+        self._printer_profile_id = ""
 
         self.r_diameter = self._row("Диаметр колбы", self.diameter)
         self.r_wall = self._row("Стенка", self.glass_thickness)
@@ -432,12 +437,22 @@ class ProcessSettingsPanel(QWidget):
         self.r_draw = self._row("Линии", self.line_style, stacked=True,
                                 effect="прямые — по линейке, модель без точек; от руки — неподвижный набросок; живые — набросок «дышит»")
         self.r_language = self._row("Язык", self.language_box)
+        self.r_printer = self._row("Принтер", self.printer_box,
+                                   hint="SpinPrinter в сети: его профиль заполнит колбу и проектор")
+        printer_tools = QWidget()
+        ptl = QHBoxLayout(printer_tools)
+        ptl.setContentsMargins(0, 0, 0, 0)
+        ptl.setSpacing(16)
+        ptl.addWidget(self._link("найти в сети", "printer_find"))
+        ptl.addWidget(self._link("ввести адрес", "printer_manual"))
+        self.r_printer_tools = self._row("", printer_tools)
         expert = self._group([self.r_blur, self.r_comp, self.r_offx, self.r_offy, self.r_gamma, self.r_contrast,
                               self.r_irr, self.r_nglass, self.r_nliquid])
         # In the order a printer is built: the interface, the vial, the projector and its
         # optics, the resin. What is rarely touched hides in "fine tuning".
         self._add_page("setup", [
             section_head("Интерфейс"), self.r_language, self.r_draw, self.r_hints,
+            section_head("Принтер"), self.r_printer, self.r_printer_tools,
             section_head("Колба"), self.r_diameter, self.r_wall, self.r_bath,
             section_head("Проектор"), self.r_resolution, self.r_hz, self.r_output, self.r_rays, self.r_throw,
             self.r_field,
@@ -539,6 +554,14 @@ class ProcessSettingsPanel(QWidget):
         tl.setSpacing(16)
         tl.addWidget(self._link("разметка колбы", "pattern"))
         tl.addWidget(self._link("тест серого", "ramp"))
+        spin = QWidget()
+        sl = QHBoxLayout(spin)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(16)
+        sl.addWidget(self._link("экспорт .spin", "spin_export"))
+        sl.addWidget(self._link("отправить на принтер", "spin_send"))
+        self.r_spin = self._row("Файл для принтера", spin,
+                                "видео, расчёт и превью одним файлом: принтер сам знает обороты")
         self.r_tools = self._row("Настроить проектор", tools,
                                  "разметка покажет, где должны быть стенки колбы; тест серого — все уровни яркости")
         self.plan_label = QLabel(tr("Сначала рассчитайте свет."))
@@ -558,7 +581,7 @@ class ProcessSettingsPanel(QWidget):
         self._exposure = 1.0
         self._projecting: Optional[tuple[float, float]] = None
         self.game_print = PixelGame()
-        self._add_page("print", [self.r_output_kind, self.r_tools, self.r_speed, self.r_brightness, self.dose_slot, box,
+        self._add_page("print", [self.r_output_kind, self.r_spin, self.r_tools, self.r_speed, self.r_brightness, self.dose_slot, box,
                                  self._expander("Мини-игры", self._arcade(self.game_print))])
 
     def attach_dose_card(self, card: QWidget) -> None:
@@ -789,6 +812,53 @@ class ProcessSettingsPanel(QWidget):
 
     def screen_size(self) -> tuple[int, int]:
         return RESOLUTIONS[self.resolution.value_int()]
+
+    # ------------------------------------------------------------- network printer
+    def set_printers(self, printers: Sequence[object], keep: Optional[object] = None) -> None:
+        """Fill the printer list (printer_link.PrinterAddress items); keeps the chosen one if listed."""
+        current = keep if keep is not None else self.selected_printer()
+        with QSignalBlocker(self.printer_box):
+            self.printer_box.clear()
+            self.printer_box.addItem(tr("не выбран"), None)
+            for printer in printers:
+                self.printer_box.addItem(getattr(printer, "label", str(printer)), printer)
+            if current is not None:
+                index = next((i for i in range(1, self.printer_box.count())
+                              if self.printer_box.itemData(i) == current), -1)
+                if index < 0:
+                    self.printer_box.addItem(getattr(current, "label", str(current)), current)
+                    index = self.printer_box.count() - 1
+                self.printer_box.setCurrentIndex(index)
+
+    def selected_printer(self) -> Optional[object]:
+        return self.printer_box.currentData()
+
+    def printer_profile_id(self) -> str:
+        return self._printer_profile_id
+
+    def apply_printer_profile(self, settings: dict) -> list[str]:
+        """Put a printer profile (printer_link.profile_settings) into the settings; returns what changed."""
+        self._printer_profile_id = str(settings.get("profile_id", ""))
+        changed: list[str] = []
+
+        def put(key: str, widget: Stepper, label: str) -> None:
+            if key in settings:
+                widget.setValue(float(settings[key]))
+                changed.append(label)
+        put("vial_diameter_mm", self.diameter, "диаметр колбы")
+        put("vial_wall_mm", self.glass_thickness, "стенка")
+        size = (settings.get("projector_width"), settings.get("projector_height"))
+        if size in RESOLUTIONS:
+            self.resolution.setValue(float(RESOLUTIONS.index(size)))  # type: ignore[arg-type]
+            changed.append("разрешение проектора")
+        put("projector_hz", self.projector_hz, "частота проектора")
+        put("irradiance_mw_cm2", self.projector_irradiance, "облучённость")
+        put("contrast", self.projector_contrast, "контраст")
+        put("n_glass", self.n_glass, "n стекла")
+        put("vial_width_px", self.output_res, "колба на экране")
+        put("offset_x_px", self.offset_x, "сдвиг по X")
+        put("offset_y_px", self.offset_y, "сдвиг по Y")
+        return changed
 
     def canvas_geometry(self) -> CanvasGeometry:
         w, h = self.screen_size()

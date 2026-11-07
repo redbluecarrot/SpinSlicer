@@ -338,9 +338,11 @@ class VideoExportWorker(QThread):
 
     def __init__(self, frames: Sequence[Union[np.ndarray, str]], fps: float, out_path: str,
                  parent=None, video_range: str = "full", canvas: Optional[Any] = None,
-                 lut: Optional[np.ndarray] = None):
+                 lut: Optional[np.ndarray] = None, comment: Optional[str] = None):
         super().__init__(parent)
         self.frames = frames
+        # JSON print plan for the MP4 ``comment`` tag (spin_format.mp4_comment), read by SpinPi.
+        self.comment = comment
         # Gray → gray table (projector brightness, video_tab.brightness_lut) or None.
         self.lut = lut
         # projector_canvas.CanvasGeometry: place every frame 1:1 on the projector's
@@ -403,8 +405,10 @@ class VideoExportWorker(QThread):
             "-vf", f"pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=in_range=full:out_range={self.video_range}",
             "-c:v", "libx264", "-preset", "medium", "-crf", str(H264_CRF), "-pix_fmt", "yuv420p",
             "-color_range", "pc" if self.video_range == "full" else "tv",
-            "-movflags", "+faststart", "-f", "mp4", path,
         ]
+        if self.comment:
+            command += ["-metadata", f"comment={self.comment}"]
+        command += ["-movflags", "+faststart", "-f", "mp4", path]
         flags = 0x08000000 if sys.platform == "win32" else 0  # no console flash in the GUI
         with tempfile.TemporaryFile() as errors:
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
@@ -489,6 +493,10 @@ class VideoExportWorker(QThread):
                 return
             os.replace(temporary_path, output_path)
             published = True
+            if self.comment and ffmpeg is None:
+                # mp4v cannot carry the tag: SpinPi also reads <name>.spin.json beside the video.
+                sidecar = output_path.with_suffix(".spin.json")
+                sidecar.write_text(self.comment, encoding="utf-8")
             self.finished_ok.emit(str(output_path))
         except Exception as exc:
             self.failed.emit(f"{exc}\n{traceback.format_exc(limit=4)}")

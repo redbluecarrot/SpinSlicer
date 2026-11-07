@@ -192,6 +192,29 @@ output_frames/
 engine, frame geometry (detector span, pixel pitch, Z pitch) and `complete: true`.
 A run is published only after every PNG and the metadata pass validation.
 
+## Printer file (.spin) and sending to a SpinPrinter
+
+On the Print page, row "Printer file":
+
+- **export .spin** saves one file per print: a plain uncompressed ZIP (any archiver opens it)
+  with `spin.json` (frames, fps, size, the rotation direction `rotation`, `frame0_angle_deg`,
+  the video's `sha256`, revolutions and print time from the plan including exposure and
+  brightness, resin, projector), `video.mp4` (one revolution of the vial), `preview.png`
+  (the part, 320×320) and `slicer.json` (the settings to redo the slice). The format is
+  specified in SpinPrinter, `docs/ecosystem.ru.md`, section 3. Copy it to the printer's USB stick.
+- **send to printer** does the same and uploads the file to SpinPi right away
+  (`PUT /api/files/<name>.spin`), with the progress in the status bar.
+
+Choose the printer under Settings → Printer: "find on the network" looks for
+`_spinprinter._tcp` over mDNS (needs the optional `pip install zeroconf`) and checks
+`spinslicer.local`; "enter address" takes an IP or a name such as `192.168.1.40` or
+`spinslicer.local:80`. When a printer is chosen the slicer reads its profile
+(`GET /api/printer`: projector resolution and irradiance, vial diameter and wall, centre
+calibration) into the settings; a printer without that endpoint leaves them unchanged.
+
+The plain "Save video" export carries the plan too: it is in the MP4 `comment` tag
+(`"format": "spinslicer-print"`), so SpinPi knows the revolutions of a bare `.mp4` as well.
+
 ## Project layout
 
 | File | Purpose |
@@ -202,6 +225,7 @@ A run is published only after every PNG and the metadata pass validation.
 | `spinslicer/slicer_tab.py`, `spinslicer/viewport.py`, `spinslicer/sketch_scene.py` | 3D scene: the part plus a live sketch of the printer. |
 | `spinslicer/video_tab.py`, `spinslicer/projector_canvas.py` | Print screen, dose card, full-screen projector output, MP4 export. |
 | `spinslicer/engine_process.py`, `spinslicer/workers.py` | The compute process and background workers. |
+| `spinslicer/spin_format.py`, `spinslicer/printer_link.py`, `spinslicer/printer_controller.py` | The `.spin` print file, the MP4 plan tag, finding a printer, its profile and the upload. |
 | `spinslicer/slicing_engine.py`, `spinslicer/voxelizer.py` | Voxelization, planning, frame export. |
 | `spinslicer/optics/fastcal.py` | FastCAL engine for round vials. |
 | `spinslicer/optics/system_matrix.py`, `spinslicer/optics/ray_tracing.py` | Exact sparse reference matrix that the tests check FastCAL against, and ray tracing. |

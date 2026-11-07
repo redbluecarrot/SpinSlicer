@@ -45,6 +45,10 @@ dependencies = [
     "imageio-ffmpeg==0.7.0",
 ]
 
+[project.optional-dependencies]
+# Finds SpinPrinters by mDNS (_spinprinter._tcp); without it an address typed by hand works.
+network = ["zeroconf>=0.130"]
+
 [project.urls]
 Homepage = "https://redbluecarrot.github.io/SpinSlicer/"
 Source = "https://github.com/redbluecarrot/SpinSlicer"

@@ -1,0 +1,325 @@
+"""Talking to a SpinPrinter (SpinPi) over the network.
+
+* Discovery: SpinPi announces ``_spinprinter._tcp`` over mDNS with the TXT fields
+  ``name``, ``id`` and ``api``. ``zeroconf`` is used only when it is installed; the
+  printer's default host name ``spinslicer.local`` and an address typed by hand
+  always work.
+* ``GET /api/printer``: the printer profile (projector, vial, calibration). Older
+  SpinPi versions do not have it yet, so its absence is not an error.
+* ``PUT /api/files/<name>.spin``: upload of a print file, with progress.
+
+Only the standard library is needed (``http.client``); nothing here touches Qt.
+"""
+from __future__ import annotations
+
+import http.client
+import json
+import os
+import socket
+import threading
+import urllib.parse
+from dataclasses import dataclass
+from typing import Any, Callable, Optional
+
+SERVICE_TYPE = "_spinprinter._tcp.local."
+DEFAULT_HOST = "spinslicer.local"
+DEFAULT_PORT = 80
+TIMEOUT_S = 10.0
+CHUNK = 256 * 1024
+
+
+class PrinterError(RuntimeError):
+    """The printer could not be reached or refused the request."""
+
+
+@dataclass(frozen=True)
+class PrinterAddress:
+    host: str
+    port: int = DEFAULT_PORT
+    name: str = ""
+    printer_id: str = ""
+    source: str = "manual"          # mdns | default | manual
+
+    @property
+    def label(self) -> str:
+        where = self.host if self.port == DEFAULT_PORT else f"{self.host}:{self.port}"
+        return f"{self.name} ({where})" if self.name and self.name != self.host else where
+
+    def url(self, path: str) -> str:
+        host = f"[{self.host}]" if ":" in self.host else self.host
+        return f"http://{host}:{self.port}{path}"
+
+
+def parse_address(text: str) -> PrinterAddress:
+    """``host``, ``host:port``, ``http://host:port/…`` or ``[v6]:port`` → address."""
+    text = (text or "").strip()
+    if not text:
+        raise PrinterError("Empty printer address.")
+    if "://" not in text:
+        text = "http://" + text
+    parts = urllib.parse.urlsplit(text)
+    if parts.scheme not in ("http", ""):
+        raise PrinterError("Only http:// printer addresses are supported.")
+    host = parts.hostname
+    if not host:
+        raise PrinterError(f"Not a printer address: {text}")
+    try:
+        port = parts.port or DEFAULT_PORT
+    except ValueError as exc:
+        raise PrinterError(f"Bad port in {text}") from exc
+    return PrinterAddress(host=host, port=port, source="manual")
+
+
+# ------------------------------------------------------------------ discovery
+def zeroconf_available() -> bool:
+    try:
+        import zeroconf  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _txt(properties: dict[Any, Any], key: str) -> str:
+    value = properties.get(key.encode()) if properties else None
+    if value is None and properties:
+        value = properties.get(key)
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return "" if value is None else str(value)
+
+
+def discover_mdns(timeout_s: float = 2.5) -> list[PrinterAddress]:
+    """Printers announcing ``_spinprinter._tcp``; [] when zeroconf is missing."""
+    try:
+        from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
+    except ImportError:
+        return []
+    found: dict[str, PrinterAddress] = {}
+    lock = threading.Lock()
+
+    class Listener(ServiceListener):
+        def _resolve(self, zc: Any, type_: str, name: str) -> None:
+            info = zc.get_service_info(type_, name, timeout=int(timeout_s * 1000))
+            if info is None:
+                return
+            addresses = info.parsed_addresses() if hasattr(info, "parsed_addresses") else []
+            host = next((a for a in addresses if ":" not in a), addresses[0] if addresses else "")
+            if not host:
+                host = (info.server or "").rstrip(".")
+            if not host:
+                return
+            props = info.properties or {}
+            label = _txt(props, "name") or name.split(".")[0]
+            with lock:
+                found[name] = PrinterAddress(host=host, port=int(info.port or DEFAULT_PORT), name=label,
+                                             printer_id=_txt(props, "id"), source="mdns")
+
+        def add_service(self, zc: Any, type_: str, name: str) -> None:
+            self._resolve(zc, type_, name)
+
+        def update_service(self, zc: Any, type_: str, name: str) -> None:
+            self._resolve(zc, type_, name)
+
+        def remove_service(self, zc: Any, type_: str, name: str) -> None:
+            with lock:
+                found.pop(name, None)
+
+    zc = Zeroconf()
+    try:
+        ServiceBrowser(zc, SERVICE_TYPE, Listener())
+        threading.Event().wait(timeout_s)
+    finally:
+        zc.close()
+    with lock:
+        return sorted(found.values(), key=lambda p: p.label.lower())
+
+
+def resolve_default(host: str = DEFAULT_HOST) -> Optional[PrinterAddress]:
+    """``spinslicer.local`` when the system resolver knows it (Bonjour, avahi, nss-mdns)."""
+    try:
+        socket.getaddrinfo(host, DEFAULT_PORT, proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError):
+        return None
+    return PrinterAddress(host=host, port=DEFAULT_PORT, name=host, source="default")
+
+
+def discover(timeout_s: float = 2.5) -> list[PrinterAddress]:
+    """mDNS printers, then ``spinslicer.local`` if it resolves and is not already listed."""
+    printers = discover_mdns(timeout_s)
+    fallback = resolve_default()
+    if fallback is not None and not any(p.host.rstrip(".").lower() == DEFAULT_HOST for p in printers):
+        printers.append(fallback)
+    return printers
+
+
+# ------------------------------------------------------------------ HTTP
+def _connection(address: PrinterAddress, timeout_s: float) -> http.client.HTTPConnection:
+    return http.client.HTTPConnection(address.host, address.port, timeout=timeout_s)
+
+
+def _error_text(status: int, reason: str, body: bytes) -> str:
+    detail = ""
+    try:
+        data = json.loads(body.decode("utf-8"))
+        if isinstance(data, dict) and data.get("error"):
+            detail = str(data["error"])
+    except (ValueError, UnicodeDecodeError):
+        detail = body[:200].decode("utf-8", "replace").strip()
+    return f"HTTP {status} {reason}" + (f": {detail}" if detail else "")
+
+
+def get_json(address: PrinterAddress, path: str, timeout_s: float = TIMEOUT_S) -> Any:
+    conn = _connection(address, timeout_s)
+    try:
+        conn.request("GET", path, headers={"Accept": "application/json"})
+        response = conn.getresponse()
+        body = response.read()
+        if response.status != 200:
+            raise PrinterError(_error_text(response.status, response.reason, body))
+        return json.loads(body.decode("utf-8"))
+    except (OSError, http.client.HTTPException) as exc:
+        raise PrinterError(f"{address.label}: {exc}") from exc
+    except ValueError as exc:
+        raise PrinterError(f"{address.label}{path}: not JSON") from exc
+    finally:
+        conn.close()
+
+
+def get_printer_profile(address: PrinterAddress, timeout_s: float = TIMEOUT_S) -> Optional[dict[str, Any]]:
+    """``GET /api/printer``; None when the printer's software does not have it yet (404)."""
+    try:
+        data = get_json(address, "/api/printer", timeout_s)
+    except PrinterError as exc:
+        if "HTTP 404" in str(exc) or "HTTP 501" in str(exc):
+            return None
+        raise
+    return data if isinstance(data, dict) else None
+
+
+def upload(address: PrinterAddress, file_path: str, name: Optional[str] = None, *,
+           progress: Optional[Callable[[int, int], None]] = None,
+           cancelled: Optional[Callable[[], bool]] = None,
+           timeout_s: float = 60.0) -> dict[str, Any]:
+    """``PUT /api/files/<name>`` with the file as the body; returns the printer's JSON answer."""
+    from spinslicer.spin_format import spin_name
+
+    name = spin_name(name or os.path.basename(file_path))
+    total = os.path.getsize(file_path)
+    if total <= 0:
+        raise PrinterError("The file is empty.")
+    path = "/api/files/" + urllib.parse.quote(name)
+    conn = _connection(address, timeout_s)
+    try:
+        conn.putrequest("PUT", path)
+        conn.putheader("Content-Type", "application/zip")
+        conn.putheader("Content-Length", str(total))
+        conn.endheaders()
+        sent = 0
+        if progress:
+            progress(0, total)
+        with open(file_path, "rb") as handle:
+            while True:
+                if cancelled is not None and cancelled():
+                    raise PrinterError("Upload cancelled.")
+                block = handle.read(CHUNK)
+                if not block:
+                    break
+                conn.send(block)
+                sent += len(block)
+                if progress:
+                    progress(sent, total)
+        response = conn.getresponse()
+        body = response.read()
+        if response.status not in (200, 201):
+            raise PrinterError(_error_text(response.status, response.reason, body))
+        try:
+            answer = json.loads(body.decode("utf-8")) if body else {}
+        except ValueError:
+            answer = {}
+        if isinstance(answer, dict) and answer.get("ok") is False:
+            raise PrinterError(str(answer.get("error") or "the printer refused the file"))
+        return answer if isinstance(answer, dict) else {}
+    except (OSError, http.client.HTTPException) as exc:
+        raise PrinterError(f"{address.label}: {exc}") from exc
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------------------ printer profile
+def _pick(data: Any, *paths: str) -> Any:
+    """First value found under any of the dotted paths."""
+    for path in paths:
+        node = data
+        for key in path.split("."):
+            if isinstance(node, dict) and key in node:
+                node = node[key]
+            else:
+                node = None
+                break
+        if node is not None:
+            return node
+    return None
+
+
+def _number(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and abs(number) != float("inf") else None
+
+
+def profile_settings(profile: dict[str, Any]) -> dict[str, Any]:
+    """The slicer settings a ``GET /api/printer`` profile defines (only those present).
+
+    Keys: ``profile_id``, ``name``, ``projector_width``, ``projector_height``,
+    ``projector_hz``, ``irradiance_mw_cm2``, ``contrast``, ``vial_diameter_mm``,
+    ``vial_wall_mm``, ``n_glass``, ``vial_width_px``, ``offset_x_px``, ``offset_y_px``,
+    ``motor_direction``.
+    """
+    out: dict[str, Any] = {}
+
+    def put(key: str, value: Any, *, integer: bool = False, positive: bool = True) -> None:
+        number = _number(value)
+        if number is None or (positive and number <= 0):
+            return
+        out[key] = int(round(number)) if integer else number
+
+    pid = _pick(profile, "id", "profile_id")
+    if pid:
+        out["profile_id"] = str(pid)
+    name = _pick(profile, "name")
+    if name:
+        out["name"] = str(name)
+    width = _pick(profile, "projector.width", "projector.width_px")
+    height = _pick(profile, "projector.height", "projector.height_px")
+    resolution = _pick(profile, "projector.resolution")
+    if isinstance(resolution, str) and "x" in resolution.lower():
+        width, height = resolution.lower().split("x", 1)
+    elif isinstance(resolution, (list, tuple)) and len(resolution) == 2:
+        width, height = resolution
+    put("projector_width", width, integer=True)
+    put("projector_height", height, integer=True)
+    put("projector_hz", _pick(profile, "projector.hz", "projector.refresh_hz", "projector.fps"))
+    put("irradiance_mw_cm2", _pick(profile, "projector.irradiance_mw_cm2", "projector.irradiance"))
+    put("contrast", _pick(profile, "projector.contrast"))
+    put("vial_diameter_mm", _pick(profile, "vial.diameter_mm", "vial_diameter_mm", "vial.diameter"))
+    put("vial_wall_mm", _pick(profile, "vial.wall_mm", "vial.wall"))
+    put("n_glass", _pick(profile, "vial.n_glass", "vial.refractive_index", "vial.n"))
+    put("vial_width_px", _pick(profile, "calibration.vial_width_px", "calibration.width_px"), integer=True)
+    put("offset_x_px", _pick(profile, "calibration.offset_x_px", "calibration.center_offset_x_px",
+                             "calibration.offset_x"),
+        integer=True, positive=False)
+    put("offset_y_px", _pick(profile, "calibration.offset_y_px", "calibration.center_offset_y_px",
+                             "calibration.offset_y"),
+        integer=True, positive=False)
+    offset = _pick(profile, "calibration.center_offset_px")
+    if isinstance(offset, (list, tuple)) and len(offset) == 2:
+        put("offset_x_px", offset[0], integer=True, positive=False)
+        put("offset_y_px", offset[1], integer=True, positive=False)
+    direction = _pick(profile, "motor.direction")
+    if direction in (1, -1, "1", "-1"):
+        out["motor_direction"] = int(direction)
+    elif isinstance(direction, str) and direction in ("ccw_from_top", "cw_from_top"):
+        out["motor_direction"] = 1 if direction == "ccw_from_top" else -1
+    return out

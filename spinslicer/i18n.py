@@ -373,6 +373,45 @@ _EN_TEMPLATES.update({
 _EN.update({"Сдвиг, мм": "Move, mm", "Поворот, °": "Rotate, °", "Размер, мм": "Size, mm", "Центр": "Centre",
             "Вписать": "Fit", "Сброс": "Reset"})
 
+# The .spin print file and the network printer (spin_format, printer_link).
+_EN.update({
+    "не выбран": "none", "Принтер": "Printer",
+    "SpinPrinter в сети: его профиль заполнит колбу и проектор":
+        "a SpinPrinter on the network: its profile fills in the vial and the projector",
+    "найти в сети": "find on the network", "ввести адрес": "enter address",
+    "экспорт .spin": "export .spin", "отправить на принтер": "send to printer",
+    "Файл для принтера": "Printer file",
+    "видео, расчёт и превью одним файлом: принтер сам знает обороты":
+        "video, plan and preview in one file: the printer knows the revolutions",
+    "диаметр колбы": "vial diameter", "стенка": "wall", "разрешение проектора": "projector resolution",
+    "частота проектора": "projector refresh rate", "облучённость": "irradiance", "контраст": "contrast",
+    "n стекла": "glass n", "колба на экране": "vial on screen", "сдвиг по X": "X offset",
+    "сдвиг по Y": "Y offset",
+    "Подождите: идёт экспорт.": "Please wait: an export is running.",
+    "Экспорт для принтера (.spin)": "Export for printer (.spin)",
+    "Файл для принтера сохранён.": "Printer file saved.", "Файл для принтера сохранён": "Printer file saved",
+    "Скопируйте его на флешку принтера или отправьте по сети.":
+        "Copy it to the printer's USB stick or send it over the network.",
+    "Отправлено на принтер.": "Sent to the printer.", "Отправлено на принтер": "Sent to printer",
+    "Не удалось подготовить файл для принтера.": "Could not prepare the printer file.",
+    "Не удалось отправить на принтер": "Could not send to the printer",
+    "Упаковка файла .spin...": "Packing the .spin file...",
+    "Отправка на принтер": "Sending to printer",
+    "Поиск по mDNS недоступен (pip install zeroconf): проверяю spinslicer.local.":
+        "mDNS search is not available (pip install zeroconf): checking spinslicer.local.",
+    "Ищу принтеры в сети…": "Looking for printers on the network…",
+    "Найдено принтеров:": "Printers found:",
+    "Принтер в сети не найден. Введите его адрес.": "No printer found on the network. Enter its address.",
+    "Адрес принтера": "Printer address",
+    "IP-адрес или имя принтера, например spinslicer.local": "IP address or name of the printer, e.g. spinslicer.local",
+    "Принтер недоступен:": "Printer not reachable:",
+    "принтер не отдаёт профиль, настройки остаются как есть.":
+        "the printer does not provide a profile, the settings stay as they are.",
+    "Разрешения проектора нет в списке:": "The projector resolution is not in the list:",
+    "Профиль принтера": "Printer profile", "ничего не изменилось": "nothing changed",
+})
+_EN_TEMPLATES.update({"Отправка на принтер {}%": "Sending to printer {}%"})
+
 _NUMBER = re.compile(r"\d+(?:[  ]\d{3})*(?:[.,]\d+)?")
 
 

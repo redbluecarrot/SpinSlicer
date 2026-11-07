@@ -12,7 +12,8 @@ projector up.
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+import tempfile
+from typing import Any, Callable, List, Optional
 
 import numpy as np
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
@@ -32,10 +33,20 @@ from PyQt6.QtWidgets import (
 from spinslicer import theme
 from spinslicer.i18n import tr
 from spinslicer.job_controller import JobController
+from spinslicer.printer_link import PrinterAddress
+from spinslicer.printer_workers import SpinPackWorker
 from spinslicer.projector_canvas import CanvasGeometry, compose
+from spinslicer.spin_format import SPIN_EXTENSION, PrintJob, mp4_comment, spin_name
 from spinslicer.workers import VideoAssembleWorker, VideoExportWorker, calibration_ramp
 
 BASE_FPS = 24.0
+
+
+def _remove(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _qimage(frame: np.ndarray) -> QImage:
@@ -470,6 +481,11 @@ class ProjectorTab(QWidget):
         self._frame_index = 0
         self._assemble_worker: Optional[VideoAssembleWorker] = None
         self._export_worker: Optional[VideoExportWorker] = None
+        self._pack_worker: Optional[SpinPackWorker] = None
+        # Set by the main window: the print job (plan, resin, printer) for the frames shown,
+        # and the extras of a .spin file (preview PNG, settings to redo the slice).
+        self.job_provider: Optional[Callable[[int, int, int, float], Optional[PrintJob]]] = None
+        self.spin_extras: Optional[Callable[[], tuple[Optional[bytes], Optional[dict[str, Any]]]]] = None
         self._output_window: Optional[ProjectorOutputWindow] = None
         self._geometry = CanvasGeometry()
         self._true_size: Optional[tuple[int, int]] = None
@@ -743,7 +759,80 @@ class ProjectorTab(QWidget):
         if not path:
             return
         self.progress.emit(0.0, "Экспорт в MP4...")
-        self._start_export(frames, self._fps, path, g, self._lut())
+        job = self._job(len(frames))
+        self._start_export(frames, self._fps, path, g, self._lut(),
+                           comment=mp4_comment(job) if job is not None else None)
+
+    def _job(self, frame_count: int) -> Optional[PrintJob]:
+        if self.job_provider is None:
+            return None
+        g = self._geometry
+        # ffmpeg pads odd sides with black to even ones (yuv420p).
+        return self.job_provider(frame_count, g.width + g.width % 2, g.height + g.height % 2, self._fps)
+
+    def busy(self) -> bool:
+        return any(w is not None and w.isRunning() for w in (self._export_worker, self._pack_worker))
+
+    def export_spin(self, printer: Optional[PrinterAddress] = None) -> bool:
+        """Encode the video and pack a .spin file: saved where the user says, or sent to `printer`."""
+        frames = self._printer_frames()
+        if not frames:
+            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитайте свет."))
+            return False
+        if self.busy():
+            QMessageBox.information(self, tr("Внимание"), tr("Подождите: идёт экспорт."))
+            return False
+        job = self._job(len(frames))
+        if job is None:
+            return False
+        if printer is None:
+            path, _ = QFileDialog.getSaveFileName(self, tr("Экспорт для принтера (.spin)"),
+                                                  spin_name(job.name), f"SpinPrinter (*{SPIN_EXTENSION})")
+            if not path:
+                return False
+            if not path.lower().endswith(SPIN_EXTENSION):
+                path += SPIN_EXTENSION
+            work_dir = os.path.dirname(os.path.abspath(path))
+        else:
+            work_dir = tempfile.mkdtemp(prefix="spinslicer-send-")
+            path = os.path.join(work_dir, spin_name(job.name))
+        fd, video = tempfile.mkstemp(prefix=".spinslicer-video-", suffix=".mp4", dir=work_dir)
+        os.close(fd)
+        self.progress.emit(0.0, "Экспорт в MP4...")
+        self._start_export(frames, self._fps, video, self._geometry, self._lut(), comment=mp4_comment(job),
+                           on_done=lambda _p: self._pack(job, video, path, printer))
+        self._export_worker.failed.connect(lambda _m: _remove(video))  # type: ignore[union-attr]
+        self._export_worker.cancelled.connect(lambda: _remove(video))  # type: ignore[union-attr]
+        return True
+
+    def _pack(self, job: PrintJob, video: str, path: str, printer: Optional[PrinterAddress]) -> None:
+        preview, settings = self.spin_extras() if self.spin_extras is not None else (None, None)
+        self._pack_worker = SpinPackWorker(job, video, path, preview_png=preview, slicer_settings=settings,
+                                           printer=printer, remove_spin=printer is not None, parent=self)
+        self._job_controller.register(self._pack_worker)
+        self._pack_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
+        if printer is None:
+            self._pack_worker.packed.connect(self._on_spin_saved)
+        self._pack_worker.uploaded.connect(self._on_spin_uploaded)
+        self._pack_worker.failed.connect(self._on_spin_failed)
+        self._pack_worker.start()
+
+    def _on_spin_saved(self, path: str) -> None:
+        self.progress.emit(1.0, "Файл для принтера сохранён.")
+        self.logMessage.emit(f".spin: {path}")
+        QMessageBox.information(self, tr("Готово"), f"{tr('Файл для принтера сохранён')}:\n{path}\n\n"
+                                + tr("Скопируйте его на флешку принтера или отправьте по сети."))
+
+    def _on_spin_uploaded(self, printer: str, answer: object) -> None:
+        name = answer.get("name", "") if isinstance(answer, dict) else ""
+        self.progress.emit(1.0, "Отправлено на принтер.")
+        self.logMessage.emit(f"{tr('Отправлено на принтер')} {printer}: {name}")
+        QMessageBox.information(self, tr("Готово"), f"{tr('Отправлено на принтер')} {printer}"
+                                + (f":\n{name}" if name else ""))
+
+    def _on_spin_failed(self, msg: str) -> None:
+        self.progress.emit(0.0, "Не удалось подготовить файл для принтера.")
+        QMessageBox.critical(self, tr("Не удалось отправить на принтер"), msg)
 
     def _on_ramp_clicked(self) -> None:
         g = self._geometry
@@ -755,11 +844,12 @@ class ProjectorTab(QWidget):
         self._start_export([ramp] * int(BASE_FPS * 10), BASE_FPS, path, None)
 
     def _start_export(self, frames: list, fps: float, path: str, canvas: Optional[CanvasGeometry],
-                      lut: Optional[np.ndarray] = None) -> None:
-        self._export_worker = VideoExportWorker(frames, fps, path, self, canvas=canvas, lut=lut)
+                      lut: Optional[np.ndarray] = None, comment: Optional[str] = None,
+                      on_done: Optional[Callable[[str], None]] = None) -> None:
+        self._export_worker = VideoExportWorker(frames, fps, path, self, canvas=canvas, lut=lut, comment=comment)
         self._job_controller.register(self._export_worker)
         self._export_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
-        self._export_worker.finished_ok.connect(self._on_export_done)
+        self._export_worker.finished_ok.connect(on_done or self._on_export_done)
         self._export_worker.failed.connect(self._on_export_failed)
         self._export_worker.start()
 

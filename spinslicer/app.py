@@ -86,6 +86,7 @@ from spinslicer.i18n import (  # noqa: E402
 )
 from spinslicer.job_controller import JobController  # noqa: E402
 from spinslicer.pixel_game import silhouette_from_mesh  # noqa: E402
+from spinslicer.printer_controller import PrinterController  # noqa: E402
 from spinslicer.slicer_tab import SlicerTab  # noqa: E402
 from spinslicer.theme import apply_theme  # noqa: E402
 from spinslicer.theme import current as current_palette  # noqa: E402
@@ -376,6 +377,8 @@ class CALSlicerMainWindow(QMainWindow):
 
         panel = self.settings_tab
         panel.actionRequested.connect(self._on_panel_action)
+        self.printer = PrinterController(self, panel, self.projector_tab, panel.output_dir,
+                                         lambda: self.slicer_tab._model_node, self._log)
         panel.sceneChanged.connect(self._scene_timer.start)
         panel.canvasChanged.connect(self._apply_canvas)
         panel.settingsChanged.connect(self._refresh_chips)
@@ -440,6 +443,9 @@ class CALSlicerMainWindow(QMainWindow):
         elif action == "export":
             self._apply_output_light()
             self.projector_tab._on_save_clicked()
+        elif action.startswith(("spin_", "printer_")):
+            self._apply_output_light()
+            self.printer.handle(action)
         elif action == "ramp":
             self.projector_tab._on_ramp_clicked()
         elif action == "projector":
