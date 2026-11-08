@@ -328,7 +328,7 @@ class CALSlicerMainWindow(QMainWindow):
             chip.setProperty("_spinslicer_skip_text_translation", True)
             chips.addWidget(chip)
         chips.addStretch(1)
-        self.log_toggle = QPushButton(tr("журнал ▴"))
+        self.log_toggle = QPushButton(tr("журнал"))
         self.log_toggle.setObjectName("linkButton")
         self.log_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         chips.addWidget(self.log_toggle)
@@ -409,6 +409,8 @@ class CALSlicerMainWindow(QMainWindow):
         self.projector_tab.projectionFinished.connect(self._on_projection_finished)
 
         self.theme_toggle.toggled.connect(self._on_theme)
+        # Settings → Интерфейс → Тема is the same switch as the sun / moon in the header
+        panel.themeChanged.connect(self.theme_toggle.setChecked)
         self.log_toggle.clicked.connect(self._toggle_log)
 
     # =======================================================================
@@ -547,6 +549,7 @@ class CALSlicerMainWindow(QMainWindow):
         if isinstance(app, QApplication):
             apply_theme(app, dark)
         self._settings.setValue("ui/dark", dark)
+        self.settings_tab.set_theme_silent(dark)
         self.slicer_tab.viewport.apply_palette()
         for chip in self.chips.values():
             chip.refresh()
@@ -556,6 +559,7 @@ class CALSlicerMainWindow(QMainWindow):
         self.settings_tab.refresh_theme()
         self.projector_tab.preview.update()
         self.projector_tab.dose.refresh_theme()
+        self.projector_tab.refresh_theme()
 
     def _toggle_log(self) -> None:
         shown = not self._log_panel.isVisible()
@@ -563,7 +567,7 @@ class CALSlicerMainWindow(QMainWindow):
         if shown:
             total = max(self._left_split.height(), 300)
             self._left_split.setSizes([total - 170, 170])
-        self.log_toggle.setText(tr("журнал ▾") if shown else tr("журнал ▴"))
+        self.log_toggle.setText(tr("скрыть журнал") if shown else tr("журнал"))
 
     def _on_language_changed(self, index: int) -> None:
         selected = self.language_combo.itemData(index)

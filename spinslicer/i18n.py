@@ -397,13 +397,13 @@ _EN.update({
     "Не удалось отправить на принтер": "Could not send to the printer",
     "Упаковка файла .spin...": "Packing the .spin file...",
     "Отправка на принтер": "Sending to printer",
-    "Поиск по mDNS недоступен (pip install zeroconf): проверяю spinslicer.local.":
-        "mDNS search is not available (pip install zeroconf): checking spinslicer.local.",
+    "Поиск по mDNS недоступен (pip install zeroconf): проверяю spinprinter.local.":
+        "mDNS search is not available (pip install zeroconf): checking spinprinter.local.",
     "Ищу принтеры в сети…": "Looking for printers on the network…",
     "Найдено принтеров:": "Printers found:",
     "Принтер в сети не найден. Введите его адрес.": "No printer found on the network. Enter its address.",
     "Адрес принтера": "Printer address",
-    "IP-адрес или имя принтера, например spinslicer.local": "IP address or name of the printer, e.g. spinslicer.local",
+    "IP-адрес или имя принтера, например spinprinter.local": "IP address or name of the printer, e.g. spinprinter.local",
     "Принтер недоступен:": "Printer not reachable:",
     "принтер не отдаёт профиль, настройки остаются как есть.":
         "the printer does not provide a profile, the settings stay as they are.",
@@ -600,7 +600,11 @@ _EN.update({
     "Проверяю принтер…": "Checking the printer…",
     "Принтер сейчас печатает. Дождитесь конца или остановите печать на принтере.":
         "The printer is printing. Wait until it is done or stop the print on the printer.",
-    "Подключить": "Connect", "Подключаюсь к": "Connecting to", "Подключён:": "Connected:",
+    "Деталь": "Part", "Положение": "Position", "Расчёт": "Calculation", "Проверка": "Check", "Доза": "Dose",
+    "Оптика и сдвиг": "Optics and shift", "Результат": "Result",
+    "Качество": "Quality", "сетка": "grid", "шаг": "step",
+    "Подключить": "Connect", "Отключить": "Disconnect", "Принтер отключён.": "Printer disconnected.",
+    "Подключаюсь к": "Connecting to", "Подключён:": "Connected:",
     "Не подключён:": "Not connected:", "не подключён": "not connected", "не отвечает": "does not answer",
     "из принтера:": "from the printer:", "ничего нового": "nothing new",
     "Настройки этого слайсера": "This slicer's settings", "записать в принтер": "write to the printer",
@@ -644,4 +648,32 @@ _EN.update({
         "Eject the stick? Then plug it into the printer's Raspberry Pi.",
     "Флешку можно вынимать.": "The stick can be removed.",
     "Не удалось извлечь: извлеките её сами.": "Could not eject: eject it yourself.",
+})
+
+# The interface rework: Settings in tabs, Light in three stages, Print in two ways.
+_EN.update({
+    "Тема": "Theme", "светлая": "light", "тёмная": "dark", "Внешний вид": "Appearance",
+    "Подключение": "Connection", "Калибровка на проекторе": "Calibration on the projector", "Мотор": "Motor",
+    "Калибровка смолы": "Resin calibration", "Шкала дозы": "Dose scale", "напечатать →": "print →",
+    "Проверить на проекторе": "Check on the projector", "Яркость при печати": "Brightness while printing",
+    "подключён": "connected", "настройки принтера": "printer settings",
+    "время": "time", "оборотов": "turns", "кадры": "frames", "запас экспозиции": "exposure margin",
+    "время печати": "print time",
+    "Деталь или настройки изменились: прошлый результат устарел.":
+        "The part or the settings changed: the last result is out of date.",
+    "пересчитать с другими параметрами": "compute again with other parameters",
+    "Пока ждёте — засветите деталь сами": "While you wait, cure the part yourself",
+    "Параметры расчёта": "Calculation parameters", "Игра": "Game",
+    "скрыть замечания": "hide the notes", "замечаний": "notes", "показать": "show", "скрыть": "hide",
+    "журнал": "log", "скрыть журнал": "hide log", "остановить печать": "stop the print",
+    "на проектор этого компьютера": "on this computer's projector", ".spin в папку": ".spin to a folder",
+    "Рассчитать свет →": "Compute the light →", "без кадров печатать нечего": "nothing to print without frames",
+    "/мм": "/mm", "кадры устарели — пересчитайте свет": "the frames are out of date: compute the light again",
+    "принтер не подключён: Настройки → Принтер. На флешку можно и так":
+        "no printer connected: Settings → Printer. The USB stick works anyway",
+    "файл уйдёт на принтер, его экран спросит «Печатать?»":
+        "the file goes to the printer, its screen asks \"Print?\"",
+    "нужны поглощение, облучённость и доза: Настройки": "needs absorption, irradiance and dose: Settings",
+    "нужны данные смолы": "needs the resin data",
+    "на оборот": "per turn", "оборота": "turns", "экспозиция": "exposure", "яркость": "brightness",
 })

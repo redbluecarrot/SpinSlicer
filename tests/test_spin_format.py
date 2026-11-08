@@ -269,7 +269,7 @@ def test_printer_profile(printer):
 
 
 def test_parse_address():
-    assert printer_link.parse_address("spinslicer.local") == printer_link.PrinterAddress("spinslicer.local", 80)
+    assert printer_link.parse_address("spinprinter.local") == printer_link.PrinterAddress("spinprinter.local", 80)
     assert printer_link.parse_address("http://192.168.1.7:8080/").port == 8080
     assert printer_link.parse_address("[fe80::1]:81").host == "fe80::1"
     with pytest.raises(printer_link.PrinterError):
@@ -280,7 +280,8 @@ def test_discovery_without_zeroconf_still_offers_the_default(monkeypatch):
     monkeypatch.setattr(printer_link, "discover_mdns", lambda timeout_s=0: [])
     monkeypatch.setattr(printer_link, "resolve_default",
                         lambda host=printer_link.DEFAULT_HOST: printer_link.PrinterAddress(host, source="default"))
-    assert [p.host for p in printer_link.discover()] == ["spinslicer.local"]
+    # the new name, and the one the Pi had until now
+    assert [p.host for p in printer_link.discover()] == ["spinprinter.local", "spinslicer.local"]
 
 
 def test_panel_applies_a_printer_profile(qapp=None):

@@ -47,6 +47,24 @@ _FONT = {
     ".": "000000000000010", ":": "000010000010000", "H": "101101111101101", "B": "110101110101110",
     "-": "000000111000000", "V": "101101101101010", "F": "111100110100100", "W": "101101101111101",
 }
+# Cyrillic for the Russian HUD: the letters that look the same reuse the Latin shapes.
+_FONT.update({cyr: _FONT[lat] for cyr, lat in zip("АВЕКНОРСТ", "ABEKHOPCT")})
+_FONT.update({
+    "Л": "011101101101101", "Ц": "101101101111001", "Х": "101101010101101", "Г": "111100100100100", "Д": "011101101111101",
+    "П": "111101101101101", "Б": "111100110101110", "У": "101101111001110", "З": "111001011001111",
+})
+# What the games write on their screens, in the interface language.
+_HUD_RU = {
+    "CLICK - START": "КЛАЦ - СТАРТ", "PRINTED!": "ГОТОВО!", "UNDER-CURED": "НЕДОСВЕТ", "BEST": "РЕКОРД",
+    "CLICK - AGAIN": "КЛАЦ - СНОВА", "FULL VIAL": "КОЛБА ПОЛНА", "CLICK - FLY": "КЛАЦ - ВВЕРХ",
+    "ABSORBED": "ПОГАС", "PAUSE": "ПАУЗА",
+}
+
+
+def hud(s: str) -> str:
+    """A HUD word in the interface language (the pixel font has the letters these need)."""
+    from spinslicer.i18n import language
+    return _HUD_RU.get(s, s) if language() == "ru" else s
 
 
 def silhouette_from_mesh(mesh: Any, cols: int = COLS, rows: int = ROWS) -> np.ndarray:
@@ -311,14 +329,14 @@ class Cure(Game):
         for i in range(self.lives):
             g.drawRect(W // 2 - 10 + i * 5, 4, 2, 2)
         if self.state == "ready" and self.lives == self.LIVES and not self.cured.any():
-            text_center(g, H - 24, "CLICK - START", c.dim)
+            text_center(g, H - 24, hud("CLICK - START"), c.dim)
         elif self.over:
             if self.won:
-                text_center(g, H // 2 - 8, "PRINTED!", c.acc if (self.flash // 4) % 2 == 0 else c.ink)
+                text_center(g, H // 2 - 8, hud("PRINTED!"), c.acc if (self.flash // 4) % 2 == 0 else c.ink)
             else:
-                text_center(g, H // 2 - 8, "UNDER-CURED", c.acc)
-            text_center(g, H // 2, f"BEST {best}", c.ink)
-            text_center(g, H // 2 + 8, "CLICK - AGAIN", c.dim)
+                text_center(g, H // 2 - 8, hud("UNDER-CURED"), c.acc)
+            text_center(g, H // 2, f"{hud('BEST')} {best}", c.ink)
+            text_center(g, H // 2 + 8, hud("CLICK - AGAIN"), c.dim)
 
     def simulate_hit(self, row: int, col: int) -> None:
         self.ball = [FIELD_X + col * CELL_W + 2.0, FIELD_Y + row * CELL_H + CELL_H + 1.0]
@@ -472,10 +490,10 @@ class Layers(Game):
         for x, y in _PIECES[self._next]:
             g.drawRect(W - 22 + x * 3, 14 + y * 3, 2, 2)
         if self.state == "ready":
-            text_center(g, H // 2, "CLICK - START", c.dim)
+            text_center(g, H // 2, hud("CLICK - START"), c.dim)
         elif self.over:
-            text_center(g, H // 2 - 8, "FULL VIAL", c.acc)
-            text_center(g, H // 2, f"BEST {best}", c.ink)
+            text_center(g, H // 2 - 8, hud("FULL VIAL"), c.acc)
+            text_center(g, H // 2, f"{hud('BEST')} {best}", c.ink)
 
 
 # ---------------------------------------------------------------------------
@@ -614,10 +632,10 @@ class Photon(Game):
         g.drawRect(37, int(self.y) - 1, 3, 3)
         text(g, W - 3 - 4 * len(str(self.score)), 3, str(self.score), c.ink)
         if self.state == "ready":
-            text_center(g, H // 2 + 14, "CLICK - FLY", c.dim)
+            text_center(g, H // 2 + 14, hud("CLICK - FLY"), c.dim)
         elif self.over:
-            text_center(g, H // 2 - 8, "ABSORBED", c.acc)
-            text_center(g, H // 2, f"BEST {best}", c.ink)
+            text_center(g, H // 2 - 8, hud("ABSORBED"), c.acc)
+            text_center(g, H // 2, f"{hud('BEST')} {best}", c.ink)
 
 
 # ---------------------------------------------------------------------------
@@ -795,7 +813,7 @@ class PixelGame(QWidget):
         g.setPen(Qt.PenStyle.NoPen)
         self._game.draw(g, c, max(self.best(), self._game.score))
         if self._paused:
-            text_center(g, H // 2 + 16, "PAUSE", c.ink)
+            text_center(g, H // 2 + 16, hud("PAUSE"), c.ink)
         g.end()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)

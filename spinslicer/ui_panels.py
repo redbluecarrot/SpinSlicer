@@ -62,7 +62,7 @@ from spinslicer.projector_canvas import (
 )
 from spinslicer.sketch_scene import SceneParams
 from spinslicer.theme import AXIS_X, AXIS_Y, AXIS_Z
-from spinslicer.ui_kit import Metric, Segmented, SettingRow, Stepper, Switch, section_head
+from spinslicer.ui_kit import Segmented, SettingRow, Stepper, Switch, section_head
 
 
 def _scroll_wrap(inner: QWidget) -> QScrollArea:
@@ -220,6 +220,80 @@ PAGES: dict[str, tuple[str, str]] = {
 }
 
 
+_PRINTER_STATE_COLORS = {
+    "off": "#6b6f76",     # not connected
+    "busy": "#f0b429",    # connecting
+    "ok": "#34c759",      # connected
+    "error": "#ff453a",   # the printer does not answer
+}
+
+
+class _StatusDot(QLabel):
+    """A round colour light: grey off, amber connecting, green connected, red error."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("printerDot")
+        self.setFixedSize(10, 10)
+        self.set_state("off")
+
+    def set_state(self, state: str) -> None:
+        color = _PRINTER_STATE_COLORS.get(state, _PRINTER_STATE_COLORS["off"])
+        self.setStyleSheet(f"QLabel#printerDot {{ background-color: {color}; border-radius: 5px; }}")
+        self.setProperty("state", state)
+
+
+class _Tile(QFrame):
+    """A number with its name: the result of a run, the size of a print. Easier to read than a sentence."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__()
+        self.setObjectName("statTile")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 9, 12, 9)
+        lay.setSpacing(1)
+        self.key = QLabel(tr(key))
+        self.key.setObjectName("tileKey")
+        self.value = QLabel("—")
+        self.value.setObjectName("tileValue")
+        self.value.setProperty("_spinslicer_skip_text_translation", True)
+        self.note = QLabel("")
+        self.note.setObjectName("tileNote")
+        self.note.setWordWrap(True)
+        self.note.setProperty("_spinslicer_skip_text_translation", True)
+        for w in (self.key, self.value, self.note):
+            lay.addWidget(w)
+        lay.addStretch(1)              # the numbers of a row of tiles on one line
+
+    def set(self, value: str, note: str = "", warn: bool = False) -> None:
+        self.value.setText(value)
+        self.note.setText(tr(note) if note else "")
+        self.note.setVisible(bool(note))
+        self.value.setProperty("warn", warn)
+        style = self.value.style()
+        if style is not None:            # re-read the [warn] rule of the stylesheet
+            style.unpolish(self.value)
+            style.polish(self.value)
+
+
+def _tiles(tiles: Sequence[QWidget], columns: int = 2) -> QWidget:
+    box = QWidget()
+    grid = QGridLayout(box)
+    grid.setContentsMargins(0, 2, 0, 2)
+    grid.setHorizontalSpacing(8)
+    grid.setVerticalSpacing(8)
+    for i, tile in enumerate(tiles):
+        grid.addWidget(tile, i // columns, i % columns)
+    for c in range(columns):
+        grid.setColumnStretch(c, 1)
+    return box
+
+
+SETUP_TABS: tuple[tuple[str, str], ...] = (
+    ("interface", "Интерфейс"), ("printer", "Принтер"), ("projector", "Проектор"), ("resin", "Смола"))
+
+
 class ProcessSettingsPanel(QWidget):
     """Side panel: setup (printer + resin) and the three steps of a part."""
 
@@ -235,6 +309,7 @@ class ProcessSettingsPanel(QWidget):
     hintsToggled = pyqtSignal(bool)
     lineStyleChanged = pyqtSignal(str)
     languageChanged = pyqtSignal(int)
+    themeChanged = pyqtSignal(bool)          # Settings → Интерфейс → Тема: True = dark
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -291,8 +366,12 @@ class ProcessSettingsPanel(QWidget):
 
         foot = QWidget()
         foot_l = QVBoxLayout(foot)
-        foot_l.setContentsMargins(24, 10, 24, 18)
+        foot_l.setContentsMargins(20, 10, 20, 16)      # the same edges as the blocks above
         foot_l.setSpacing(8)
+        self._foot = foot
+        self._foot_l = foot_l
+        # The footer never gets less height than its content: the print buttons stay whole.
+        foot.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 1000)
         self.progress_bar.setVisible(False)
@@ -313,22 +392,32 @@ class ProcessSettingsPanel(QWidget):
         self._build_model()
         self._build_light()
         self._build_print()
+        self._layout_setup()
         self._restore()
         self._wire()
         self.show_page("model")
         self._refresh()
 
     # ------------------------------------------------------------------ build helpers
-    def _add_page(self, key: str, rows: list[QWidget]) -> None:
+    def _add_page(self, key: str, rows: list[QWidget], footer: Optional[QWidget] = None) -> None:
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(24, 0, 24, 12)
-        layout.setSpacing(0)
+        layout.setContentsMargins(20, 6, 20, 16)
+        layout.setSpacing(12)            # air between the blocks
         for row in rows:
             layout.addWidget(row)
         layout.addStretch(1)
+        if footer is not None:           # pinned to the bottom of the page, inside its scroll area
+            layout.addWidget(footer)
+        # The page is wrapped so the window can be narrower than its widest row: a row that is
+        # too wide scrolls sideways instead of pushing the buttons off the screen. Only Settings
+        # (long, about 1300 px) scrolls down; the other steps show their whole page.
         scroll = _scroll_wrap(content)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # The print step carries the buttons at its bottom edge: when the window is short it
+        # scrolls, so those buttons are never cut off.
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded if key in ("setup", "print", "light")
+                                          else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._pages[key] = scroll
         self._stack.addWidget(scroll)
 
@@ -351,6 +440,22 @@ class ProcessSettingsPanel(QWidget):
         b.clicked.connect(lambda: self.actionRequested.emit(action))
         return b
 
+    def _secondary(self, text: str, action: str) -> QPushButton:
+        """An outlined button: the second choice next to a filled one."""
+        b = QPushButton(tr(text))
+        b.setObjectName("secondaryAction")
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.clicked.connect(lambda: self.actionRequested.emit(action))
+        return b
+
+    def _small_link(self, text: str, action: str) -> QPushButton:
+        """A small grey link: things that are there, but not the main way."""
+        b = QPushButton(tr(text))
+        b.setObjectName("smallLink")
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.clicked.connect(lambda: self.actionRequested.emit(action))
+        return b
+
     def _link(self, text: str, action: str) -> QPushButton:
         b = QPushButton(tr(text))
         b.setObjectName("linkButton")
@@ -359,7 +464,7 @@ class ProcessSettingsPanel(QWidget):
         return b
 
     def _expander(self, title: str, body: QWidget) -> QWidget:
-        toggle = QPushButton(tr("показать ▾"))
+        toggle = QPushButton(tr("показать"))
         toggle.setObjectName("linkButton")
         toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         row = self._row(title, toggle)
@@ -367,7 +472,7 @@ class ProcessSettingsPanel(QWidget):
 
         def flip() -> None:
             body.setVisible(not body.isVisible())
-            toggle.setText(tr("скрыть ▴") if body.isVisible() else tr("показать ▾"))
+            toggle.setText(tr("скрыть") if body.isVisible() else tr("показать"))
         toggle.clicked.connect(flip)
         return self._group([row, body])
 
@@ -379,6 +484,22 @@ class ProcessSettingsPanel(QWidget):
         lay.setSpacing(0)
         for r in rows:
             lay.addWidget(r)
+        return box
+
+    @staticmethod
+    def _section(title: str, rows: list[QWidget]) -> QWidget:
+        """A block of the menu: a rounded container with its heading and rows inside."""
+        box = QFrame()
+        box.setObjectName("settingsBlock")
+        box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(18, 14, 18, 10)
+        lay.setSpacing(0)
+        head = section_head(title)
+        head.setStyleSheet("padding-top: 0px; padding-bottom: 6px;")
+        lay.addWidget(head)
+        for row in rows:
+            lay.addWidget(row)
         return box
 
     # ------------------------------------------------------------------ pages
@@ -402,7 +523,7 @@ class ProcessSettingsPanel(QWidget):
         self.projector_irradiance = Stepper(0.0, 200.0, 0.0, 0.5, 2, "мВт/см²")
         self.n_glass = Stepper(1.0, 2.0, 1.51, 0.01, 2)
         self.n_liquid = Stepper(1.0, 2.0, 1.45, 0.01, 2)
-        self.alpha_absorption = Stepper(0.0, 0.1, 0.0, 0.001, 3, "мм⁻¹")
+        self.alpha_absorption = Stepper(0.0, 0.1, 0.0, 0.001, 3, "/мм")
         self.n_resin = Stepper(1.0, 2.0, 1.50, 0.01, 2)
         self.gel_dose = Stepper(0.0, 5000.0, 0.0, 10.0, 1, "мДж/см³")
         self.hints_switch = Switch(False)
@@ -430,7 +551,7 @@ class ProcessSettingsPanel(QWidget):
                                  hint="натуральный логарифм: α = 2,303·A на 1 мм = 1 / Dp")
         self.r_nresin = self._row("Преломление смолы", self.n_resin)
         self.r_gel = self._row("Доза геля", self.gel_dose, hint="не знаете? напечатайте шкалу ↓")
-        self.r_calib = self._row("Калибровка", self._link("напечатать шкалу →", "calibrate"),
+        self.r_calib = self._row("Шкала дозы", self._link("напечатать →", "calibrate"),
                                  "9 столбиков с дозой 88–112 %: выбираете лучший, доза обновится сама")
         self.r_hz = self._row("Частота проектора", self.projector_hz,
                               hint="герцовка экрана: кадры не могут сменяться чаще")
@@ -445,38 +566,120 @@ class ProcessSettingsPanel(QWidget):
         self.r_draw = self._row("Линии", self.line_style, stacked=True,
                                 effect="прямые — по линейке, модель без точек; от руки — неподвижный набросок; живые — набросок «дышит»")
         self.r_language = self._row("Язык", self.language_box)
+        self.theme_choice = Segmented([("светлая", 0), ("тёмная", 1)], 1 if theme.current().dark else 0)
+        self.theme_choice.changed.connect(lambda i: self.themeChanged.emit(i == 1))
+        self.r_theme = self._row("Тема", self.theme_choice, stacked=True)
         self.r_printer = self._row("Принтер", self.printer_box,
                                    hint="SpinPrinter в сети: его профиль заполнит колбу и проектор")
-        self.r_printer.set_effect("не подключён")
+        # The state of the printer, in one line: a coloured light and what it means.
+        status = QWidget()
+        stl = QHBoxLayout(status)
+        stl.setContentsMargins(0, 2, 0, 8)
+        stl.setSpacing(10)
+        self.printer_dot = _StatusDot()
+        self.printer_state = QLabel(tr("не подключён"))
+        self.printer_state.setObjectName("printerState")
+        self.printer_state.setWordWrap(True)
+        self.printer_state.setProperty("_spinslicer_skip_text_translation", True)
+        stl.addWidget(self.printer_dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        stl.addWidget(self.printer_state, 1)
+        self.printer_status = status
         printer_tools = QWidget()
         ptl = QHBoxLayout(printer_tools)
         ptl.setContentsMargins(0, 0, 0, 0)
         ptl.setSpacing(16)
-        self.printer_connect = self._button("Подключить", "printer_connect")
-        self.printer_connect.setFixedHeight(40)
-        self.printer_connect.setStyleSheet("min-height: 40px; padding: 0 22px;")
-        ptl.addWidget(self.printer_connect)
-        ptl.addWidget(self._link("найти в сети", "printer_find"))
-        ptl.addWidget(self._link("ввести адрес", "printer_manual"))
+        self.printer_toggle = QPushButton()
+        self.printer_toggle.setObjectName("secondaryAction")
+        self.printer_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.printer_toggle.clicked.connect(self._on_printer_toggle)
+        self.printer_toggle.setStyleSheet("min-height: 38px; border-radius: 14px; font-size: 13px; padding: 0 20px;")
+        ptl.addWidget(self.printer_toggle)
+        # Searching and typing an address are for choosing a printer: hidden while one is connected.
+        self.printer_find_link = self._link("найти в сети", "printer_find")
+        self.printer_manual_link = self._link("ввести адрес", "printer_manual")
+        ptl.addWidget(self.printer_find_link)
+        ptl.addWidget(self.printer_manual_link)
         ptl.addStretch(1)
         self.r_printer_tools = self._row("", printer_tools, stacked=True)
         self.printer_write = self._link("записать в принтер", "printer_write")
         self.r_printer_write = self._row("Настройки этого слайсера", self.printer_write,
                                          "колба, проектор и калибровка, изменённые здесь, сохранятся в принтере")
         self.r_printer_write.setVisible(False)
-        expert = self._group([self.r_blur, self.r_comp, self.r_offx, self.r_offy, self.r_gamma, self.r_contrast,
-                              self.r_irr, self.r_nglass, self.r_nliquid])
-        # In the order a printer is built: the interface, the vial, the projector and its
-        # optics, the resin. What is rarely touched hides in "fine tuning".
-        self._add_page("setup", [
-            section_head("Интерфейс"), self.r_language, self.r_draw, self.r_hints,
-            section_head("Принтер"), self.r_printer, self.r_printer_tools, self.r_printer_write,
-            section_head("Колба"), self.r_diameter, self.r_wall, self.r_bath,
-            section_head("Проектор"), self.r_resolution, self.r_hz, self.r_output, self.r_rays, self.r_throw,
-            self.r_field,
-            section_head("Смола"), self.r_alpha, self.r_nresin, self.r_gel, self.r_calib,
-            self._expander("Тонкая настройка", expert),
-        ])
+        tools = QWidget()
+        tl = QHBoxLayout(tools)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(16)
+        tl.addWidget(self._link("разметка колбы", "pattern"))
+        tl.addWidget(self._link("тест серого", "ramp"))
+        tl.addStretch(1)
+        self.r_tools = self._row("Проверить на проекторе", tools,
+                                 "разметка покажет, где должны быть стенки колбы; тест серого — все уровни яркости",
+                                 stacked=True)
+        self._expert_group = self._group([self.r_blur, self.r_comp, self.r_gamma, self.r_nglass, self.r_nliquid])
+
+    def _layout_setup(self) -> None:
+        """Settings, in four tabs: what the window looks like, the printer (its connection, vial,
+        calibration and motor), the projector, the resin. One tab on screen at a time."""
+        pages = {
+            "interface": [self._section("Внешний вид", [self.r_theme, self.r_language, self.r_draw, self.r_hints])],
+            "printer": [
+                self._section("Подключение", [self.printer_status, self.r_printer, self.r_printer_tools,
+                                              self.r_printer_write]),
+                self._section("Колба", [self.r_diameter, self.r_wall, self.r_bath, self.r_field]),
+                self._section("Калибровка на проекторе", [self.r_output, self.r_offx, self.r_offy, self.r_tools]),
+                self._section("Мотор", [self.r_speed]),
+            ],
+            "projector": [
+                self._section("Проектор", [self.r_resolution, self.r_hz, self.r_rays, self.r_throw, self.r_brightness]),
+                self._section("Свет", [self.r_irr, self.r_contrast,
+                                       self._expander("Тонкая настройка", self._expert_group)]),
+            ],
+            "resin": [
+                self._section("Смола", [self.r_alpha, self.r_nresin, self.r_gel]),
+                self._section("Калибровка смолы", [self.r_calib]),
+            ],
+        }
+        box = QWidget()
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(20, 2, 20, 0)
+        lay.setSpacing(10)
+        self.setup_tabs = Segmented([(title, key) for key, title in SETUP_TABS])
+        lay.addWidget(self.setup_tabs)
+        self._setup_stack = QStackedWidget()
+        self._setup_pages: dict[str, QWidget] = {}
+        for key, blocks in pages.items():
+            content = QWidget()
+            cl = QVBoxLayout(content)
+            cl.setContentsMargins(0, 2, 0, 16)
+            cl.setSpacing(12)
+            for block in blocks:
+                cl.addWidget(block)
+            cl.addStretch(1)
+            scroll = _scroll_wrap(content)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self._setup_pages[key] = scroll
+            self._setup_stack.addWidget(scroll)
+        lay.addWidget(self._setup_stack, 1)
+        self.setup_tabs.changed.connect(lambda i: self.show_setup_tab(SETUP_TABS[i][0]))
+        self._pages["setup"] = box
+        self._stack.addWidget(box)
+        stored = str(self._settings.value("ui/setup_tab", "printer"))
+        self.show_setup_tab(stored if stored in self._setup_pages else "printer")
+
+    def show_setup_tab(self, key: str) -> None:
+        """Settings → one of interface / printer / projector / resin."""
+        if key not in self._setup_pages:
+            return
+        index = [k for k, _t in SETUP_TABS].index(key)
+        if self.setup_tabs.currentIndex() != index:
+            with QSignalBlocker(self.setup_tabs):
+                self.setup_tabs.setCurrentIndex(index)
+        self._setup_stack.setCurrentWidget(self._setup_pages[key])
+        self._settings.setValue("ui/setup_tab", key)
+
+    def set_theme_silent(self, dark: bool) -> None:
+        with QSignalBlocker(self.theme_choice):
+            self.theme_choice.setCurrentIndex(1 if dark else 0)
 
     def _build_model(self) -> None:
         self.load_link = self._link("загрузить STL", "load")
@@ -507,108 +710,176 @@ class ProcessSettingsPanel(QWidget):
         self.transform_panel = ObjectTransformPanel(self)
         self._model_rows = [self.r_orient, self.r_scale, self.r_place, fit_box]
         self._model_expander = self._expander("Точная позиция", self.transform_panel)
-        self._add_page("model", [self.r_file, *self._model_rows, self._model_expander, self.r_voids])
+        self._add_page("model", [self._section("Деталь", [self.r_file, self.r_voids]),
+                                 self._section("Положение", [*self._model_rows, self._model_expander])])
 
     def _build_light(self) -> None:
         self.grid_res = Segmented([("Быстро", 128), ("Норма", 256), ("Точно", 384)], 1)
         self.frames = Segmented([("180", 180), ("360", 360), ("720", 720)], 1)
-        self.virtual = QPushButton(tr("Показать"))
-        self.virtual.setCheckable(True)
-        self.virtual.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.virtual.toggled.connect(
-            lambda on: self.virtual.setText(tr("Вернуться к модели") if on else tr("Показать")))
+        self.virtual = Switch(False)
         self._virtual_ready = False
+        self._review = False          # "пересчитать": back to the parameters while a result exists
         self.r_grid = self._row("Качество", self.grid_res, stacked=True, hint="для первой печати хватит «Норма»")
         self.r_frames = self._row("Кадров на оборот", self.frames, stacked=True)
-        self.r_virtual = self._row("Виртуальная печать", self.virtual, "показать, что затвердеет из этих кадров", stacked=True)
+        self.r_virtual = self._row("Виртуальная печать", self.virtual, "показать в 3D, что затвердеет")
         self.r_virtual.setVisible(False)          # only after a computation
-        self.metric_match = Metric("совпадение")
-        self.metric_tol = Metric("запас экспоз.")
-        self.metric_time = Metric("печать")
-        for m in (self.metric_match, self.metric_tol, self.metric_time):
-            m.value.setProperty("_spinslicer_skip_text_translation", True)
-            m.note.setProperty("_spinslicer_skip_text_translation", True)
-        results = QWidget()
-        rl = QVBoxLayout(results)
-        rl.setContentsMargins(0, 16, 0, 4)
-        rl.setSpacing(8)
-        tiles = QHBoxLayout()
-        tiles.setSpacing(12)
-        for m in (self.metric_match, self.metric_tol, self.metric_time):
-            tiles.addWidget(m, 1, Qt.AlignmentFlag.AlignTop)
-        rl.addLayout(tiles)
+        self.tile_match = _Tile("совпадение")
+        self.tile_tol = _Tile("запас экспозиции")
+        self.tile_time = _Tile("время печати")
+        self.tile_frames = _Tile("кадров")
+        self.stale_label = QLabel(tr("Деталь или настройки изменились: прошлый результат устарел."))
+        self.stale_label.setObjectName("warnLine")
+        self.stale_label.setWordWrap(True)
+        self.stale_label.setVisible(False)
+        # Notes from the engine: folded into one line, opened on demand.
+        self.warnings_toggle = QPushButton()
+        self.warnings_toggle.setObjectName("smallLink")
+        self.warnings_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.warnings_toggle.setProperty("_spinslicer_skip_text_translation", True)
+        self.warnings_toggle.clicked.connect(self._flip_warnings)
         self.warnings_label = QLabel()
         self.warnings_label.setObjectName("rowEffect")
         self.warnings_label.setWordWrap(True)
         self.warnings_label.setProperty("_spinslicer_skip_text_translation", True)
+        self.warnings_label.setVisible(False)
+        self.calc_settings = QLabel()
+        self.calc_settings.setObjectName("rowEffect")
+        self.calc_settings.setWordWrap(True)
+        self.calc_settings.setProperty("_spinslicer_skip_text_translation", True)
+        again = QPushButton(tr("пересчитать с другими параметрами"))
+        again.setObjectName("smallLink")
+        again.setCursor(Qt.CursorShape.PointingHandCursor)
+        again.clicked.connect(self.review_parameters)
+        results = QWidget()
+        rl = QVBoxLayout(results)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(8)
+        rl.addWidget(self.calc_settings)
+        rl.addWidget(_tiles([self.tile_match, self.tile_tol, self.tile_time, self.tile_frames]))
+        rl.addWidget(self.warnings_toggle, 0, Qt.AlignmentFlag.AlignLeft)
         rl.addWidget(self.warnings_label)
+        rl.addWidget(self.r_virtual)
+        rl.addWidget(again, 0, Qt.AlignmentFlag.AlignLeft)
         self.results_box = results
-        results.setVisible(False)
 
         self.game = PixelGame()
-        self.game_title = QLabel(tr("Пока считается — засветите деталь сами"))
+        self.game_title = QLabel(tr("Пока ждёте — засветите деталь сами"))
         self.game_title.setObjectName("rowLabel")
         self.game_title.setProperty("_spinslicer_skip_text_translation", True)
-        game_box = QWidget()
-        gl = QVBoxLayout(game_box)
-        gl.setContentsMargins(0, 16, 0, 0)
+        game_body = QWidget()
+        gl = QVBoxLayout(game_body)
+        gl.setContentsMargins(0, 0, 0, 0)
         gl.setSpacing(6)
         gl.addWidget(self.game_title)
         gl.addWidget(self._arcade(self.game))
-        self.game_box = game_box
-        game_box.setVisible(False)
-        self._add_page("light", [self.r_grid, self.r_frames, results, self.r_virtual, game_box])
+        # Before the run: the parameters and the game. During it: only the game. After it: the result.
+        self.calc_block = self._section("Параметры расчёта", [self.stale_label, self.r_grid, self.r_frames])
+        self.game_box = self._section("Игра", [game_body])
+        self.result_block = self._section("Результат", [results])
+        self._add_page("light", [self.calc_block, self.game_box, self.result_block])
+        self._show_light_stage()
+
+    def _flip_warnings(self) -> None:
+        self.warnings_label.setVisible(not self.warnings_label.isVisible())
+        self._refresh_plan()
+
+    def review_parameters(self) -> None:
+        """"Пересчитать": the parameters (and the game) again, the result stays until a new run."""
+        self._review = True
+        self._show_light_stage()
+        self._refresh_action()
 
     def _build_print(self) -> None:
+        # Kept for the old projector / MP4 / PNG paths (now small links on the print page) and settings.
         self.output_kind = Segmented([("на проектор", 0), ("видео MP4", 1), ("кадры PNG", 2)])
         self.speed = Stepper(1.0, 240.0, DEFAULT_FRAME_RATE_HZ * 360.0 / DEFAULT_NUM_FRAMES, 1.0, 0, "°/с")
         self.brightness = Stepper(10.0, 100.0, 100.0, 5.0, 0, "%")
         self.r_output_kind = self._row("Куда выводить", self.output_kind, stacked=True)
         self.r_speed = self._row("Скорость вращения", self.speed)
-        self.r_brightness = self._row("Яркость проектора", self.brightness)
-        tools = QWidget()
-        tl = QHBoxLayout(tools)
-        tl.setContentsMargins(0, 0, 0, 0)
-        tl.setSpacing(16)
-        tl.addWidget(self._link("разметка колбы", "pattern"))
-        tl.addWidget(self._link("тест серого", "ramp"))
-        spin = QWidget()
-        sl = QHBoxLayout(spin)
-        sl.setContentsMargins(0, 0, 0, 0)
-        sl.setSpacing(12)
-        self.print_button = self._button("Напечатать", "spin_print")
-        self.stick_button = self._button("На флешку", "spin_stick")
-        self.stop_link = self._link("стоп", "spin_stop")
-        self.stop_link.setVisible(False)
-        sl.addWidget(self.print_button, 1)
-        sl.addWidget(self.stick_button, 1)
-        sl.addWidget(self.stop_link)
-        self.r_spin = self._row("Печать на SpinPrinter", spin,
-                                "файл .spin уходит на принтер, его экран спросит «Печатать?»", stacked=True)
-        save_as = self._link("сохранить .spin в папку…", "spin_export")
-        self.r_spin_file = self._row("", save_as)
-        self.set_printer_connected(False)
-        self.r_tools = self._row("Настроить проектор", tools,
-                                 "разметка покажет, где должны быть стенки колбы; тест серого — все уровни яркости")
-        self.plan_label = QLabel(tr("Сначала рассчитайте свет."))
-        self.plan_label.setObjectName("planLabel")
-        self.plan_label.setWordWrap(True)
-        self.plan_label.setProperty("_spinslicer_skip_text_translation", True)
-        box = QWidget()
-        bl = QVBoxLayout(box)
-        bl.setContentsMargins(0, 10, 0, 12)
-        bl.addWidget(self.plan_label)
+        self.r_brightness = self._row("Яркость при печати", self.brightness)
+
+        # The printer, as on Settings → Принтер: its light and what it is doing.
+        card = QFrame()
+        card.setObjectName("settingsBlock")
+        card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        cl = QHBoxLayout(card)
+        cl.setContentsMargins(16, 12, 16, 12)
+        cl.setSpacing(10)
+        self.print_dot = _StatusDot()
+        self.print_printer = QLabel(tr("Принтер не подключён"))
+        self.print_printer.setObjectName("printerState")
+        self.print_printer.setWordWrap(True)
+        self.print_printer.setProperty("_spinslicer_skip_text_translation", True)
+        cl.addWidget(self.print_dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        cl.addWidget(self.print_printer, 1)
+        to_printer = self._link("настройки принтера", "goto:setup")
+        to_printer.clicked.connect(lambda: self.show_setup_tab("printer"))
+        cl.addWidget(to_printer, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.printer_card = card
+
+        self.ptile_time = _Tile("время")
+        self.ptile_revs = _Tile("оборотов")
+        self.ptile_tol = _Tile("запас")
+        self.ptile_fps = _Tile("кадры")
+        self.plan_label = QLabel(tr("Сначала рассчитайте свет."))    # the old text plan, kept for callers
+        self.plan_label.setVisible(False)
         # The dose card (video_tab.DoseCard) is put here by the main window: its slider
-        # is the print exposure, and the plan above follows it.
+        # is the print exposure, and the numbers above follow it.
         self.dose_slot = QWidget()
         self._dose_layout = QVBoxLayout(self.dose_slot)
-        self._dose_layout.setContentsMargins(0, 12, 0, 4)
+        self._dose_layout.setContentsMargins(0, 0, 0, 0)
         self._dose_card: Optional[QWidget] = None
         self._exposure = 1.0
         self._projecting: Optional[tuple[float, float]] = None
-        self.game_print = PixelGame()
-        self._add_page("print", [self.r_spin, self.r_spin_file, self.r_output_kind, self.r_tools, self.r_speed, self.r_brightness, self.dose_slot, box,
-                                 self._expander("Мини-игры", self._arcade(self.game_print))])
+        self._build_dock()
+        self._add_page("print", [self.printer_card,
+                                 _tiles([self.ptile_time, self.ptile_revs, self.ptile_tol, self.ptile_fps], 4),
+                                 self._section("Доза", [self.dose_slot, self.plan_label])], footer=self._dock)
+
+    def _build_dock(self) -> None:
+        """The two ways to print: over the network on the SpinPrinter, or a .spin on a USB stick.
+        The others (the projector of this computer, MP4, PNG, a folder) are small links under them."""
+        self._dock = QWidget()
+        dock_l = QVBoxLayout(self._dock)
+        dock_l.setContentsMargins(0, 0, 0, 0)
+        dock_l.setSpacing(8)
+        buttons = QWidget()
+        bl = QHBoxLayout(buttons)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(10)
+        bl.setSizeConstraint(QHBoxLayout.SizeConstraint.SetMinimumSize)
+        self.print_button = self._button("Напечатать", "spin_print")
+        self.stick_button = self._secondary("На флешку", "spin_stick")
+        bl.addWidget(self.print_button, 3)
+        bl.addWidget(self.stick_button, 2)
+        self.r_spin = self._row("", None, "")
+        self.r_spin.setObjectName("printStatus")
+        self.stop_link = self._link("остановить печать", "spin_stop")
+        self.stop_link.setVisible(False)
+        more = QWidget()
+        ml = QHBoxLayout(more)
+        ml.setContentsMargins(0, 0, 0, 0)
+        ml.setSpacing(4)
+        self.more_links = [self._small_link("на проектор этого компьютера", "projector"),
+                           self._small_link("видео MP4", "export"),
+                           self._small_link("кадры PNG", "open_frames"),
+                           self._small_link(".spin в папку", "spin_export")]
+        for i, link in enumerate(self.more_links):
+            if i:
+                dot = QLabel("·")
+                dot.setObjectName("smallDot")
+                ml.addWidget(dot)
+            ml.addWidget(link)
+        ml.addStretch(1)
+        dock_l.addWidget(buttons)
+        dock_l.addWidget(self.r_spin)
+        dock_l.addWidget(self.stop_link, 0, Qt.AlignmentFlag.AlignLeft)
+        dock_l.addWidget(more)
+        self._dock.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        dock_l.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
+        self._printer_on = False
+        self._print_status = ("", False)
+        self.set_printer_connected(False)
 
     def attach_dose_card(self, card: QWidget) -> None:
         """Show the dose card on the print page; its slider sets the print exposure."""
@@ -859,19 +1130,64 @@ class ProcessSettingsPanel(QWidget):
     def selected_printer(self) -> Optional[object]:
         return self.printer_box.currentData()
 
-    def set_printer_connected(self, connected: bool, status: str = "") -> None:
-        """The printer card and the Print button follow the connection."""
-        self.print_button.setEnabled(connected)
-        self.print_button.setToolTip("" if connected else tr("Подключите принтер: Настройки → Принтер"))
+    def set_printer_connected(self, connected: bool, status: str = "", state: str = "") -> None:
+        """The printer's light and state (Settings and the print page), the connect / disconnect
+        button and the Print button follow the connection.
+
+        state: "off" (not connected), "busy" (connecting), "ok" (connected), "error" (no answer).
+        """
+        state = state or ("ok" if connected else "off")
+        self._printer_on = connected
+        text = status or (tr("подключён") if connected else tr("не подключён"))
+        for dot in (getattr(self, "printer_dot", None), getattr(self, "print_dot", None)):
+            if dot is not None:
+                dot.set_state(state)
+        if hasattr(self, "printer_state"):
+            self.printer_state.setText(text)
+            self.print_printer.setText(text if connected or state in ("busy", "error")
+                                       else tr("Принтер не подключён"))
         if hasattr(self, "r_printer_write"):
             self.r_printer_write.setVisible(connected)
-        if status and hasattr(self, "r_printer"):
-            self.r_printer.set_effect(status)
+        if hasattr(self, "printer_toggle"):
+            self.printer_toggle.setText(tr("Отключить") if connected else tr("Подключить"))
+            self.printer_toggle.setEnabled(state != "busy")
+            self.printer_find_link.setVisible(not connected)
+            self.printer_manual_link.setVisible(not connected)
+        if hasattr(self, "_dock"):
+            self._refresh_print_buttons()
+
+    def _on_printer_toggle(self) -> None:
+        self.actionRequested.emit("printer_disconnect" if self._printer_on else "printer_connect")
 
     def set_print_status(self, text: str, warn: bool = False, stoppable: bool = False) -> None:
-        """What the print sent to the printer is doing, under the Print button."""
-        self.r_spin.set_effect(text or "файл .spin уходит на принтер, его экран спросит «Печатать?»", warn)
+        """What the print sent to the printer is doing, under the Print button ("" = the usual hint)."""
+        self._print_status = (text, warn)
         self.stop_link.setVisible(stoppable)
+        self._refresh_print_buttons()
+
+    def _frames_ready(self) -> bool:
+        return bool(self._output_dir) and not self._frames_outdated() and not self._running
+
+    def _refresh_print_buttons(self) -> None:
+        """Print needs frames and a connected printer, the stick only frames; the line under the
+        buttons says what is missing instead of leaving a grey button to guess at."""
+        ready = self._frames_ready()
+        self.print_button.setEnabled(ready and self._printer_on)
+        self.stick_button.setEnabled(ready)
+        for link in self.more_links:
+            link.setEnabled(ready)
+        text, warn = self._print_status
+        if not text:
+            if not self._output_dir:
+                text = "сначала рассчитайте свет"
+            elif self._frames_outdated():
+                text, warn = "кадры устарели — пересчитайте свет", True
+            elif not self._printer_on:
+                text = "принтер не подключён: Настройки → Принтер. На флешку можно и так"
+            else:
+                text = "файл уйдёт на принтер, его экран спросит «Печатать?»"
+        self.r_spin.set_effect(text, warn)
+        self.print_button.setToolTip("" if self._printer_on else tr("Подключите принтер: Настройки → Принтер"))
 
     def printer_values(self) -> dict[str, float]:
         """This slicer's printer settings, in printer_link.profile_settings keys (to write back)."""
@@ -1117,7 +1433,7 @@ class ProcessSettingsPanel(QWidget):
             if self._running:
                 self.action_btn.setText(tr("Остановить"))
                 self.action_sub.setText(tr("считаю кадры…"))
-            elif self._done:
+            elif self._done and not self._review:
                 self.action_btn.setText(tr("Дальше — печать →"))
                 self.action_sub.setText(tr(f"готово · {self.frames.value_int()} кадров"))
             else:
@@ -1125,21 +1441,25 @@ class ProcessSettingsPanel(QWidget):
                 self.action_btn.setEnabled(self._has_model)
                 self.action_sub.setText(tr(f"≈ {self._secs(self.derived()['calc_s'])} на обычном компьютере"
                                            if self._has_model else "сначала загрузите модель"))
-        elif self._frames_outdated() and self._projecting is None:
-            self.action_btn.setText(tr("Пересчитать свет"))
-            self.action_sub.setText(tr("старые кадры не подходят к новым настройкам"))
         elif self._projecting is not None:
             elapsed, total = self._projecting
             self.action_btn.setText(tr("Остановить засветку"))
             self.action_sub.setText(tr(f"идёт засветка {self._secs(elapsed)} из {self._secs(total)}") if total
                                     else tr("идёт засветка · Esc на проекторе — стоп"))
+        elif self._frames_outdated():
+            self.action_btn.setText(tr("Пересчитать свет"))
+            self.action_sub.setText(tr("старые кадры не подходят к новым настройкам"))
         else:
-            ready = bool(self._output_dir)
-            kind = self.output_kind.currentIndex()
-            self.action_btn.setText(tr(["Показать на проекторе", "Сохранить видео", "Открыть папку кадров"][kind]))
-            self.action_btn.setEnabled(ready)
-            self.action_sub.setText(tr(("Esc на проекторе — остановить" if kind == 0 else "кадры готовы") if ready
-                                       else "сначала рассчитайте свет"))
+            self.action_btn.setText(tr("Рассчитать свет →"))
+            self.action_sub.setText(tr("без кадров печатать нечего"))
+        # The print page has its own buttons (network, stick); the big action shows there only to
+        # stop this computer's projector or to send you back to compute the light.
+        on_print = page == "print"
+        print_ready = self._frames_ready() and self._projecting is None
+        self._foot.setVisible(not (on_print and print_ready))
+        if hasattr(self, "_dock"):
+            self._dock.setVisible(on_print)
+            self._refresh_print_buttons()
         for row in self._model_rows:
             row.setVisible(self._has_model)
         self._model_expander.setVisible(self._has_model)
@@ -1147,49 +1467,53 @@ class ProcessSettingsPanel(QWidget):
     def _refresh_plan(self) -> None:
         plan = self._plan
         f = self._f
-        if not plan:
-            self.results_box.setVisible(False)
-            self.plan_label.setText(tr("Сначала рассчитайте свет."))
-            return
-        self.results_box.setVisible(self._done)
-        vp = plan.get("virtual_print") or {}
-        iou = vp.get("iou")
-        self.metric_match.set(f"{f(100 * iou)} %" if iou is not None else "—",
-                              ("почти идеально" if iou > 0.98 else "можно точнее") if iou is not None else "")
-        tol = float(plan.get("exposure_tolerance_pct", 0.0))
-        self.metric_tol.set(f"± {f(tol)} %" if tol > 0 else "нет",
-                            "ошибиться сложно" if tol >= 4 else ("нужна калибровка" if tol > 0 else "увеличьте сетку"))
         fps = self.frame_rate_hz_value()
         frames = self.frames.value_int()
-        rows = []
+        self.ptile_fps.set(f"{f(fps)} {tr('Гц')}", f"{frames} {tr('на оборот')}")
+        if not plan:
+            self.plan_label.setText(tr("Сначала рассчитайте свет."))
+            for tile in (self.ptile_time, self.ptile_revs, self.ptile_tol):
+                tile.set("—")
+            return
+        vp = plan.get("virtual_print") or {}
+        iou = vp.get("iou")
+        self.tile_match.set(f"{f(100 * iou)} %" if iou is not None else "—",
+                            ("почти идеально" if iou > 0.98 else "можно точнее") if iou is not None else "")
+        tol = float(plan.get("exposure_tolerance_pct", 0.0))
+        tol_note = "ошибиться сложно" if tol >= 4 else ("нужна калибровка" if tol > 0 else "увеличьте сетку")
+        self.tile_tol.set(f"± {f(tol)} %" if tol > 0 else tr("нет"), tol_note, warn=0 < tol < 3)
+        self.ptile_tol.set(f"± {f(tol)} %" if tol > 0 else tr("нет"), "", warn=0 < tol < 3)
+        self.tile_frames.set(f"{frames}", f"{tr('шаг')} {f(360.0 / frames)}°")
         if "frame_exposure_total_s" in plan:
             revs = float(plan["frame_exposure_total_s"]) * fps
             total = revs * frames / fps
-            self.metric_time.set(self._secs(total), f"{f(revs)} оборота")
+            self.tile_time.set(self._secs(total), f"{f(revs)} {tr('оборота')}")
             # On the print page: the time the projector will actually run.
             scale = self._exposure / max(self.brightness_factor(), 0.05)
-            rows += [("Время засветки", self._secs(total * scale)), ("Обороты", f(revs * scale))]
+            notes = []
             if abs(self._exposure - 1.0) > 1e-3:
-                rows.append(("Экспозиция", f"{round(self._exposure * 100)} % от плана"))
+                notes.append(f"{tr('экспозиция')} {round(self._exposure * 100)} %")
             if self.brightness_factor() < 0.999:
-                rows.append(("Яркость", f"{round(self.brightness_factor() * 100)} %"))
+                notes.append(f"{tr('яркость')} {round(self.brightness_factor() * 100)} %")
+            self.ptile_time.set(self._secs(total * scale), " · ".join(notes))
+            self.ptile_revs.set(f(revs * scale))
         else:
-            self.metric_time.set("—", "нужны доза и мощность")
-            rows.append(("Время", "задайте поглощение, облучённость и дозу"))
-        rows.append(("Частота кадров", f"{f(fps)} Гц"))
-        if tol > 0:
-            rows.append(("Запас экспозиции", f"± {f(tol)} %"))
-        warnings = plan.get("warnings") or []
-        self.warnings_label.setText("\n".join(f"• {tr(w)}" for w in warnings[:3]))
-        self.warnings_label.setVisible(bool(warnings))
-        p = theme.current()
-        html = "".join(f"<tr><td style='color:{p.muted}; padding:3px 18px 3px 0'>{tr(k)}</td>"
-                       f"<td style='color:{p.text}'>{tr(val)}</td></tr>" for k, val in rows)
-        self.plan_label.setText(f"<table>{html}</table>")
+            # Not a sentence in place of a number: a dash, and where to fix it.
+            self.tile_time.set("—", "нужны поглощение, облучённость и доза: Настройки")
+            self.ptile_time.set("—", "нужны данные смолы")
+            self.ptile_revs.set("—")
+        warnings = [tr(w) for w in (plan.get("warnings") or [])]
+        self.warnings_label.setText("\n".join(f"• {w}" for w in warnings))
+        n = len(warnings)
+        self.warnings_toggle.setVisible(bool(n))
+        shown = self.warnings_label.isVisible()
+        self.warnings_toggle.setText(tr("скрыть замечания") if shown else f"{tr('замечаний')}: {n} · {tr('показать')}")
+        self.plan_label.setText(tr("Готово."))
 
     # ------------------------------------------------------------- state from the app
     def show_page(self, key: str) -> None:
-        if key == "printer" or key == "resin":
+        if key in ("printer", "resin", "projector", "interface"):
+            self.show_setup_tab(key)
             key = "setup"
         if key not in PAGES:
             return
@@ -1249,22 +1573,40 @@ class ProcessSettingsPanel(QWidget):
         self.progress_bar.setValue(int(max(0.0, min(1.0, progress)) * 1000))
         if running:
             self._done = False
+            self._review = False
             if not was:
-                self.game_box.setVisible(True)
                 self.game_title.setText(tr("Пока считается — засветите деталь сами"))
-        # While computing the settings cannot change: make room for the game.
-        for row in (self.r_grid, self.r_frames):
-            row.setVisible(not running)
+        elif was:
+            self.game_title.setText(tr("Пока ждёте — засветите деталь сами"))
         self.r_virtual.setVisible(not running and self._virtual_ready)
         self.r_comp.setVisible(not running and self.projector_blur.value() > 0)
+        self._show_light_stage()
         self._refresh_action()
+
+    def _show_light_stage(self) -> None:
+        """Before the run: the parameters and the game. During it: only the game. After: the result
+        (and, after "пересчитать", the parameters and the game again)."""
+        running = self._running
+        result = self._done and not running and not self._review
+        self.calc_block.setVisible(not running and not result)
+        self.game_box.setVisible(not result)
+        self.result_block.setVisible(result)
+        self.stale_label.setVisible(self._stale and not running)
 
     def set_results(self, plan: dict | None, output_dir: str) -> None:
         self._plan = plan
         self._output_dir = output_dir
         self._done = True
-        self.game_title.setText(tr("Свет готов. Доиграйте или идите печатать"))
+        self._review = False
+        self._stale = False
         self._refresh_plan()
+        # What this result was calculated with: quality, grid, frames per turn, step between frames.
+        v = self.derived()
+        quality = {128: tr("Быстро"), 256: tr("Норма"), 384: tr("Точно")}.get(self.grid_res.value_int(), "")
+        self.calc_settings.setText(
+            f"{tr('Качество')} {quality} · {tr('сетка')} {self.grid_res.value_int()} · "
+            f"{tr('кадров')} {self.frames.value_int()} · {tr('шаг')} {self._f(v['step'])}°")
+        self._show_light_stage()
         self._refresh_action()
 
     def set_virtual_available(self, available: bool) -> None:
@@ -1284,15 +1626,14 @@ class ProcessSettingsPanel(QWidget):
             if self.virtual.isChecked():
                 with QSignalBlocker(self.virtual):
                     self.virtual.setChecked(False)
-                self.virtual.setText(tr("Показать"))
                 self.virtualToggled.emit(False)
             self.r_virtual.set_effect("результат устарел — пересчитайте свет" if self._stale
                                       else "появится после расчёта света")
+        self._show_light_stage()
 
     def set_photon_frames(self, frames: list) -> None:
-        for game in (self.game, self.game_print):
-            game.photon.set_level_from_frames(frames)
-            game.update()
+        self.game.photon.set_level_from_frames(frames)
+        self.game.update()
         for refresh in getattr(self, "_arcade_refresh", []):
             refresh()
 
@@ -1300,7 +1641,6 @@ class ProcessSettingsPanel(QWidget):
         import numpy as _np
         shape = _np.asarray(grid, dtype=bool)
         self.game.set_shape(shape)
-        self.game_print.set_shape(shape)
 
     def is_done(self) -> bool:
         return self._done
@@ -1319,20 +1659,18 @@ class ProcessSettingsPanel(QWidget):
         elif page == "model":
             self.actionRequested.emit("load" if not self._has_model else "goto:light")
         elif page == "light":
-            self.actionRequested.emit("goto:print" if (self._done and not self._running) else "generate")
+            self.actionRequested.emit("goto:print" if (self._done and not self._running and not self._review)
+                                      else "generate")
         elif self._projecting is not None:
             self.actionRequested.emit("stop_projector")
-        elif self._frames_outdated():
-            self.actionRequested.emit("goto:light")
         else:
-            self.actionRequested.emit(["projector", "export", "open_frames"][self.output_kind.currentIndex()])
+            self.actionRequested.emit("goto:light")
 
     def refresh_theme(self) -> None:
         self._refresh()
         if self.fit_label.text():
             self.set_fit(self._fits, self._fit_text)
         self.game.update()
-        self.game_print.update()
 
 
 class ScaleControls(QFrame):

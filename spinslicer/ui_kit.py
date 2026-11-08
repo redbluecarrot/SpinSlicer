@@ -512,7 +512,7 @@ class SettingRow(QWidget):
         super().__init__(parent)
         self.control = control
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 11, 0, 11)
+        outer.setContentsMargins(0, 9, 0, 9)
         outer.setSpacing(6)
         top = QHBoxLayout()
         top.setSpacing(12)

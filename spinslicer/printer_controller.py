@@ -172,6 +172,7 @@ class PrinterController(QObject):
             "spin_export": lambda: self._tab.export_spin(), "spin_print": self.print_now,
             "spin_stick": self.to_stick, "spin_stop": self.stop, "printer_find": self.find,
             "printer_manual": self.ask_address, "printer_connect": lambda: self.connect_printer(),
+            "printer_disconnect": self.disconnect_printer,
             "printer_write": self.write_to_printer,
         }
         if action not in actions:
@@ -327,7 +328,7 @@ class PrinterController(QObject):
         if self._discover is not None and self._discover.isRunning():
             return
         if not printer_link.zeroconf_available():
-            self._log(tr("Поиск по mDNS недоступен (pip install zeroconf): проверяю spinslicer.local."))
+            self._log(tr("Поиск по mDNS недоступен (pip install zeroconf): проверяю spinprinter.local."))
         else:
             self._log(tr("Ищу принтеры в сети…"))
         self._discover = DiscoverWorker(parent=self)
@@ -348,7 +349,7 @@ class PrinterController(QObject):
         default = current.host if current is not None else str(
             self._settings.value(SETTINGS_ADDRESS, "") or printer_link.DEFAULT_HOST)
         text, ok = QInputDialog.getText(self._window, tr("Адрес принтера"),
-                                        tr("IP-адрес или имя принтера, например spinslicer.local"),
+                                        tr("IP-адрес или имя принтера, например spinprinter.local"),
                                         text=default)
         if not ok or not text.strip():
             return None
@@ -380,15 +381,24 @@ class PrinterController(QObject):
             return
         self._settings.setValue(SETTINGS_ADDRESS, f"{printer.host}:{printer.port}")
         self._connected = None
-        self._panel.set_printer_connected(False, f"{tr('Подключаюсь к')} {printer.label}…")
+        self._panel.set_printer_connected(False, f"{tr('Подключаюсь к')} {printer.label}…", state="busy")
         self._profile = ProfileWorker(printer, parent=self)
         self._profile.loaded.connect(self._on_profile)
         self._profile.failed.connect(self._on_profile_failed)
         self._profile.start()
 
+    def disconnect_printer(self) -> None:
+        """Forget the connection: the printer stays chosen, but it is not talked to until Connect."""
+        self._connected = None
+        self._printer_settings = {}
+        self._settings.setValue(SETTINGS_ADDRESS, "")     # not reconnected on the next start
+        self._panel.set_printer_connected(False, tr("Принтер не подключён"), state="off")
+        self._log(tr("Принтер отключён."))
+
     def _on_profile_failed(self, address: printer_link.PrinterAddress, msg: str) -> None:
         self._log(f"{tr('Принтер недоступен:')} {msg}")
-        self._panel.set_printer_connected(False, f"{tr('Не подключён:')} {address.label} {tr('не отвечает')}")
+        self._panel.set_printer_connected(False, f"{tr('Не подключён:')} {address.label} {tr('не отвечает')}",
+                                          state="error")
 
     def _on_profile(self, address: printer_link.PrinterAddress, profile: Optional[dict]) -> None:
         self._connected = address

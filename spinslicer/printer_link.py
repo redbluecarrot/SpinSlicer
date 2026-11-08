@@ -2,7 +2,7 @@
 
 * Discovery: SpinPi announces ``_spinprinter._tcp`` over mDNS with the TXT fields
   ``name``, ``id`` and ``api``. ``zeroconf`` is used only when it is installed; the
-  printer's default host name ``spinslicer.local`` and an address typed by hand
+  printer's default host name ``spinprinter.local`` and an address typed by hand
   always work.
 * ``GET /api/printer``: the printer profile (projector, vial, calibration). Older
   SpinPi versions do not have it yet, so its absence is not an error.
@@ -22,7 +22,10 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 SERVICE_TYPE = "_spinprinter._tcp.local."
-DEFAULT_HOST = "spinslicer.local"
+DEFAULT_HOST = "spinprinter.local"
+# The name SpinPrinter's install guide gave the Raspberry Pi until now: still looked for, so an
+# existing printer is found without renaming it.
+LEGACY_HOSTS = ("spinslicer.local",)
 DEFAULT_PORT = 80
 TIMEOUT_S = 10.0
 CHUNK = 256 * 1024
@@ -135,7 +138,7 @@ def discover_mdns(timeout_s: float = 2.5) -> list[PrinterAddress]:
 
 
 def resolve_default(host: str = DEFAULT_HOST) -> Optional[PrinterAddress]:
-    """``spinslicer.local`` when the system resolver knows it (Bonjour, avahi, nss-mdns)."""
+    """``spinprinter.local`` when the system resolver knows it (Bonjour, avahi, nss-mdns)."""
     try:
         socket.getaddrinfo(host, DEFAULT_PORT, proto=socket.IPPROTO_TCP)
     except (OSError, UnicodeError):
@@ -144,11 +147,14 @@ def resolve_default(host: str = DEFAULT_HOST) -> Optional[PrinterAddress]:
 
 
 def discover(timeout_s: float = 2.5) -> list[PrinterAddress]:
-    """mDNS printers, then ``spinslicer.local`` if it resolves and is not already listed."""
+    """mDNS printers, then ``spinprinter.local`` if it resolves and is not already listed."""
     printers = discover_mdns(timeout_s)
-    fallback = resolve_default()
-    if fallback is not None and not any(p.host.rstrip(".").lower() == DEFAULT_HOST for p in printers):
-        printers.append(fallback)
+    for host in (DEFAULT_HOST, *LEGACY_HOSTS):
+        if any(p.host.rstrip(".").lower() == host for p in printers):
+            continue
+        fallback = resolve_default(host)
+        if fallback is not None:
+            printers.append(fallback)
     return printers
 
 

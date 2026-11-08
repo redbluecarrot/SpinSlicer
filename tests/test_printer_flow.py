@@ -234,11 +234,14 @@ def test_print_from_the_slicer_follows_the_printer(pi, monkeypatch):
     from spinslicer.ui_panels import ProcessSettingsPanel
     window, panel, tab = QWidget(), ProcessSettingsPanel(), _FakeTab()
     ctl = PrinterController(window, panel, tab, lambda: "", lambda: None, lambda _m: None)
-    assert not panel.print_button.isEnabled()                       # no printer yet
+    assert not panel.print_button.isEnabled()                       # no printer, no frames
+    assert not panel.stick_button.isEnabled()                       # no frames yet
     ctl._on_profile(pi, {"id": "spinpi-1", "name": "Bench", "vial": {"diameter_mm": 25.0},
                          "software": {"spinpi": "0.8.2"}, "features": ["confirm", "job_seq"]})
+    assert not panel.print_button.isEnabled()                       # connected, but no frames
+    panel.set_results({}, "frames")                                 # the light is computed
     assert panel.print_button.isEnabled() and not panel.r_printer_write.isHidden()
-    assert "Bench" in panel.r_printer.effect.text() and "0.8.2" in panel.r_printer.effect.text()
+    assert "Bench" in panel.printer_state.text() and "0.8.2" in panel.printer_state.text()
 
     _Pi.state = {"state": "idle", "request": {"state": "waiting_confirm"}}
     ctl.print_now()

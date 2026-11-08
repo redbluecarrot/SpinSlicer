@@ -17,7 +17,17 @@ from typing import Any, Callable, List, Optional
 
 import numpy as np
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QGuiApplication, QImage, QKeyEvent, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import (
+    QColor,
+    QGuiApplication,
+    QIcon,
+    QImage,
+    QKeyEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -523,11 +533,13 @@ class ProjectorTab(QWidget):
 
         transport = QHBoxLayout()
         transport.setSpacing(10)
-        self.play_pause_btn = QPushButton("▶")
+        self.play_pause_btn = QPushButton()
         self.play_pause_btn.setObjectName("stepButton")
         self.play_pause_btn.setEnabled(False)
         self.play_pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_pause_btn.clicked.connect(self._on_play_pause_clicked)
+        self._playing_icon = False
+        self._set_transport_icon(False)
         self.scrubber = QSlider(Qt.Orientation.Horizontal)
         self.scrubber.setEnabled(False)
         self.scrubber.valueChanged.connect(self._on_scrub)
@@ -662,14 +674,42 @@ class ProjectorTab(QWidget):
         self._one_turn = one_turn
         if self._frames:
             self._timer.start(self._interval())
-            self.play_pause_btn.setText("❚❚")
+            self._set_transport_icon(True)
+
+    def _set_transport_icon(self, playing: bool) -> None:
+        """Play / pause drawn as shapes: the UI font has no ▶ or ❚❚ (they showed as empty boxes)."""
+        self._playing_icon = playing
+        side = 28
+        pixmap = QPixmap(side * 2, side * 2)          # drawn at 2x, sharp on HiDPI screens
+        pixmap.setDevicePixelRatio(2.0)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(theme.current().text))
+        if playing:
+            painter.drawRoundedRect(QRectF(8, 7, 4.5, 14), 1.5, 1.5)
+            painter.drawRoundedRect(QRectF(15.5, 7, 4.5, 14), 1.5, 1.5)
+        else:
+            path = QPainterPath()
+            path.moveTo(9, 6.5)
+            path.lineTo(21.5, 14)
+            path.lineTo(9, 21.5)
+            path.closeSubpath()
+            painter.drawPath(path)
+        painter.end()
+        self.play_pause_btn.setIcon(QIcon(pixmap))
+        self.play_pause_btn.setText("")
+
+    def refresh_theme(self) -> None:
+        self._set_transport_icon(self._playing_icon)
 
     def _on_play_pause_clicked(self) -> None:
         if not self._frames:
             return
         if self._timer.isActive():
             self._timer.stop()
-            self.play_pause_btn.setText("▶")
+            self._set_transport_icon(False)
         else:
             self._start_playback()
 
@@ -681,14 +721,14 @@ class ProjectorTab(QWidget):
             return
         if self._one_turn and self._frame_index + 1 >= len(self._frames):
             self._timer.stop()
-            self.play_pause_btn.setText("▶")
+            self._set_transport_icon(False)
             self._show(0)
             return
         self._show(self._frame_index + 1)
 
     def hideEvent(self, event: object) -> None:  # noqa: N802
         self._timer.stop()
-        self.play_pause_btn.setText("▶")
+        self._set_transport_icon(False)
         super().hideEvent(event)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------------ output

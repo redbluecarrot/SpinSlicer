@@ -158,7 +158,27 @@ QWidget#centralRoot, QWidget#appHeader, QWidget#chipBar {{ background-color: {p.
 QWidget#sidePanel {{ background-color: {p.surface}; }}
 QWidget#appHeader {{ border-bottom: 1px solid {p.border}; }}
 QWidget#sidePanel {{ border-left: 1px solid {p.border}; }}
-QWidget#settingRow {{ border-bottom: 1px solid {p.border_soft}; }}
+QWidget#settingRow {{ border: none; }}
+QFrame#settingsBlock {{ background-color: {p.surface_alt}; border: 1px solid {p.border_soft}; border-radius: 14px; }}
+QFrame#statTile {{ background-color: {p.seg_on if not p.dark else p.surface}; border: 1px solid {p.border_soft}; border-radius: 10px; }}
+QLabel#tileKey {{ font-size: 11px; color: {p.muted}; }}
+QLabel#tileValue {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 19px; color: {p.text}; }}
+QLabel#tileValue[warn="true"] {{ color: {p.warn}; }}
+QLabel#tileNote {{ font-size: 11px; color: {p.muted}; }}
+QLabel#printerState {{ font-weight: 600; color: {p.text}; }}
+QLabel#warnLine {{ font-size: 12px; color: {p.warn}; padding-bottom: 6px; }}
+QLabel#smallDot {{ font-size: 11px; color: {p.dim}; }}
+QPushButton#smallLink {{
+    background: transparent; border: none; padding: 0; color: {p.muted}; font-size: 11px; text-align: left;
+}}
+QPushButton#smallLink:hover {{ color: {p.accent}; }}
+QPushButton#smallLink:disabled {{ color: {p.dim}; }}
+QPushButton#secondaryAction {{
+    background-color: transparent; color: {p.text}; border: 1.5px solid {p.border}; border-radius: 18px;
+    min-height: 54px; padding: 0 18px; font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-size: 15px; font-weight: {DISPLAY_WEIGHT};
+}}
+QPushButton#secondaryAction:hover {{ border-color: {p.accent}; color: {p.accent}; }}
+QPushButton#secondaryAction:disabled {{ color: {p.dim}; border-color: {p.border_soft}; }}
 QToolTip {{
     background-color: {p.surface_alt}; color: {p.text};
     border: 1px solid {p.border}; padding: 6px 9px; border-radius: {RADIUS_SM}px;
