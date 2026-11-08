@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass
 
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication
 
 from spinslicer.sketch_scene import ScenePalette
 
@@ -49,15 +49,14 @@ class Palette:
     liquid: str
     track: str
     sun: str
-    # depth: the panel is the floor, cards stand on it (with a shadow), fields are sunk into the
-    # cards, the chosen option stands up out of its field
+    # depth without shadows: the panel is the floor, cards are a step lighter with a border,
+    # fields are sunk into the cards, the chosen option stands up out of its field
     card: str = "#FFFFFF"
     card_border: str = "#E9E5DF"
     well: str = "#F2EFEA"
     well_border: str = "#E2DDD6"
     raised: str = "#FFFFFF"
     raised_border: str = "#D6D0C8"
-    shadow: tuple[int, int, int, int] = (25, 23, 26, 26)
 
 
 DARK = Palette(
@@ -67,7 +66,7 @@ DARK = Palette(
     action="#F4A6BE", on_action="#3A1022", warn="#FFB86B", sketch="#D9D1D5", resin="#2A2230", liquid="#5FA8C8",
     track="#2C2630", sun="#F1ECEE",
     card="#25212A", card_border="#38323E", well="#131116", well_border="#2B2630",
-    raised="#3A3340", raised_border="#4E4656", shadow=(0, 0, 0, 120),
+    raised="#3A3340", raised_border="#4E4656",
 )
 LIGHT = Palette(
     dark=False, bg="#F6F4F0", view="#EDEAE4", surface="#F6F4F0", surface_alt="#E7E3DC", seg_on="#FFFFFF",
@@ -332,26 +331,6 @@ QTabBar::tab:selected {{ color: {p.text}; border-bottom: 2px solid {p.accent}; }
 QSplitter::handle {{ background-color: {p.border_soft}; }}
 QSplitter::handle:horizontal:hover, QSplitter::handle:vertical:hover {{ background-color: {p.accent}; }}
 """
-
-
-def lift(widget: QWidget, blur: float = 22.0, dy: float = 3.0) -> None:
-    """A soft shadow under a card, so it stands on the panel instead of lying flat in it.
-    The colour follows the theme: call again after the theme changes (refresh_shadows)."""
-    from PyQt6.QtWidgets import QGraphicsDropShadowEffect
-    effect = widget.graphicsEffect()
-    if not isinstance(effect, QGraphicsDropShadowEffect):
-        effect = QGraphicsDropShadowEffect(widget)
-        widget.setGraphicsEffect(effect)
-    effect.setBlurRadius(blur)
-    effect.setOffset(0, dy)
-    effect.setColor(QColor(*_current.shadow))
-    widget.setProperty("_spinslicer_lifted", True)
-
-
-def refresh_shadows(root: QWidget) -> None:
-    for w in root.findChildren(QWidget):
-        if w.property("_spinslicer_lifted"):
-            lift(w)
 
 
 def apply_theme(app: QApplication, dark: bool | None = None) -> Palette:

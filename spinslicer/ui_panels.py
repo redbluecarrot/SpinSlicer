@@ -403,7 +403,7 @@ class ProcessSettingsPanel(QWidget):
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(20, 6, 20, 18)
-        layout.setSpacing(14)            # air between the blocks (and room for their shadows)
+        layout.setSpacing(12)            # air between the blocks
         for row in rows:
             layout.addWidget(row)
         layout.addStretch(1)
@@ -492,7 +492,6 @@ class ProcessSettingsPanel(QWidget):
         box = QFrame()
         box.setObjectName("settingsBlock")
         box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        theme.lift(box)
         lay = QVBoxLayout(box)
         lay.setContentsMargins(18, 14, 18, 12)
         lay.setSpacing(0)
@@ -804,7 +803,6 @@ class ProcessSettingsPanel(QWidget):
         card = QFrame()
         card.setObjectName("settingsBlock")
         card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        theme.lift(card)
         cl = QHBoxLayout(card)
         cl.setContentsMargins(16, 12, 16, 12)
         cl.setSpacing(10)
@@ -824,8 +822,6 @@ class ProcessSettingsPanel(QWidget):
         self.ptile_revs = _Tile("оборотов")
         self.ptile_tol = _Tile("запас")
         self.ptile_fps = _Tile("кадры")
-        for tile in (self.ptile_time, self.ptile_revs, self.ptile_tol, self.ptile_fps):
-            theme.lift(tile, blur=16, dy=2)         # on the panel: cards; inside a card they are sunk
         self.plan_label = QLabel(tr("Сначала рассчитайте свет."))    # the old text plan, kept for callers
         self.plan_label.setVisible(False)
         # The dose card (video_tab.DoseCard) is put here by the main window: its slider
@@ -1679,7 +1675,6 @@ class ProcessSettingsPanel(QWidget):
             self.actionRequested.emit("goto:light")
 
     def refresh_theme(self) -> None:
-        theme.refresh_shadows(self)
         self._refresh()
         if self.fit_label.text():
             self.set_fit(self._fits, self._fit_text)
