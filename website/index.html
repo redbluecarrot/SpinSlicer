@@ -58,9 +58,14 @@
   ]
 }
 </script>
+<script>
+(function(){ var th=null; try{ th=localStorage.getItem("theme"); }catch(e){}
+  if(th!=="light"&&th!=="dark") th=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";
+  document.documentElement.dataset.theme=th; })();
+</script>
 <style>
-:root{--bg:#fbf8f9;--fg:#141217;--muted:#5d5660;--line:#e7dfe3;--card:#fff;--pink:#ff8db5;--pink-soft:#ffd3e3;--link:#b8326a}
-@media (prefers-color-scheme:dark){:root{--bg:#141217;--fg:#f3eef1;--muted:#a9a0a6;--line:#2c2730;--card:#1c1920;--link:#ff9cc0}}
+:root{--bg:#f6f4f0;--fg:#19171a;--muted:#6c686b;--line:#ddd8d1;--card:#fff;--pink:#e5452b;--on-pink:#fff;--pink-soft:#f7ddd5;--link:#c93a22}
+:root[data-theme="dark"]{--bg:#141217;--fg:#f3eef1;--muted:#a9a0a6;--line:#2c2730;--card:#1c1920;--pink:#ff8db5;--on-pink:#141217;--pink-soft:#3a1f2d;--link:#ff9cc0}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 main{max-width:860px;margin:0 auto;padding:40px 16px 64px}
@@ -73,7 +78,7 @@ h2{font-size:1.3rem;margin:40px 0 10px;padding-bottom:6px;border-bottom:1px soli
 .lead{font-size:1.1rem;margin:24px 0}
 .actions{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}
 .btn{display:inline-block;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:600;border:1px solid var(--line);color:var(--fg);background:var(--card)}
-.btn.primary{background:var(--pink);border-color:var(--pink);color:#141217}
+.btn.primary{background:var(--pink);border-color:var(--pink);color:var(--on-pink)}
 ul{padding-left:1.2em}
 li{margin:6px 0}
 table{border-collapse:collapse;width:100%;font-size:.95rem}
@@ -84,11 +89,14 @@ dt{font-weight:650;margin-top:14px}
 dd{margin:4px 0 0}
 footer{margin-top:48px;color:var(--muted);font-size:.9rem}
 code{font-size:.92em}
+#theme{position:fixed;top:12px;right:64px;z-index:5;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:600 .85rem/1 system-ui,sans-serif;cursor:pointer}
+#theme:hover{border-color:var(--pink)}
 #lang{position:fixed;top:12px;right:12px;z-index:5;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:600 .85rem/1 system-ui,sans-serif;cursor:pointer}
 #lang:hover{border-color:var(--pink)}
 </style>
 </head>
 <body>
+<button id="theme" type="button" aria-label="Light or dark / Светлая или тёмная"></button>
 <button id="lang" type="button" aria-label="Switch language / Сменить язык">RU</button>
 <main>
 <header>
@@ -190,7 +198,16 @@ classic CAL in the <a href="https://github.com/redbluecarrot/SpinSlicer/blob/mai
     document.title = ru ? RU_TITLE : en.title;
     desc.setAttribute("content", ru ? RU_DESC : en.desc);
     btn.textContent = ru ? "EN" : "RU";
+    var dark = document.documentElement.dataset.theme === "dark";
+    themeBtn.textContent = dark ? (ru ? "Светлая" : "Light") : (ru ? "Тёмная" : "Dark");
   }
+  var themeBtn = document.getElementById("theme");
+  themeBtn.addEventListener("click", function () {
+    var th = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = th;
+    try { localStorage.setItem("theme", th); } catch (e) {}
+    apply(lang);
+  });
   var lang = "";
   try { lang = localStorage.getItem("lang") || ""; } catch (e) {}
   if (lang !== "ru" && lang !== "en") lang = /^ru/i.test(navigator.language || "") ? "ru" : "en";
