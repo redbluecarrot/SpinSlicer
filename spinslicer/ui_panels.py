@@ -884,20 +884,28 @@ class ProcessSettingsPanel(QWidget):
         return self._printer_profile_id
 
     def apply_printer_profile(self, settings: dict) -> list[str]:
-        """Put a printer profile (printer_link.profile_settings) into the settings; returns what changed."""
+        """Put a printer profile (printer_link.profile_settings) into the settings; returns what changed.
+
+        Only values that differ count as changed: the list is shown as "from the printer: …", and
+        it named every field the printer sent, even ones that were already the same."""
         self._printer_profile_id = str(settings.get("profile_id", ""))
         changed: list[str] = []
 
         def put(key: str, widget: Stepper, label: str) -> None:
-            if key in settings:
-                widget.setValue(float(settings[key]))
+            if key not in settings:
+                return
+            before = widget.value()
+            widget.setValue(float(settings[key]))
+            if abs(widget.value() - before) > 1e-9:
                 changed.append(label)
         put("vial_diameter_mm", self.diameter, "диаметр колбы")
         put("vial_wall_mm", self.glass_thickness, "стенка")
         size = (settings.get("projector_width"), settings.get("projector_height"))
         if size in RESOLUTIONS:
-            self.resolution.setValue(float(RESOLUTIONS.index(size)))  # type: ignore[arg-type]
-            changed.append("разрешение проектора")
+            index = float(RESOLUTIONS.index(size))  # type: ignore[arg-type]
+            if self.resolution.value() != index:
+                self.resolution.setValue(index)
+                changed.append("разрешение проектора")
         put("projector_hz", self.projector_hz, "частота проектора")
         put("irradiance_mw_cm2", self.projector_irradiance, "облучённость")
         put("contrast", self.projector_contrast, "контраст")

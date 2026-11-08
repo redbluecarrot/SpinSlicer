@@ -591,6 +591,15 @@ _EN.update({
 
 # The printer: connect, write back, print with a yes on the printer, USB stick.
 _EN.update({
+    "Обновите принтер": "Update the printer",
+    "Программа этого принтера не спрашивает «Печатать?» на его экране и начала бы печать "
+    "сразу. Обновите SpinPrinter (на Raspberry Pi ещё раз команду установки) или "
+    "печатайте с флешки.":
+        "This printer's software does not ask \"Print?\" on its screen and would start at once. "
+        "Update SpinPrinter (run the install command on the Raspberry Pi again) or print from a USB stick.",
+    "Проверяю принтер…": "Checking the printer…",
+    "Принтер сейчас печатает. Дождитесь конца или остановите печать на принтере.":
+        "The printer is printing. Wait until it is done or stop the print on the printer.",
     "Подключить": "Connect", "Подключаюсь к": "Connecting to", "Подключён:": "Connected:",
     "Не подключён:": "Not connected:", "не подключён": "not connected", "не отвечает": "does not answer",
     "из принтера:": "from the printer:", "ничего нового": "nothing new",

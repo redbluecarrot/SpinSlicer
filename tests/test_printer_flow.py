@@ -91,6 +91,40 @@ def test_state_and_stop(pi):
     assert _Pi.posts[-1][0] == "/api/stop"
 
 
+def test_state_of_our_own_print_only():
+    """Right after the yes the printer still says "done" for its last print: that is not ours."""
+    describe = printer_link.describe_state
+    assert describe({"state": "done", "request": {"state": "starting"}})[0] == "starting"
+    old = {"state": "done", "job": {"seq": 4, "progress": 1.0}, "request": {"state": "started", "job_seq": 5}}
+    assert describe(old)[0] == "starting"
+    ours = {"state": "print", "job": {"seq": 5, "progress": 0.25, "turn": 2, "revs": 8, "left_s": 90},
+            "request": {"state": "started", "job_seq": 5}}
+    assert describe(ours) == ("printing", 0.25, 2, 8, 90)
+    assert describe(dict(ours, state="done"))[0] == "done"
+    later = {"state": "print", "job": {"seq": 6}, "request": {"state": "started", "job_seq": 5}}
+    assert describe(later)[0] == "replaced"   # someone started another print after ours
+
+
+def test_can_confirm():
+    assert printer_link.can_confirm({"features": ["confirm", "job_seq"]})
+    assert not printer_link.can_confirm({"features": ["job_seq"]})
+    assert printer_link.can_confirm({"software": {"spinpi": "0.8.0"}})       # confirms, no features list yet
+    assert not printer_link.can_confirm({"software": {"spinpi": "0.6.0"}})   # would start at once
+    assert not printer_link.can_confirm({})
+    assert not printer_link.can_confirm(None)                                 # no /api/printer at all
+
+
+def test_profile_offset_x_only():
+    """SpinPi sends center_offset_px [x, 0]: it has no vertical offset, the slicer's Y stays."""
+    s = printer_link.profile_settings({"calibration": {"center_offset_px": [7, 0], "vial_width_px": 812}})
+    assert s["offset_x_px"] == 7 and "offset_y_px" not in s and s["vial_width_px"] == 812
+    s = printer_link.profile_settings({"calibration": {"offset_x_px": 3, "center_offset_px": [7, 0]}})
+    assert s["offset_x_px"] == 3
+    uncalibrated = {"calibration": {"offset_px": None, "offset_x_px": None, "center_offset_px": None,
+                                    "vial_width_px": None}}
+    assert printer_link.profile_settings(uncalibrated) == {}
+
+
 def test_profile_written_back_to_the_printer(pi):
     printer = {"vial_diameter_mm": 25.0, "vial_wall_mm": 1.2, "n_glass": 1.47, "irradiance_mw_cm2": 4.1,
                "contrast": 1000.0, "vial_width_px": 400, "offset_x_px": 0}
@@ -202,9 +236,9 @@ def test_print_from_the_slicer_follows_the_printer(pi, monkeypatch):
     ctl = PrinterController(window, panel, tab, lambda: "", lambda: None, lambda _m: None)
     assert not panel.print_button.isEnabled()                       # no printer yet
     ctl._on_profile(pi, {"id": "spinpi-1", "name": "Bench", "vial": {"diameter_mm": 25.0},
-                         "software": {"spinpi": "0.7"}})
+                         "software": {"spinpi": "0.8.2"}, "features": ["confirm", "job_seq"]})
     assert panel.print_button.isEnabled() and not panel.r_printer_write.isHidden()
-    assert "Bench" in panel.r_printer.effect.text() and "0.7" in panel.r_printer.effect.text()
+    assert "Bench" in panel.r_printer.effect.text() and "0.8.2" in panel.r_printer.effect.text()
 
     _Pi.state = {"state": "idle", "request": {"state": "waiting_confirm"}}
     ctl.print_now()
@@ -228,6 +262,50 @@ def test_print_from_the_slicer_follows_the_printer(pi, monkeypatch):
     assert _wait(lambda: any(path == "/api/printer" and body.get("vial_diameter_mm") == 30.0
                              for path, body in _Pi.posts))
     assert _wait(lambda: ctl._connected is not None and not ctl._calls)   # reconnected, nothing left running
+
+
+def _controller():
+    _qt()
+    from PyQt6.QtWidgets import QWidget
+
+    from spinslicer.printer_controller import PrinterController
+    from spinslicer.ui_panels import ProcessSettingsPanel
+    window, panel, tab = QWidget(), ProcessSettingsPanel(), _FakeTab()
+    ctl = PrinterController(window, panel, tab, lambda: "", lambda: None, lambda _m: None)
+    return window, panel, tab, ctl
+
+
+def test_old_printer_is_not_sent_a_print(pi, monkeypatch):
+    """An older SpinPi ignores "confirm" and would start the motor and the light at once."""
+    from PyQt6.QtWidgets import QMessageBox
+    window, panel, tab, ctl = _controller()
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(a[1]))
+    ctl._on_profile(pi, {"id": "spinpi-1", "software": {"spinpi": "0.6.0"}})
+    ctl.print_now()
+    assert warned and tab.exports == [] and _Pi.posts == []
+
+
+def test_busy_printer_is_not_sent_a_print(pi):
+    """Checked before the file is packed and uploaded, not after."""
+    window, panel, tab, ctl = _controller()
+    ctl._on_profile(pi, {"id": "spinpi-1", "features": ["confirm", "job_seq"]})
+    _Pi.state = {"state": "print", "job": {"seq": 3}}
+    ctl.print_now()
+    assert _wait(lambda: "печатает" in panel.r_spin.effect.text() or "printing" in panel.r_spin.effect.text())
+    assert tab.exports == [] and not any(p[0] == "/api/print" for p in _Pi.posts)
+    assert _wait(lambda: not ctl._calls)
+
+
+def test_profile_marks_only_what_changed(pi):
+    window, panel, tab, ctl = _controller()
+    panel.offset_y.setValue(5)
+    panel.diameter.setValue(25.0)
+    changed = panel.apply_printer_profile(printer_link.profile_settings(
+        {"vial": {"diameter_mm": 25.0, "wall_mm": 1.7}, "calibration": {"center_offset_px": [4, 0]}}))
+    assert "диаметр колбы" not in changed               # was already 25
+    assert "стенка" in changed and "сдвиг по X" in changed
+    assert panel.offset_y.value() == 5                  # the printer has no Y offset: the slicer's stays
 
 
 def test_to_usb_stick(tmp_path, monkeypatch):

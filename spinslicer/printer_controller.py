@@ -20,6 +20,7 @@ from spinslicer import printer_link, removable
 from spinslicer.constants import APP_ORG, APP_TITLE
 from spinslicer.i18n import tr
 from spinslicer.printer_workers import CallWorker, DiscoverWorker, ProfileWorker
+from spinslicer.projector_canvas import RESOLUTIONS
 from spinslicer.spin_format import PrintJob, preview_from_frame, render_preview, spin_name
 
 SETTINGS_ADDRESS = "printer/address"
@@ -106,6 +107,7 @@ class PrinterController(QObject):
         self._profile: Optional[ProfileWorker] = None
         self._connected: Optional[printer_link.PrinterAddress] = None
         self._printer_settings: dict[str, Any] = {}   # printer_link.profile_settings of the connected one
+        self._profile_raw: Optional[dict[str, Any]] = None   # its GET /api/printer, as sent
         self._calls: list[CallWorker] = []
         self._printing: Optional[printer_link.PrinterAddress] = None   # the print the slicer follows
         self._polling = False
@@ -203,6 +205,27 @@ class PrinterController(QObject):
             return
         if self._printing is not None:
             QMessageBox.information(self._window, tr("Внимание"), tr("Принтер уже печатает отправленную деталь."))
+            return
+        if not printer_link.can_confirm(self._profile_raw):
+            # an older SpinPi would start the motor and the light at once, while the slicer says
+            # "confirm on the printer's screen": nobody would check that the vial is in place
+            QMessageBox.warning(
+                self._window, tr("Обновите принтер"),
+                tr("Программа этого принтера не спрашивает «Печатать?» на его экране и начала бы печать "
+                   "сразу. Обновите SpinPrinter (на Raspberry Pi ещё раз команду установки) или "
+                   "печатайте с флешки."))
+            return
+        # first: is it free? (the file is packed and sent only then, not to hear "busy" after)
+        self._panel.set_print_status(tr("Проверяю принтер…"))
+        self._call(printer_link.get_state, printer,
+                   done=lambda state: self._send_if_free(printer, state),
+                   failed=lambda msg: self._panel.set_print_status(f"{tr('Нет связи с принтером:')} {msg}",
+                                                                   warn=True))
+
+    def _send_if_free(self, printer: printer_link.PrinterAddress, state: Any) -> None:
+        if isinstance(state, dict) and printer_link.is_busy(state):
+            self._panel.set_print_status(tr("Принтер сейчас печатает. Дождитесь конца или остановите печать "
+                                            "на принтере."), warn=True)
             return
         if self._tab.export_spin(printer, on_uploaded=lambda _label, answer: self._after_upload(printer, answer)):
             self._panel.set_print_status(tr("Готовлю файл и отправляю на принтер…"))
@@ -369,6 +392,7 @@ class PrinterController(QObject):
 
     def _on_profile(self, address: printer_link.PrinterAddress, profile: Optional[dict]) -> None:
         self._connected = address
+        self._profile_raw = profile if isinstance(profile, dict) else None
         if profile is None:
             self._printer_settings = {}
             self._panel.set_printer_connected(True, f"{tr('Подключён:')} {address.label}")
@@ -384,7 +408,7 @@ class PrinterController(QObject):
         status += f" · {tr('из принтера:')} " + (", ".join(tr(c) for c in changed) if changed else tr("ничего нового"))
         self._panel.set_printer_connected(True, status)
         size = (settings.get("projector_width"), settings.get("projector_height"))
-        if None not in size and "разрешение проектора" not in changed:
+        if None not in size and size not in RESOLUTIONS:
             self._log(f"{tr('Разрешения проектора нет в списке:')} {size[0]}×{size[1]}")
         name = settings.get("name") or address.label
         if changed:

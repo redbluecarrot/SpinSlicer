@@ -315,8 +315,12 @@ def profile_settings(profile: dict[str, Any]) -> dict[str, Any]:
         integer=True, positive=False)
     offset = _pick(profile, "calibration.center_offset_px")
     if isinstance(offset, (list, tuple)) and len(offset) == 2:
-        put("offset_x_px", offset[0], integer=True, positive=False)
-        put("offset_y_px", offset[1], integer=True, positive=False)
+        if "offset_x_px" not in out:
+            put("offset_x_px", offset[0], integer=True, positive=False)
+        # SpinPi has no vertical offset and always sends [x, 0]: taking that 0 reset the slicer's
+        # own Y offset on every connect. A Y only when the printer really has one.
+        if "offset_y_px" not in out and _number(offset[1]):
+            put("offset_y_px", offset[1], integer=True, positive=False)
     direction = _pick(profile, "motor.direction")
     if direction in (1, -1, "1", "-1"):
         out["motor_direction"] = int(direction)
@@ -351,6 +355,39 @@ def post_json(address: PrinterAddress, path: str, body: dict[str, Any],
         conn.close()
 
 
+def version_tuple(text: Any) -> Optional[tuple[int, int, int]]:
+    """``"0.8.1"`` / ``"v0.8.1-dev"`` → ``(0, 8, 1)``; None when there is no version in it."""
+    import re
+    match = re.match(r"\s*v?(\d+)\.(\d+)(?:\.(\d+))?", str(text or ""))
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+
+
+CONFIRM_SPINPI = (0, 8, 0)   # the first SpinPi that waits for a yes on the printer's screen
+
+
+def can_confirm(profile: Optional[dict[str, Any]]) -> bool:
+    """Does this printer wait for "Print?" on its screen before it starts?
+
+    An older SpinPi ignores ``"confirm": true`` and starts at once: the motor and the light,
+    with nobody checking that the vial is in place. SpinPi 0.8.2+ lists ``features``; 0.8.0
+    and 0.8.1 already confirm but only say their version."""
+    if not isinstance(profile, dict):
+        return False
+    features = profile.get("features")
+    if isinstance(features, list):
+        return "confirm" in features
+    software = profile.get("software")
+    version = version_tuple(software.get("spinpi") if isinstance(software, dict) else None)
+    return version is not None and version >= CONFIRM_SPINPI
+
+
+def is_busy(state: dict[str, Any]) -> bool:
+    """The printer is running a print (spin-up, warm-up, dark pause or light)."""
+    return str(state.get("state")) in ("wait", "print")
+
+
 def start_print(address: PrinterAddress, name: str) -> dict[str, Any]:
     """Ask the printer to print an uploaded ``.spin``. It does not start by itself: the printer's
     screen asks "Print?" and a yes there starts it (the vial has to be in place). Returns the
@@ -372,8 +409,12 @@ def describe_state(state: dict[str, Any]) -> tuple[str, float, int, int, float]:
     """``(what, progress 0..1, turn, turns, seconds left)`` of the print the slicer sent.
 
     what: ``waiting_confirm`` (the printer's screen asks), ``cancelled`` / ``expired`` /
-    ``replaced`` (no print came of it), ``starting`` (spin-up, warm-up, dark pause),
-    ``printing``, ``done``, ``stopped``, ``error``.
+    ``replaced`` (no print came of it, or another print followed it), ``starting`` (the yes
+    was given; spin-up, warm-up, dark pause), ``printing``, ``done``, ``stopped``, ``error``.
+
+    The printer's ``state`` belongs to its latest print, which may not be ours: right after the
+    yes the last print can still say ``done``. SpinPi 0.8.2+ numbers its prints (``job.seq``,
+    ``request.job_seq``), so only our own print's state is taken.
     """
     request = state.get("request") or {}
     asked = request.get("state")
@@ -385,6 +426,13 @@ def describe_state(state: dict[str, Any]) -> tuple[str, float, int, int, float]:
         return asked, 0.0, 0, 0, 0.0
     if asked == "error":
         return "error", 0.0, 0, 0, 0.0
+    if asked == "starting":   # the yes is in, the printer is starting the job
+        return "starting", 0.0, 0, 0, 0.0
+    ours = request.get("job_seq")
+    if ours is not None and job.get("seq") != ours:
+        if job.get("seq") is None or int(job["seq"]) < int(ours):
+            return "starting", 0.0, 0, 0, 0.0
+        return "replaced", 0.0, 0, 0, 0.0   # a later print took the printer
     what = {"wait": "starting", "print": "printing", "done": "done", "error": "error"}.get(
         str(state.get("state")), "stopped")
     return what, progress, turn, turns, left
