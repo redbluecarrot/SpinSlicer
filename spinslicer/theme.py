@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass
 
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from spinslicer.sketch_scene import ScenePalette
 
@@ -49,6 +49,15 @@ class Palette:
     liquid: str
     track: str
     sun: str
+    # depth: the panel is the floor, cards stand on it (with a shadow), fields are sunk into the
+    # cards, the chosen option stands up out of its field
+    card: str = "#FFFFFF"
+    card_border: str = "#E9E5DF"
+    well: str = "#F2EFEA"
+    well_border: str = "#E2DDD6"
+    raised: str = "#FFFFFF"
+    raised_border: str = "#D6D0C8"
+    shadow: tuple[int, int, int, int] = (25, 23, 26, 26)
 
 
 DARK = Palette(
@@ -57,6 +66,8 @@ DARK = Palette(
     accent="#FF8DB5", accent_hover="#FFA6C6", accent_pressed="#E9799F", accent_soft="#3A1F2D",
     action="#F4A6BE", on_action="#3A1022", warn="#FFB86B", sketch="#D9D1D5", resin="#2A2230", liquid="#5FA8C8",
     track="#2C2630", sun="#F1ECEE",
+    card="#25212A", card_border="#38323E", well="#131116", well_border="#2B2630",
+    raised="#3A3340", raised_border="#4E4656", shadow=(0, 0, 0, 120),
 )
 LIGHT = Palette(
     dark=False, bg="#F6F4F0", view="#EDEAE4", surface="#F6F4F0", surface_alt="#E7E3DC", seg_on="#FFFFFF",
@@ -145,8 +156,9 @@ def mono_font(size: int = 11) -> QFont:
 def build_qss(p: Palette | None = None) -> str:
     p = p or _current
     hover_bg = p.seg_on if p.dark else "#EFEBE5"
-    seg_checked = (f"background-color: {p.accent_soft}; border: 1px solid {p.accent}; color: {p.accent}; font-weight: 700;"
-                   if p.dark else f"background-color: {p.seg_on}; color: {p.text}; font-weight: 700;")
+    # the chosen option is a raised chip in its sunken track (no outline-only state: it read flat)
+    seg_checked = (f"background-color: {p.raised}; border: 1px solid {p.raised_border}; "
+                   f"color: {p.accent if p.dark else p.text}; font-weight: 700;")
     return f"""
 * {{
     font-family: "{FONT_UI}", "Inter", "Segoe UI", sans-serif;
@@ -159,8 +171,10 @@ QWidget#sidePanel {{ background-color: {p.surface}; }}
 QWidget#appHeader {{ border-bottom: 1px solid {p.border}; }}
 QWidget#sidePanel {{ border-left: 1px solid {p.border}; }}
 QWidget#settingRow {{ border: none; }}
-QFrame#settingsBlock {{ background-color: {p.surface_alt}; border: 1px solid {p.border_soft}; border-radius: 14px; }}
-QFrame#statTile {{ background-color: {p.seg_on if not p.dark else p.surface}; border: 1px solid {p.border_soft}; border-radius: 10px; }}
+QFrame#settingsBlock {{ background-color: {p.card}; border: 1px solid {p.card_border}; border-radius: 16px; }}
+QFrame#statTile {{ background-color: {p.card}; border: 1px solid {p.card_border}; border-radius: 12px; }}
+QFrame#settingsBlock QFrame#statTile {{ background-color: {p.well}; border: 1px solid {p.well_border}; }}
+QWidget#stepper {{ background-color: {p.well}; border: 1px solid {p.well_border}; border-radius: 11px; }}
 QLabel#tileKey {{ font-size: 11px; color: {p.muted}; }}
 QLabel#tileValue {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 19px; color: {p.text}; }}
 QLabel#tileValue[warn="true"] {{ color: {p.warn}; }}
@@ -205,7 +219,7 @@ QLabel#fieldLabel {{ color: {p.muted}; font-size: 12px; }}
 QLabel#actionSub {{ font-size: 12px; color: {p.muted}; }}
 QLabel#chip {{
     font-family: "{FONT_MONO}"; font-size: 11px; color: {p.text};
-    border: 1px solid {p.border}; border-radius: 9px; padding: 6px 10px; background: {p.bg};
+    border: 1px solid {p.card_border}; border-radius: 9px; padding: 6px 10px; background: {p.card};
 }}
 QLabel#chip[warn="true"] {{ color: {p.warn}; border-color: {p.warn}; }}
 QLabel#metricValue {{ font-size: 22px; font-weight: 700; color: {p.text}; }}
@@ -237,17 +251,18 @@ QPushButton:hover {{ background-color: {hover_bg}; }}
 QPushButton:pressed {{ background-color: {p.input}; }}
 QPushButton:disabled {{ color: {p.dim}; border-color: {p.border_soft}; }}
 QPushButton#stepButton {{
-    background-color: {p.seg_on if p.dark else p.surface_alt}; border: none; border-radius: 8px;
-    min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0; font-size: 16px;
+    background-color: {p.raised}; border: 1px solid {p.raised_border}; border-radius: 8px;
+    min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; font-size: 15px;
 }}
-QPushButton#stepButton:hover {{ background-color: {p.accent_soft if p.dark else p.seg_on}; color: {p.accent}; }}
-QFrame#segFrame {{ background-color: {p.surface_alt}; border-radius: 10px; }}
+QPushButton#stepButton:hover {{ border-color: {p.accent}; color: {p.accent}; }}
+QPushButton#stepButton:pressed {{ background-color: {p.well}; }}
+QFrame#segFrame {{ background-color: {p.well}; border: 1px solid {p.well_border}; border-radius: 11px; }}
 QPushButton#segButton {{
     background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 7px 4px;
     font-weight: 500; font-size: 12px; color: {p.muted};
 }}
 QPushButton#segButton:checked {{ {seg_checked} }}
-QPushButton#segButton:hover:!checked {{ color: {p.text}; background-color: {p.seg_on}; }}
+QPushButton#segButton:hover:!checked {{ color: {p.text}; background-color: {p.card}; }}
 QPushButton#linkButton {{
     background: transparent; border: none; padding: 0; color: {p.accent};
     font-family: "{FONT_MONO}"; font-size: 12px;
@@ -266,7 +281,7 @@ QPushButton#transformModeButton:checked {{ background-color: {p.accent_soft}; bo
 QPushButton#nudgeButton {{ padding: 2px 8px; font-size: 15px; }}
 
 QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {{
-    background-color: {p.input}; border: 1px solid {p.border};
+    background-color: {p.well}; border: 1px solid {p.well_border};
     border-radius: {RADIUS_SM}px; padding: 5px 9px; min-height: 18px;
     selection-background-color: {p.accent}; selection-color: {p.on_action};
 }}
@@ -308,7 +323,7 @@ QStatusBar {{ background-color: {p.bg}; border-top: 1px solid {p.border_soft}; c
 QStatusBar QLabel {{ font-family: "{FONT_MONO}"; font-size: 11px; }}
 QStatusBar::item {{ border: none; }}
 
-QFrame#scaleControls {{ background-color: {p.surface}; border: 1px solid {p.border}; border-radius: {RADIUS}px; }}
+QFrame#scaleControls {{ background-color: {p.card}; border: 1px solid {p.card_border}; border-radius: {RADIUS}px; }}
 QWidget#transformToolbar {{ background: transparent; }}
 QTabWidget::pane {{ border: none; background: transparent; top: 0px; }}
 QTabBar {{ background: transparent; }}
@@ -317,6 +332,26 @@ QTabBar::tab:selected {{ color: {p.text}; border-bottom: 2px solid {p.accent}; }
 QSplitter::handle {{ background-color: {p.border_soft}; }}
 QSplitter::handle:horizontal:hover, QSplitter::handle:vertical:hover {{ background-color: {p.accent}; }}
 """
+
+
+def lift(widget: QWidget, blur: float = 22.0, dy: float = 3.0) -> None:
+    """A soft shadow under a card, so it stands on the panel instead of lying flat in it.
+    The colour follows the theme: call again after the theme changes (refresh_shadows)."""
+    from PyQt6.QtWidgets import QGraphicsDropShadowEffect
+    effect = widget.graphicsEffect()
+    if not isinstance(effect, QGraphicsDropShadowEffect):
+        effect = QGraphicsDropShadowEffect(widget)
+        widget.setGraphicsEffect(effect)
+    effect.setBlurRadius(blur)
+    effect.setOffset(0, dy)
+    effect.setColor(QColor(*_current.shadow))
+    widget.setProperty("_spinslicer_lifted", True)
+
+
+def refresh_shadows(root: QWidget) -> None:
+    for w in root.findChildren(QWidget):
+        if w.property("_spinslicer_lifted"):
+            lift(w)
 
 
 def apply_theme(app: QApplication, dark: bool | None = None) -> Palette:

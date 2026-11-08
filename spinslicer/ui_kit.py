@@ -398,9 +398,12 @@ class Stepper(QWidget):
     def __init__(self, minimum: float, maximum: float, value: float, step: float = 1.0,
                  decimals: int = 0, suffix: str = "", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        # a sunken field with the value, − and + standing up in it
+        self.setObjectName("stepper")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
         self._minus = QPushButton("−")
         self._plus = QPushButton("+")
         for b in (self._minus, self._plus):

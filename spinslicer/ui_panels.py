@@ -402,8 +402,8 @@ class ProcessSettingsPanel(QWidget):
     def _add_page(self, key: str, rows: list[QWidget], footer: Optional[QWidget] = None) -> None:
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(20, 6, 20, 16)
-        layout.setSpacing(12)            # air between the blocks
+        layout.setContentsMargins(20, 6, 20, 18)
+        layout.setSpacing(14)            # air between the blocks (and room for their shadows)
         for row in rows:
             layout.addWidget(row)
         layout.addStretch(1)
@@ -492,8 +492,9 @@ class ProcessSettingsPanel(QWidget):
         box = QFrame()
         box.setObjectName("settingsBlock")
         box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        theme.lift(box)
         lay = QVBoxLayout(box)
-        lay.setContentsMargins(18, 14, 18, 10)
+        lay.setContentsMargins(18, 14, 18, 12)
         lay.setSpacing(0)
         head = section_head(title)
         head.setStyleSheet("padding-top: 0px; padding-bottom: 6px;")
@@ -570,7 +571,7 @@ class ProcessSettingsPanel(QWidget):
         self.theme_choice.changed.connect(lambda i: self.themeChanged.emit(i == 1))
         self.r_theme = self._row("Тема", self.theme_choice, stacked=True)
         self.r_printer = self._row("Принтер", self.printer_box,
-                                   hint="SpinPrinter в сети: его профиль заполнит колбу и проектор")
+                                   effect="SpinPrinter в сети: его профиль заполнит колбу и проектор")
         # The state of the printer, in one line: a coloured light and what it means.
         status = QWidget()
         stl = QHBoxLayout(status)
@@ -600,7 +601,8 @@ class ProcessSettingsPanel(QWidget):
         ptl.addWidget(self.printer_find_link)
         ptl.addWidget(self.printer_manual_link)
         ptl.addStretch(1)
-        self.r_printer_tools = self._row("", printer_tools, stacked=True)
+        printer_tools.setContentsMargins(0, 0, 0, 6)
+        self.r_printer_tools = printer_tools
         self.printer_write = self._link("записать в принтер", "printer_write")
         self.r_printer_write = self._row("Настройки этого слайсера", self.printer_write,
                                          "колба, проектор и калибровка, изменённые здесь, сохранятся в принтере")
@@ -650,8 +652,8 @@ class ProcessSettingsPanel(QWidget):
         for key, blocks in pages.items():
             content = QWidget()
             cl = QVBoxLayout(content)
-            cl.setContentsMargins(0, 2, 0, 16)
-            cl.setSpacing(12)
+            cl.setContentsMargins(2, 4, 2, 18)
+            cl.setSpacing(14)
             for block in blocks:
                 cl.addWidget(block)
             cl.addStretch(1)
@@ -802,6 +804,7 @@ class ProcessSettingsPanel(QWidget):
         card = QFrame()
         card.setObjectName("settingsBlock")
         card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        theme.lift(card)
         cl = QHBoxLayout(card)
         cl.setContentsMargins(16, 12, 16, 12)
         cl.setSpacing(10)
@@ -821,6 +824,8 @@ class ProcessSettingsPanel(QWidget):
         self.ptile_revs = _Tile("оборотов")
         self.ptile_tol = _Tile("запас")
         self.ptile_fps = _Tile("кадры")
+        for tile in (self.ptile_time, self.ptile_revs, self.ptile_tol, self.ptile_fps):
+            theme.lift(tile, blur=16, dy=2)         # on the panel: cards; inside a card they are sunk
         self.plan_label = QLabel(tr("Сначала рассчитайте свет."))    # the old text plan, kept for callers
         self.plan_label.setVisible(False)
         # The dose card (video_tab.DoseCard) is put here by the main window: its slider
@@ -944,7 +949,13 @@ class ProcessSettingsPanel(QWidget):
         picker.setCurrentIndex(last)
         choose(last)
         lay.addWidget(picker)
-        lay.addWidget(game)
+        # centred when it is held narrow (the preview before a run), full width otherwise
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addStretch(1)
+        row.addWidget(game, 100)
+        row.addStretch(1)
+        lay.addLayout(row)
         return box
 
     # ------------------------------------------------------------- settings
@@ -1590,6 +1601,7 @@ class ProcessSettingsPanel(QWidget):
         result = self._done and not running and not self._review
         self.calc_block.setVisible(not running and not result)
         self.game_box.setVisible(not result)
+        self.game.setMaximumWidth(16777215 if running else 380)
         self.result_block.setVisible(result)
         self.stale_label.setVisible(self._stale and not running)
 
@@ -1667,6 +1679,7 @@ class ProcessSettingsPanel(QWidget):
             self.actionRequested.emit("goto:light")
 
     def refresh_theme(self) -> None:
+        theme.refresh_shadows(self)
         self._refresh()
         if self.fit_label.text():
             self.set_fit(self._fits, self._fit_text)
