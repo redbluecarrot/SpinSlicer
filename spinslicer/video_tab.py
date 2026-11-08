@@ -469,6 +469,7 @@ class ProjectorOutputWindow(QWidget):
 class ProjectorTab(QWidget):
     progress = pyqtSignal(float, str)
     logMessage = pyqtSignal(str)
+    spinFailed = pyqtSignal(str)     # a .spin could not be made, saved or sent
     framesReady = pyqtSignal(int)
     projectionTick = pyqtSignal(float, float)      # elapsed s, planned s (0 = endless)
     projectionFinished = pyqtSignal(bool)          # True = planned exposure completed
@@ -773,8 +774,11 @@ class ProjectorTab(QWidget):
     def busy(self) -> bool:
         return any(w is not None and w.isRunning() for w in (self._export_worker, self._pack_worker))
 
-    def export_spin(self, printer: Optional[PrinterAddress] = None) -> bool:
-        """Encode the video and pack a .spin file: saved where the user says, or sent to `printer`."""
+    def export_spin(self, printer: Optional[PrinterAddress] = None, *, path: Optional[str] = None,
+                    on_saved: Optional[Callable[[str], None]] = None,
+                    on_uploaded: Optional[Callable[[str, object], None]] = None) -> bool:
+        """Encode the video and pack a .spin file: sent to `printer`, written to `path` (a USB
+        stick), or saved where the user says. `on_saved` / `on_uploaded` replace the "Done" box."""
         frames = self._printer_frames()
         if not frames:
             QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитайте свет."))
@@ -785,7 +789,9 @@ class ProjectorTab(QWidget):
         job = self._job(len(frames))
         if job is None:
             return False
-        if printer is None:
+        if printer is None and path is not None:
+            work_dir = os.path.dirname(os.path.abspath(path))
+        elif printer is None:
             path, _ = QFileDialog.getSaveFileName(self, tr("Экспорт для принтера (.spin)"),
                                                   spin_name(job.name), f"SpinPrinter (*{SPIN_EXTENSION})")
             if not path:
@@ -800,20 +806,24 @@ class ProjectorTab(QWidget):
         os.close(fd)
         self.progress.emit(0.0, "Экспорт в MP4...")
         self._start_export(frames, self._fps, video, self._geometry, self._lut(), comment=mp4_comment(job),
-                           on_done=lambda _p: self._pack(job, video, path, printer))
+                           on_done=lambda _p: self._pack(job, video, path, printer, on_saved, on_uploaded))
         self._export_worker.failed.connect(lambda _m: _remove(video))  # type: ignore[union-attr]
         self._export_worker.cancelled.connect(lambda: _remove(video))  # type: ignore[union-attr]
+        self._export_worker.failed.connect(self.spinFailed.emit)  # type: ignore[union-attr]
+        self._export_worker.cancelled.connect(lambda: self.spinFailed.emit(""))  # type: ignore[union-attr]
         return True
 
-    def _pack(self, job: PrintJob, video: str, path: str, printer: Optional[PrinterAddress]) -> None:
+    def _pack(self, job: PrintJob, video: str, path: str, printer: Optional[PrinterAddress],
+              on_saved: Optional[Callable[[str], None]] = None,
+              on_uploaded: Optional[Callable[[str, object], None]] = None) -> None:
         preview, settings = self.spin_extras() if self.spin_extras is not None else (None, None)
         self._pack_worker = SpinPackWorker(job, video, path, preview_png=preview, slicer_settings=settings,
                                            printer=printer, remove_spin=printer is not None, parent=self)
         self._job_controller.register(self._pack_worker)
         self._pack_worker.progress.connect(lambda f, m: self.progress.emit(f, m))
         if printer is None:
-            self._pack_worker.packed.connect(self._on_spin_saved)
-        self._pack_worker.uploaded.connect(self._on_spin_uploaded)
+            self._pack_worker.packed.connect(on_saved or self._on_spin_saved)
+        self._pack_worker.uploaded.connect(on_uploaded or self._on_spin_uploaded)
         self._pack_worker.failed.connect(self._on_spin_failed)
         self._pack_worker.start()
 
@@ -832,6 +842,7 @@ class ProjectorTab(QWidget):
 
     def _on_spin_failed(self, msg: str) -> None:
         self.progress.emit(0.0, "Не удалось подготовить файл для принтера.")
+        self.spinFailed.emit(msg)
         QMessageBox.critical(self, tr("Не удалось отправить на принтер"), msg)
 
     def _on_ramp_clicked(self) -> None:

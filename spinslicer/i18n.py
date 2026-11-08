@@ -588,3 +588,51 @@ _EN.update({
     "Пересчитать свет": "Compute light again",
     "старые кадры не подходят к новым настройкам": "the old frames do not match the new settings",
 })
+
+# The printer: connect, write back, print with a yes on the printer, USB stick.
+_EN.update({
+    "Подключить": "Connect", "Подключаюсь к": "Connecting to", "Подключён:": "Connected:",
+    "Не подключён:": "Not connected:", "не подключён": "not connected", "не отвечает": "does not answer",
+    "из принтера:": "from the printer:", "ничего нового": "nothing new",
+    "Настройки этого слайсера": "This slicer's settings", "записать в принтер": "write to the printer",
+    "колба, проектор и калибровка, изменённые здесь, сохранятся в принтере":
+        "the vial, projector and calibration changed here are stored on the printer",
+    "Записать в принтер": "Write to the printer", "В принтере изменится:": "On the printer this changes:",
+    "В принтере уже те же настройки.": "The printer already has the same settings.",
+    "Настройки записаны в принтер.": "Settings written to the printer.",
+    "Не удалось записать в принтер": "Could not write to the printer",
+    "Принтер не подключён": "No printer connected",
+    "Подключите принтер: Настройки → Принтер → «Подключить».": "Connect a printer: Settings → Printer → Connect.",
+    "Подключите принтер: Настройки → Принтер": "Connect a printer: Settings → Printer",
+    "Печать на SpinPrinter": "Print on a SpinPrinter", "Напечатать": "Print", "На флешку": "To USB stick",
+    "стоп": "stop", "сохранить .spin в папку…": "save the .spin to a folder…",
+    "файл .spin уходит на принтер, его экран спросит «Печатать?»":
+        "the .spin goes to the printer, its screen asks \"Print?\"",
+    "Готовлю файл и отправляю на принтер…": "Preparing the file and sending it to the printer…",
+    "Принтер не назвал загруженный файл.": "The printer did not name the uploaded file.",
+    "Принтер не принял печать:": "The printer refused the print:",
+    "Принтер уже печатает отправленную деталь.": "The printer is already printing the part sent.",
+    "Подтвердите печать на экране принтера: джойстик вправо.":
+        "Confirm on the printer's screen: push the joystick right.",
+    "Принтер готовится: разгон, прогрев, пауза до света…": "The printer gets ready: spin-up, warm-up, dark pause…",
+    "оборот": "turn", "из": "of", "осталось": "left",
+    "Печать отменена на экране принтера.": "Print cancelled on the printer's screen.",
+    "Принтер не дождался ответа на экране (10 минут).": "Nobody answered on the printer's screen (10 minutes).",
+    "На принтере запустили другую печать.": "Another print was started on the printer.",
+    "Готово! Ответьте на принтере, как получилось.": "Done! Tell the printer how it came out.",
+    "Печать остановлена.": "Print stopped.", "Ошибка печати:": "Print error:",
+    "Нет связи с принтером:": "Lost the printer:", "Остановить печать?": "Stop the print?",
+    "Свет погаснет, деталь останется недосвеченной.": "The light goes off, the part stays underexposed.",
+    "Не удалось остановить": "Could not stop", "Файл не отправлен.": "The file was not sent.",
+    "Флешка не найдена": "No USB stick found",
+    "Вставьте флешку в компьютер. Пока сохраню файл туда, куда скажете.":
+        "Plug a USB stick into the computer. For now I will save the file where you say.",
+    "На какую флешку?": "Which USB stick?", "Флешка": "USB stick", "Файл уже есть": "The file is already there",
+    "На флешке уже есть": "The stick already has", "Заменить?": "Replace it?",
+    "Записываю на флешку": "Writing to the USB stick", "Записано на флешку": "Written to the USB stick",
+    "Файл записан на флешку": "The file is on the USB stick",
+    "Извлечь флешку? Потом вставьте её в Raspberry Pi принтера.":
+        "Eject the stick? Then plug it into the printer's Raspberry Pi.",
+    "Флешку можно вынимать.": "The stick can be removed.",
+    "Не удалось извлечь: извлеките её сами.": "Could not eject: eject it yourself.",
+})

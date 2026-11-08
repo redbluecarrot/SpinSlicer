@@ -323,3 +323,117 @@ def profile_settings(profile: dict[str, Any]) -> dict[str, Any]:
     elif isinstance(direction, str) and direction in ("ccw_from_top", "cw_from_top"):
         out["motor_direction"] = 1 if direction == "ccw_from_top" else -1
     return out
+
+
+# ------------------------------------------------------------------ printing
+def post_json(address: PrinterAddress, path: str, body: dict[str, Any],
+              timeout_s: float = TIMEOUT_S) -> dict[str, Any]:
+    """``POST`` a JSON body; the printer's JSON answer. ``"ok": false`` or an HTTP error → PrinterError."""
+    data = json.dumps(body).encode("utf-8")
+    conn = _connection(address, timeout_s)
+    try:
+        conn.request("POST", path, body=data, headers={"Content-Type": "application/json",
+                                                         "Accept": "application/json"})
+        response = conn.getresponse()
+        raw = response.read()
+        if response.status not in (200, 201):
+            raise PrinterError(_error_text(response.status, response.reason, raw))
+        try:
+            answer = json.loads(raw.decode("utf-8")) if raw else {}
+        except ValueError:
+            answer = {}
+        if isinstance(answer, dict) and answer.get("ok") is False:
+            raise PrinterError(str(answer.get("error") or "the printer refused"))
+        return answer if isinstance(answer, dict) else {}
+    except (OSError, http.client.HTTPException) as exc:
+        raise PrinterError(f"{address.label}: {exc}") from exc
+    finally:
+        conn.close()
+
+
+def start_print(address: PrinterAddress, name: str) -> dict[str, Any]:
+    """Ask the printer to print an uploaded ``.spin``. It does not start by itself: the printer's
+    screen asks "Print?" and a yes there starts it (the vial has to be in place). Returns the
+    request (``state`` = ``waiting_confirm``)."""
+    answer = post_json(address, "/api/print", {"id": "lib/" + name, "confirm": True})
+    return answer.get("request") or {"state": "waiting_confirm"}
+
+
+def get_state(address: PrinterAddress, timeout_s: float = 5.0) -> dict[str, Any]:
+    data = get_json(address, "/api/state", timeout_s)
+    return data if isinstance(data, dict) else {}
+
+
+def stop_print(address: PrinterAddress) -> None:
+    post_json(address, "/api/stop", {})
+
+
+def describe_state(state: dict[str, Any]) -> tuple[str, float, int, int, float]:
+    """``(what, progress 0..1, turn, turns, seconds left)`` of the print the slicer sent.
+
+    what: ``waiting_confirm`` (the printer's screen asks), ``cancelled`` / ``expired`` /
+    ``replaced`` (no print came of it), ``starting`` (spin-up, warm-up, dark pause),
+    ``printing``, ``done``, ``stopped``, ``error``.
+    """
+    request = state.get("request") or {}
+    asked = request.get("state")
+    job = state.get("job") or {}
+    progress = float(job.get("progress") or 0.0)
+    turn, turns = int(job.get("turn") or 0), int(job.get("revs") or 0)
+    left = float(job.get("left_s") or 0.0)
+    if asked in ("waiting_confirm", "cancelled", "expired", "replaced"):
+        return asked, 0.0, 0, 0, 0.0
+    if asked == "error":
+        return "error", 0.0, 0, 0, 0.0
+    what = {"wait": "starting", "print": "printing", "done": "done", "error": "error"}.get(
+        str(state.get("state")), "stopped")
+    return what, progress, turn, turns, left
+
+
+# ------------------------------------------------------------------ the profile, back to the printer
+# slicer setting → (label for people, where it goes on the printer)
+PROFILE_FIELDS: dict[str, tuple[str, str]] = {
+    "vial_diameter_mm": ("диаметр колбы", "vial_diameter_mm"),
+    "vial_wall_mm": ("стенка", "vial_wall_mm"),
+    "n_glass": ("n стекла", "vial_n"),
+    "irradiance_mw_cm2": ("облучённость", "irradiance_mw_cm2"),
+    "contrast": ("контраст", "contrast"),
+    "vial_width_px": ("колба на экране", "calibration:vial_px"),
+    "offset_x_px": ("сдвиг по X", "calibration:offset_px"),
+}
+
+
+def profile_diff(printer: dict[str, Any], slicer: dict[str, Any]) -> list[tuple[str, str, Any, Any]]:
+    """What the slicer would change on the printer: ``(key, label, on the printer, in the slicer)``.
+
+    ``printer`` is :func:`profile_settings` of the printer's profile. A value the slicer does
+    not know (0 irradiance) is never written over the printer's.
+    """
+    out = []
+    for key, (label, _target) in PROFILE_FIELDS.items():
+        if key not in slicer:
+            continue
+        mine = slicer[key]
+        if key == "irradiance_mw_cm2" and not mine:
+            continue
+        theirs = printer.get(key)
+        if theirs is None or abs(float(theirs) - float(mine)) > 1e-6:
+            out.append((key, label, theirs, mine))
+    return out
+
+
+def write_profile(address: PrinterAddress, values: dict[str, Any]) -> None:
+    """Store slicer values on the printer: the profile (``POST /api/printer``) and the vial
+    calibration (``POST /api/calibration``)."""
+    profile: dict[str, Any] = {}
+    calibration: dict[str, Any] = {}
+    for key, value in values.items():
+        target = PROFILE_FIELDS[key][1]
+        if target.startswith("calibration:"):
+            calibration[target.split(":", 1)[1]] = int(round(float(value)))
+        else:
+            profile[target] = float(value)
+    if profile:
+        post_json(address, "/api/printer", profile)
+    if calibration:
+        post_json(address, "/api/calibration", calibration)

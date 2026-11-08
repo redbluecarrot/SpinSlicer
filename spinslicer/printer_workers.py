@@ -106,3 +106,23 @@ class ProfileWorker(QThread):
             self.loaded.emit(self.address, printer_link.get_printer_profile(self.address, timeout_s=5.0))
         except printer_link.PrinterError as exc:
             self.failed.emit(self.address, str(exc))
+
+
+class CallWorker(QThread):
+    """One call to the printer off the UI thread: ``done`` with its result or ``failed`` with the reason."""
+
+    done = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(self, fn: Any, *args: Any, parent: Any = None) -> None:
+        super().__init__(parent)
+        self.fn = fn
+        self.args = args
+
+    def run(self) -> None:
+        try:
+            self.done.emit(self.fn(*self.args))
+        except printer_link.PrinterError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:  # noqa: BLE001 - shown to the user
+            self.failed.emit(str(exc) or exc.__class__.__name__)

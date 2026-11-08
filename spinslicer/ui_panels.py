@@ -343,6 +343,14 @@ class ProcessSettingsPanel(QWidget):
         row.hint.setProperty("_spinslicer_skip_text_translation", True)
         return row
 
+    def _button(self, text: str, action: str) -> QPushButton:
+        """A filled button for the main action of a row."""
+        b = QPushButton(tr(text))
+        b.setObjectName("primaryAction")
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.clicked.connect(lambda: self.actionRequested.emit(action))
+        return b
+
     def _link(self, text: str, action: str) -> QPushButton:
         b = QPushButton(tr(text))
         b.setObjectName("linkButton")
@@ -439,20 +447,30 @@ class ProcessSettingsPanel(QWidget):
         self.r_language = self._row("Язык", self.language_box)
         self.r_printer = self._row("Принтер", self.printer_box,
                                    hint="SpinPrinter в сети: его профиль заполнит колбу и проектор")
+        self.r_printer.set_effect("не подключён")
         printer_tools = QWidget()
         ptl = QHBoxLayout(printer_tools)
         ptl.setContentsMargins(0, 0, 0, 0)
         ptl.setSpacing(16)
+        self.printer_connect = self._button("Подключить", "printer_connect")
+        self.printer_connect.setFixedHeight(40)
+        self.printer_connect.setStyleSheet("min-height: 40px; padding: 0 22px;")
+        ptl.addWidget(self.printer_connect)
         ptl.addWidget(self._link("найти в сети", "printer_find"))
         ptl.addWidget(self._link("ввести адрес", "printer_manual"))
-        self.r_printer_tools = self._row("", printer_tools)
+        ptl.addStretch(1)
+        self.r_printer_tools = self._row("", printer_tools, stacked=True)
+        self.printer_write = self._link("записать в принтер", "printer_write")
+        self.r_printer_write = self._row("Настройки этого слайсера", self.printer_write,
+                                         "колба, проектор и калибровка, изменённые здесь, сохранятся в принтере")
+        self.r_printer_write.setVisible(False)
         expert = self._group([self.r_blur, self.r_comp, self.r_offx, self.r_offy, self.r_gamma, self.r_contrast,
                               self.r_irr, self.r_nglass, self.r_nliquid])
         # In the order a printer is built: the interface, the vial, the projector and its
         # optics, the resin. What is rarely touched hides in "fine tuning".
         self._add_page("setup", [
             section_head("Интерфейс"), self.r_language, self.r_draw, self.r_hints,
-            section_head("Принтер"), self.r_printer, self.r_printer_tools,
+            section_head("Принтер"), self.r_printer, self.r_printer_tools, self.r_printer_write,
             section_head("Колба"), self.r_diameter, self.r_wall, self.r_bath,
             section_head("Проектор"), self.r_resolution, self.r_hz, self.r_output, self.r_rays, self.r_throw,
             self.r_field,
@@ -557,11 +575,19 @@ class ProcessSettingsPanel(QWidget):
         spin = QWidget()
         sl = QHBoxLayout(spin)
         sl.setContentsMargins(0, 0, 0, 0)
-        sl.setSpacing(16)
-        sl.addWidget(self._link("экспорт .spin", "spin_export"))
-        sl.addWidget(self._link("отправить на принтер", "spin_send"))
-        self.r_spin = self._row("Файл для принтера", spin,
-                                "видео, расчёт и превью одним файлом: принтер сам знает обороты")
+        sl.setSpacing(12)
+        self.print_button = self._button("Напечатать", "spin_print")
+        self.stick_button = self._button("На флешку", "spin_stick")
+        self.stop_link = self._link("стоп", "spin_stop")
+        self.stop_link.setVisible(False)
+        sl.addWidget(self.print_button, 1)
+        sl.addWidget(self.stick_button, 1)
+        sl.addWidget(self.stop_link)
+        self.r_spin = self._row("Печать на SpinPrinter", spin,
+                                "файл .spin уходит на принтер, его экран спросит «Печатать?»", stacked=True)
+        save_as = self._link("сохранить .spin в папку…", "spin_export")
+        self.r_spin_file = self._row("", save_as)
+        self.set_printer_connected(False)
         self.r_tools = self._row("Настроить проектор", tools,
                                  "разметка покажет, где должны быть стенки колбы; тест серого — все уровни яркости")
         self.plan_label = QLabel(tr("Сначала рассчитайте свет."))
@@ -581,7 +607,7 @@ class ProcessSettingsPanel(QWidget):
         self._exposure = 1.0
         self._projecting: Optional[tuple[float, float]] = None
         self.game_print = PixelGame()
-        self._add_page("print", [self.r_output_kind, self.r_spin, self.r_tools, self.r_speed, self.r_brightness, self.dose_slot, box,
+        self._add_page("print", [self.r_spin, self.r_spin_file, self.r_output_kind, self.r_tools, self.r_speed, self.r_brightness, self.dose_slot, box,
                                  self._expander("Мини-игры", self._arcade(self.game_print))])
 
     def attach_dose_card(self, card: QWidget) -> None:
@@ -832,6 +858,27 @@ class ProcessSettingsPanel(QWidget):
 
     def selected_printer(self) -> Optional[object]:
         return self.printer_box.currentData()
+
+    def set_printer_connected(self, connected: bool, status: str = "") -> None:
+        """The printer card and the Print button follow the connection."""
+        self.print_button.setEnabled(connected)
+        self.print_button.setToolTip("" if connected else tr("Подключите принтер: Настройки → Принтер"))
+        if hasattr(self, "r_printer_write"):
+            self.r_printer_write.setVisible(connected)
+        if status and hasattr(self, "r_printer"):
+            self.r_printer.set_effect(status)
+
+    def set_print_status(self, text: str, warn: bool = False, stoppable: bool = False) -> None:
+        """What the print sent to the printer is doing, under the Print button."""
+        self.r_spin.set_effect(text or "файл .spin уходит на принтер, его экран спросит «Печатать?»", warn)
+        self.stop_link.setVisible(stoppable)
+
+    def printer_values(self) -> dict[str, float]:
+        """This slicer's printer settings, in printer_link.profile_settings keys (to write back)."""
+        return {"vial_diameter_mm": float(self.diameter.value()), "vial_wall_mm": float(self.glass_thickness.value()),
+                "n_glass": float(self.n_glass.value()), "irradiance_mw_cm2": float(self.projector_irradiance.value()),
+                "contrast": float(self.projector_contrast.value()), "vial_width_px": int(self.output_res.value_int()),
+                "offset_x_px": int(self.offset_x.value())}
 
     def printer_profile_id(self) -> str:
         return self._printer_profile_id
