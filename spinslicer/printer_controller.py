@@ -177,11 +177,11 @@ class PrinterController(QObject):
         actions[action]()
         return True
 
-    def _call(self, fn: Callable[..., Any], *args: Any, done: Callable[[Any], None],
-              failed: Callable[[str], None]) -> None:
+    def _call(self, fn: Callable[..., Any], *args: Any, done: Callable[[Any], Any],
+              failed: Callable[[str], Any]) -> None:
         worker = CallWorker(fn, *args, parent=self)
 
-        def alive(callback: Callable[[Any], None]) -> Callable[[Any], None]:
+        def alive(callback: Callable[[Any], Any]) -> Callable[[Any], None]:
             # the window may be gone by the time the printer answers (closed mid-request)
             return lambda value: None if sip.isdeleted(self) else callback(value)
         worker.done.connect(alive(done))
@@ -377,7 +377,7 @@ class PrinterController(QObject):
         settings = printer_link.profile_settings(profile)
         self._printer_settings = settings
         changed = self._panel.apply_printer_profile(settings)
-        software = profile.get("software") if isinstance(profile.get("software"), dict) else {}
+        software: dict[str, Any] = profile.get("software") or {} if isinstance(profile.get("software"), dict) else {}
         status = f"{tr('Подключён:')} {settings.get('name') or address.label}"
         if software.get("spinpi"):
             status += f" · SpinPi {software['spinpi']}"
