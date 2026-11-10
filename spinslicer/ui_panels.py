@@ -346,7 +346,7 @@ class ProcessSettingsPanel(QWidget):
         head_l.setContentsMargins(24, 22, 24, 8)
         head_l.setSpacing(3)
         self.step_label = QLabel()
-        self.step_label.setObjectName("sectionHead")
+        self.step_label.setObjectName("stepLabel")
         self.step_label.setProperty("_spinslicer_skip_text_translation", True)
         self.title = QLabel()
         self.title.setObjectName("panelTitle")
@@ -403,7 +403,7 @@ class ProcessSettingsPanel(QWidget):
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(20, 6, 20, 18)
-        layout.setSpacing(12)            # air between the blocks
+        layout.setSpacing(20)            # air between the groups: more than inside one
         for row in rows:
             layout.addWidget(row)
         layout.addStretch(1)
@@ -488,15 +488,15 @@ class ProcessSettingsPanel(QWidget):
 
     @staticmethod
     def _section(title: str, rows: list[QWidget]) -> QWidget:
-        """A block of the menu: a rounded container with its heading and rows inside."""
+        """A group of the menu: a hairline, its heading and its rows (no box: see theme.build_qss)."""
         box = QFrame()
         box.setObjectName("settingsBlock")
         box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         lay = QVBoxLayout(box)
-        lay.setContentsMargins(18, 14, 18, 12)
+        lay.setContentsMargins(4, 16, 4, 4)
         lay.setSpacing(0)
         head = section_head(title)
-        head.setStyleSheet("padding-top: 0px; padding-bottom: 6px;")
+        head.setStyleSheet("padding-top: 0px; padding-bottom: 8px;")
         lay.addWidget(head)
         for row in rows:
             lay.addWidget(row)
@@ -651,8 +651,8 @@ class ProcessSettingsPanel(QWidget):
         for key, blocks in pages.items():
             content = QWidget()
             cl = QVBoxLayout(content)
-            cl.setContentsMargins(2, 4, 2, 18)
-            cl.setSpacing(14)
+            cl.setContentsMargins(0, 4, 0, 18)
+            cl.setSpacing(20)
             for block in blocks:
                 cl.addWidget(block)
             cl.addStretch(1)
@@ -801,7 +801,7 @@ class ProcessSettingsPanel(QWidget):
 
         # The printer, as on Settings → Принтер: its light and what it is doing.
         card = QFrame()
-        card.setObjectName("settingsBlock")
+        card.setObjectName("statTile")     # one special thing on the page: it stays a card
         card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         cl = QHBoxLayout(card)
         cl.setContentsMargins(16, 12, 16, 12)

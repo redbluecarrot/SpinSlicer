@@ -49,8 +49,10 @@ class Palette:
     liquid: str
     track: str
     sun: str
-    # depth without shadows: the panel is the floor, cards are a step lighter with a border,
-    # fields are sunk into the cards, the chosen option stands up out of its field
+    # depth without shadows and without boxes in boxes: the panel is the floor, a group is a
+    # hairline and a heading on it, only a single special thing is a card (a step lighter, with
+    # a border),
+    # fields are sunk into the floor, the chosen option stands up out of its field
     card: str = "#FFFFFF"
     card_border: str = "#E9E5DF"
     well: str = "#F2EFEA"
@@ -86,8 +88,9 @@ FONT_DISPLAY = "Syne"
 FONT_MONO = FONT_UI          # old names: one text face, no separate mono or handwriting
 FONT_HAND = FONT_UI
 DISPLAY_WEIGHT = 800
-RADIUS = 10
-RADIUS_SM = 8
+RADIUS = 10          # controls and containers
+RADIUS_SM = 6        # parts inside a control (a segment, a step button)
+RADIUS_LG = 18       # the big buttons
 
 _current: Palette = DARK
 _fonts_loaded = False
@@ -156,7 +159,7 @@ def build_qss(p: Palette | None = None) -> str:
     p = p or _current
     hover_bg = p.seg_on if p.dark else "#EFEBE5"
     # the chosen option is a raised chip in its sunken track (no outline-only state: it read flat)
-    seg_checked = (f"background-color: {p.raised}; border: 1px solid {p.raised_border}; "
+    seg_checked = (f"background-color: {p.raised}; border: none; "
                    f"color: {p.accent if p.dark else p.text}; font-weight: 700;")
     return f"""
 * {{
@@ -170,10 +173,10 @@ QWidget#sidePanel {{ background-color: {p.surface}; }}
 QWidget#appHeader {{ border-bottom: 1px solid {p.border}; }}
 QWidget#sidePanel {{ border-left: 1px solid {p.border}; }}
 QWidget#settingRow {{ border: none; }}
-QFrame#settingsBlock {{ background-color: {p.card}; border: 1px solid {p.card_border}; border-radius: 16px; }}
-QFrame#statTile {{ background-color: {p.card}; border: 1px solid {p.card_border}; border-radius: 12px; }}
-QFrame#settingsBlock QFrame#statTile {{ background-color: {p.well}; border: 1px solid {p.well_border}; }}
-QWidget#stepper {{ background-color: {p.well}; border: 1px solid {p.well_border}; border-radius: 11px; }}
+QFrame#settingsBlock {{ background: transparent; border: none; border-top: 1px solid {p.card_border}; border-radius: 0px; }}
+QFrame#statTile {{ background-color: {p.card}; border: 1px solid {p.card_border}; border-radius: {RADIUS}px; }}
+QFrame#settingsBlock QFrame#statTile {{ background-color: {p.well}; border: none; }}
+QWidget#stepper {{ background-color: {p.well}; border: none; border-radius: {RADIUS}px; }}
 QLabel#tileKey {{ font-size: 11px; color: {p.muted}; }}
 QLabel#tileValue {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 19px; color: {p.text}; }}
 QLabel#tileValue[warn="true"] {{ color: {p.warn}; }}
@@ -187,14 +190,14 @@ QPushButton#smallLink {{
 QPushButton#smallLink:hover {{ color: {p.accent}; }}
 QPushButton#smallLink:disabled {{ color: {p.dim}; }}
 QPushButton#secondaryAction {{
-    background-color: transparent; color: {p.text}; border: 1.5px solid {p.border}; border-radius: 18px;
+    background-color: transparent; color: {p.text}; border: 1.5px solid {p.border}; border-radius: {RADIUS_LG}px;
     min-height: 54px; padding: 0 18px; font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-size: 15px; font-weight: {DISPLAY_WEIGHT};
 }}
 QPushButton#secondaryAction:hover {{ border-color: {p.accent}; color: {p.accent}; }}
 QPushButton#secondaryAction:disabled {{ color: {p.dim}; border-color: {p.border_soft}; }}
 QToolTip {{
     background-color: {p.surface_alt}; color: {p.text};
-    border: 1px solid {p.border}; padding: 6px 9px; border-radius: {RADIUS_SM}px;
+    border: 1px solid {p.border}; padding: 6px 9px; border-radius: {RADIUS}px;
 }}
 
 QLabel {{ color: {p.muted}; background: transparent; }}
@@ -202,12 +205,13 @@ QLabel#appTitle, QLabel#projectName {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}
 QLabel#projectSub {{ font-family: "{FONT_MONO}"; font-size: 11px; color: {p.muted}; }}
 QLabel#panelTitle {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 20px; color: {p.text}; }}
 QLabel#panelLead {{ color: {p.muted}; }}
-QLabel#todoLabel {{ color: {p.text}; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: {p.surface_alt}; border: 1px solid {p.border_soft}; }}
+QLabel#todoLabel {{ color: {p.text}; font-size: 14px; padding: 10px 12px; border-radius: {RADIUS}px; background: {p.surface_alt}; border: 1px solid {p.border_soft}; }}
 QLabel#emptyTitle {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 26px; color: {p.text}; }}
 QLabel#planLabel {{ font-family: "{FONT_MONO}"; font-size: 12px; color: {p.text}; }}
 QWidget#printStage {{ background-color: {p.view}; }}
 QSplitter::handle:vertical {{ height: 6px; background: {p.border_soft}; }}
-QLabel#sectionHead {{ font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: {p.accent if p.dark else p.muted}; padding-top: 14px; padding-bottom: 2px; }}
+QLabel#sectionHead {{ font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: {p.muted}; padding-top: 14px; padding-bottom: 2px; }}
+QLabel#stepLabel {{ font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: {p.accent if p.dark else p.muted}; padding-top: 14px; padding-bottom: 2px; }}
 QLabel#rowLabel {{ color: {p.text}; font-weight: 600; }}
 QLabel#rowValue {{ font-family: "{FONT_MONO}"; color: {p.text}; font-weight: 500; }}
 QLabel#rowEffect {{ font-size: 12px; color: {p.muted}; }}
@@ -218,14 +222,14 @@ QLabel#fieldLabel {{ color: {p.muted}; font-size: 12px; }}
 QLabel#actionSub {{ font-size: 12px; color: {p.muted}; }}
 QLabel#chip {{
     font-family: "{FONT_MONO}"; font-size: 11px; color: {p.text};
-    border: 1px solid {p.card_border}; border-radius: 9px; padding: 6px 10px; background: {p.card};
+    border: 1px solid {p.card_border}; border-radius: {RADIUS}px; padding: 6px 10px; background: {p.card};
 }}
 QLabel#chip[warn="true"] {{ color: {p.warn}; border-color: {p.warn}; }}
 QLabel#metricValue {{ font-size: 22px; font-weight: 700; color: {p.text}; }}
 QLabel#metricKey {{ font-size: 11px; color: {p.muted}; }}
 QLabel#transformValue {{
     color: {p.text}; background-color: {p.input}; border: 1px solid {p.border_soft};
-    border-radius: {RADIUS_SM}px; padding: 4px 8px; font-family: "{FONT_MONO}";
+    border-radius: {RADIUS}px; padding: 4px 8px; font-family: "{FONT_MONO}";
 }}
 QLabel#videoPreview {{
     background-color: {p.view}; border: 1px solid {p.border_soft};
@@ -244,20 +248,20 @@ QGroupBox::title {{
 
 QPushButton {{
     background-color: {p.surface_alt}; border: 1px solid {p.border};
-    border-radius: {RADIUS_SM}px; padding: 7px 16px; font-weight: 500; color: {p.text};
+    border-radius: {RADIUS}px; padding: 7px 16px; font-weight: 500; color: {p.text};
 }}
 QPushButton:hover {{ background-color: {hover_bg}; }}
 QPushButton:pressed {{ background-color: {p.input}; }}
 QPushButton:disabled {{ color: {p.dim}; border-color: {p.border_soft}; }}
 QPushButton#stepButton {{
-    background-color: {p.raised}; border: 1px solid {p.raised_border}; border-radius: 8px;
+    background-color: {p.raised}; border: none; border-radius: {RADIUS_SM}px;
     min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; font-size: 15px;
 }}
-QPushButton#stepButton:hover {{ border-color: {p.accent}; color: {p.accent}; }}
+QPushButton#stepButton:hover {{ background-color: {p.accent_soft}; color: {p.accent}; }}
 QPushButton#stepButton:pressed {{ background-color: {p.well}; }}
-QFrame#segFrame {{ background-color: {p.well}; border: 1px solid {p.well_border}; border-radius: 11px; }}
+QFrame#segFrame {{ background-color: {p.well}; border: none; border-radius: {RADIUS}px; }}
 QPushButton#segButton {{
-    background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 7px 4px;
+    background: transparent; border: none; border-radius: {RADIUS_SM}px; padding: 8px 4px;
     font-weight: 500; font-size: 12px; color: {p.muted};
 }}
 QPushButton#segButton:checked {{ {seg_checked} }}
@@ -268,7 +272,7 @@ QPushButton#linkButton {{
 }}
 QPushButton#linkButton:hover {{ color: {p.accent_hover}; }}
 QPushButton#primaryAction, QPushButton#generateButton {{
-    background-color: {p.action}; color: {p.on_action}; border: none; border-radius: 18px;
+    background-color: {p.action}; color: {p.on_action}; border: none; border-radius: {RADIUS_LG}px;
     min-height: 54px; font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-size: 15px; font-weight: {DISPLAY_WEIGHT};
 }}
 QPushButton#primaryAction:hover, QPushButton#generateButton:hover {{ background-color: {p.accent_hover if p.dark else "#2A272B"}; }}
@@ -281,7 +285,7 @@ QPushButton#nudgeButton {{ padding: 2px 8px; font-size: 15px; }}
 
 QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {{
     background-color: {p.well}; border: 1px solid {p.well_border};
-    border-radius: {RADIUS_SM}px; padding: 5px 9px; min-height: 18px;
+    border-radius: {RADIUS}px; padding: 5px 9px; min-height: 18px;
     selection-background-color: {p.accent}; selection-color: {p.on_action};
 }}
 QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {{ border-color: {p.accent}; }}
