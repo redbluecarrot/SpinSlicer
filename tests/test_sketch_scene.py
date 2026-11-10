@@ -41,11 +41,11 @@ def test_beam_height_is_the_projector_field() -> None:
     assert np.isclose(h[2], h[1])            # parallel afterwards
 
 
-def test_refraction_without_bath_narrows_the_sheet() -> None:
-    x = np.array([SceneParams().radius])
-    _w, h_air = _beam_profile(SceneParams(bath=False, n_resin=1.5), x)
-    _w, h_bath = _beam_profile(SceneParams(bath=True, n_resin=1.46, n_liquid=1.45), x)
-    assert h_air[0] < h_bath[0]
+def test_parallel_sheet_keeps_its_width_through_the_vial() -> None:
+    p = SceneParams(bath=False, n_resin=1.5)
+    x = np.array([-p.radius, 0.0, p.radius])
+    w, h = _beam_profile(p, x)
+    assert np.allclose(w, w[0]) and np.allclose(h, h[0])
 
 
 def test_absorption_fades_the_beam_inside_the_vial() -> None:

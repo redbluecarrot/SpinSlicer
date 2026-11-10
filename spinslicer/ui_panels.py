@@ -715,16 +715,8 @@ class ProcessSettingsPanel(QWidget):
         pl.addWidget(self._link("в центр", "center"))
         pl.addWidget(self._link("вписать в колбу", "autofit"))
         self.r_place = self._row("Положение", places)
-        self.fit_label = QLabel()
-        self.fit_label.setObjectName("fitLabel")
-        self.fit_label.setWordWrap(True)
-        self.fit_label.setProperty("_spinslicer_skip_text_translation", True)
-        fit_box = QWidget()
-        fl = QVBoxLayout(fit_box)
-        fl.setContentsMargins(0, 14, 0, 6)
-        fl.addWidget(self.fit_label)
         self.transform_panel = ObjectTransformPanel(self)
-        self._model_rows = [self.r_orient, self.r_scale, self.r_place, fit_box]
+        self._model_rows = [self.r_orient, self.r_scale, self.r_place]
         self._model_expander = self._expander("Точная позиция", self.transform_panel)
         self._add_page("model", [self._section("Деталь", [self.r_file, self.r_voids]),
                                  self._section("Положение", [*self._model_rows, self._model_expander])])
@@ -1699,10 +1691,8 @@ class ProcessSettingsPanel(QWidget):
 
     def set_fit(self, ok: bool, text: str) -> None:
         self._fits = ok
+        # The fit is only a gate for the next step now: no "fits / does not fit" line under Положение.
         self._fit_text = text
-        p = theme.current()
-        self.fit_label.setText(("✓  " if ok else "!  ") + tr(text))
-        self.fit_label.setStyleSheet(f"color: {p.text if ok else p.warn}; font-weight: 600;")
         self._refresh_action()
 
     def set_running(self, running: bool, progress: float = 0.0) -> None:
@@ -1807,8 +1797,6 @@ class ProcessSettingsPanel(QWidget):
 
     def refresh_theme(self) -> None:
         self._refresh()
-        if self.fit_label.text():
-            self.set_fit(self._fits, self._fit_text)
         self.game.update()
 
 

@@ -263,11 +263,10 @@ def _beam_profile(p: SceneParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarray
         scale = np.clip((x - apex) / max(lens - apex, 1e-6), 0.06, 1.0)
     else:
         scale = np.ones_like(x)
+    # Straight edges, no refraction pinch: a parallel sheet stays parallel through the vial, a cone
+    # stays a cone. The bend itself is still reported as a number in the panel (p.bend_degrees).
     w = half_w0 * scale
     h = half_h0 * scale
-    inside = np.clip((x + r) / (2 * r), 0.0, 1.0)
-    h = h * (1.0 - p.bend * 0.5 * inside)
-    w = w * (1.0 - p.bend * 0.25 * inside)
     return w, h
 
 
