@@ -56,6 +56,7 @@ from spinslicer.model_node import ModelNode
 from spinslicer.pixel_game import PixelGame
 from spinslicer.projector_canvas import (
     RESOLUTIONS,
+    RESOLUTIONS_V2,
     CanvasGeometry,
     cone_smear_mm,
     throw_distance_mm,
@@ -291,7 +292,7 @@ def _tiles(tiles: Sequence[QWidget], columns: int = 2) -> QWidget:
 
 
 SETUP_TABS: tuple[tuple[str, str], ...] = (
-    ("interface", "Интерфейс"), ("printer", "Принтер"), ("projector", "Проектор"), ("resin", "Смола"))
+    ("printer", "Принтер"), ("projector", "Проектор"), ("resin", "Смола"), ("interface", "Интерфейс"))
 
 
 class ProcessSettingsPanel(QWidget):
@@ -510,7 +511,8 @@ class ProcessSettingsPanel(QWidget):
         self.bath = self.placement   # back-compat name; use container_mode_value()
         self.field_height = Stepper(5.0, 400.0, 40.0, 1.0, 0, "мм")
         self._field_auto = True
-        self.resolution = Segmented([(f"{w}×{h}", i) for i, (w, h) in enumerate(RESOLUTIONS)], 2)
+        self.resolution = Segmented([(f"{w}×{h}", i) for i, (w, h) in enumerate(RESOLUTIONS)],
+                                    RESOLUTIONS.index((1920, 1080)))
         self.output_res = Stepper(128, 3840, DEFAULT_OUTPUT_RESOLUTION, 8, 0, "px")
         self.rays = Segmented([("параллельные", 0), ("конусом", 1)], 0)
         self.throw_ratio = Stepper(0.2, 5.0, 1.2, 0.05, 2, ": 1")
@@ -542,17 +544,30 @@ class ProcessSettingsPanel(QWidget):
         self.r_field = self._row("Высота поля", self.field_height)
         self.r_resolution = self._row("Разрешение проектора", self.resolution, stacked=True)
         self.r_output = self._row("Колба на экране", self.output_res,
-                                  hint="сколько пикселей проектора по ширине занимает колба — проверьте разметкой")
+                                  hint="сколько пикселей проектора по ширине занимает колба — проверь разметкой")
         self.r_rays = self._row("Лучи проектора", self.rays, stacked=True)
         self.r_throw = self._row("Throw ratio", self.throw_ratio, hint="есть в паспорте проектора, обычно 1,1–1,6")
-        self.r_blur = self._row("Размытие пятна", self.projector_blur, hint="не знаете? оставьте 0")
+        self.r_blur = self._row("Размытие пятна", self.projector_blur, hint="не знаешь? оставь 0")
         self.r_comp = self._row("Компенсация размытия", self.blur_compensation)
         self.r_alpha = self._row("Поглощение смолы", self.alpha_absorption,
                                  hint="натуральный логарифм: α = 2,303·A на 1 мм = 1 / Dp")
         self.r_nresin = self._row("Преломление смолы", self.n_resin)
-        self.r_gel = self._row("Доза геля", self.gel_dose, hint="не знаете? напечатайте шкалу ↓")
+        self.r_gel = self._row("Доза геля", self.gel_dose, hint="не знаешь? напечатай шкалу ↓")
+        # what the printer's answers ("under", "ok"…) say about this resin's dose (step 5b)
+        self.dose_hint = QLabel()
+        self.dose_hint.setObjectName("tileNote")
+        self.dose_hint.setWordWrap(True)
+        self.dose_hint.setProperty("_spinslicer_skip_text_translation", True)
+        apply = self._link("применить", "printer_apply_dose")
+        hint_box = QWidget()
+        hb = QHBoxLayout(hint_box)
+        hb.setContentsMargins(0, 0, 0, 0)
+        hb.addWidget(self.dose_hint, 1)
+        hb.addWidget(apply, 0, Qt.AlignmentFlag.AlignTop)
+        self.r_dose_hint = hint_box
+        hint_box.setVisible(False)
         self.r_calib = self._row("Шкала дозы", self._link("напечатать →", "calibrate"),
-                                 "9 столбиков с дозой 88–112 %: выбираете лучший, доза обновится сама")
+                                 "9 столбиков с дозой 88–112 %: выбираешь лучший, доза обновится сама")
         self.r_hz = self._row("Частота проектора", self.projector_hz,
                               hint="герцовка экрана: кадры не могут сменяться чаще")
         self.r_offx = self._row("Сдвиг картинки по X", self.offset_x)
@@ -636,7 +651,7 @@ class ProcessSettingsPanel(QWidget):
                                        self._expander("Тонкая настройка", self._expert_group)]),
             ],
             "resin": [
-                self._section("Смола", [self.r_alpha, self.r_nresin, self.r_gel]),
+                self._section("Смола", [self.r_alpha, self.r_nresin, self.r_gel, self.r_dose_hint]),
                 self._section("Калибровка смолы", [self.r_calib]),
             ],
         }
@@ -764,7 +779,7 @@ class ProcessSettingsPanel(QWidget):
         self.results_box = results
 
         self.game = PixelGame()
-        self.game_title = QLabel(tr("Пока ждёте — засветите деталь сами"))
+        self.game_title = QLabel(tr("Пока ждёте — засвети деталь сами"))
         self.game_title.setObjectName("rowLabel")
         self.game_title.setProperty("_spinslicer_skip_text_translation", True)
         game_body = QWidget()
@@ -813,16 +828,19 @@ class ProcessSettingsPanel(QWidget):
         self.print_printer.setProperty("_spinslicer_skip_text_translation", True)
         cl.addWidget(self.print_dot, 0, Qt.AlignmentFlag.AlignVCenter)
         cl.addWidget(self.print_printer, 1)
+        self.print_connect = self._secondary("Подключить", "printer_connect")
+        cl.addWidget(self.print_connect, 0, Qt.AlignmentFlag.AlignVCenter)
         to_printer = self._link("настройки принтера", "goto:setup")
         to_printer.clicked.connect(lambda: self.show_setup_tab("printer"))
         cl.addWidget(to_printer, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.print_to_settings = to_printer
         self.printer_card = card
 
         self.ptile_time = _Tile("время")
         self.ptile_revs = _Tile("оборотов")
         self.ptile_tol = _Tile("запас")
         self.ptile_fps = _Tile("кадры")
-        self.plan_label = QLabel(tr("Сначала рассчитайте свет."))    # the old text plan, kept for callers
+        self.plan_label = QLabel(tr("Сначала рассчитай свет."))    # the old text plan, kept for callers
         self.plan_label.setVisible(False)
         # The dose card (video_tab.DoseCard) is put here by the main window: its slider
         # is the print exposure, and the numbers above follow it.
@@ -857,6 +875,40 @@ class ProcessSettingsPanel(QWidget):
         self.r_spin.setObjectName("printStatus")
         self.stop_link = self._link("остановить печать", "spin_stop")
         self.stop_link.setVisible(False)
+        # before sending: what the slicer can check against the connected printer
+        self.checks = QLabel()
+        self.checks.setObjectName("printChecks")
+        self.checks.setWordWrap(True)
+        self.checks.setTextFormat(Qt.TextFormat.RichText)
+        self.checks.setProperty("_spinslicer_skip_text_translation", True)
+        self.checks.setVisible(False)
+        # while printing: the stage, a bar, turn and time, and a Stop that can be found
+        prog = QFrame()
+        prog.setObjectName("settingsBlock")
+        prog.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        pl = QVBoxLayout(prog)
+        pl.setContentsMargins(16, 12, 16, 12)
+        pl.setSpacing(6)
+        top = QHBoxLayout()
+        self.prog_stage = QLabel()
+        self.prog_stage.setObjectName("progStage")
+        self.prog_stage.setProperty("_spinslicer_skip_text_translation", True)
+        self.prog_stop = self._secondary("Стоп", "spin_stop")
+        self.prog_stop.setObjectName("dangerAction")
+        top.addWidget(self.prog_stage, 1)
+        top.addWidget(self.prog_stop, 0)
+        pl.addLayout(top)
+        self.prog_bar = QProgressBar()
+        self.prog_bar.setRange(0, 1000)
+        self.prog_bar.setTextVisible(False)
+        self.prog_bar.setFixedHeight(6)
+        pl.addWidget(self.prog_bar)
+        self.prog_detail = QLabel()
+        self.prog_detail.setObjectName("tileNote")
+        self.prog_detail.setProperty("_spinslicer_skip_text_translation", True)
+        pl.addWidget(self.prog_detail)
+        self.prog_card = prog
+        prog.setVisible(False)
         more = QWidget()
         ml = QHBoxLayout(more)
         ml.setContentsMargins(0, 0, 0, 0)
@@ -872,6 +924,8 @@ class ProcessSettingsPanel(QWidget):
                 ml.addWidget(dot)
             ml.addWidget(link)
         ml.addStretch(1)
+        dock_l.addWidget(self.checks)
+        dock_l.addWidget(self.prog_card)
         dock_l.addWidget(buttons)
         dock_l.addWidget(self.r_spin)
         dock_l.addWidget(self.stop_link, 0, Qt.AlignmentFlag.AlignLeft)
@@ -958,7 +1012,7 @@ class ProcessSettingsPanel(QWidget):
     def _persisted(self) -> dict[str, QWidget]:
         return {
             "ui/diameter": self.diameter, "ui/wall": self.glass_thickness, "ui/placement": self.placement,
-            "ui/resolution2": self.resolution, "ui/output_res": self.output_res,
+            "ui/resolution3": self.resolution, "ui/output_res": self.output_res,
             "ui/rays": self.rays, "ui/throw_ratio": self.throw_ratio,
             "physics/blur": self.projector_blur, "ui/offset_x": self.offset_x, "ui/offset_y": self.offset_y,
             "ui/refresh_hz": self.projector_hz, "physics/gamma": self.projector_gamma, "physics/contrast": self.projector_contrast,
@@ -973,6 +1027,15 @@ class ProcessSettingsPanel(QWidget):
         return {k: w for k, w in self._persisted().items() if k.startswith("physics/") and isinstance(w, Stepper)}
 
     def _restore(self) -> None:
+        # ui/resolution2 was an index into the list without 1280x800: the same size, new index
+        if self._settings.value("ui/resolution3", None) is None:
+            old = self._settings.value("ui/resolution2", None)
+            try:
+                size = RESOLUTIONS_V2[int(float(old))] if old is not None else None
+            except (TypeError, ValueError, IndexError):
+                size = None
+            if size in RESOLUTIONS:
+                self._settings.setValue("ui/resolution3", float(RESOLUTIONS.index(size)))
         for key, widget in self._persisted().items():
             stored = self._settings.value(key, None)
             if stored is None:
@@ -1005,8 +1068,8 @@ class ProcessSettingsPanel(QWidget):
         self.field_height.valueChanged.connect(lambda _v: self._on_setting_changed("ui/field"))
         self.field_height.valueChanged.connect(lambda _v: self.sceneChanged.emit())
         scene_keys = {"ui/diameter", "ui/wall", "ui/placement", "ui/field", "ui/rays", "ui/throw_ratio",
-                      "ui/resolution2", "ui/output_res", "physics/alpha", "ui/n_resin", "ui/n_liquid", "ui/frames"}
-        canvas_keys = {"ui/resolution2", "ui/offset_x", "ui/offset_y", "ui/speed", "ui/frames"}
+                      "ui/resolution3", "ui/output_res", "physics/alpha", "ui/n_resin", "ui/n_liquid", "ui/frames"}
+        canvas_keys = {"ui/resolution3", "ui/offset_x", "ui/offset_y", "ui/speed", "ui/frames"}
         for key, widget in self._persisted().items():
             signal = widget.toggled if isinstance(widget, Switch) else widget.valueChanged  # type: ignore[attr-defined]
             signal.connect(lambda _v, k=key, w=widget: self._save(k, w))
@@ -1056,13 +1119,13 @@ class ProcessSettingsPanel(QWidget):
             # Always clickable: say why it cannot show anything yet instead of looking dead.
             QTimer.singleShot(180, lambda: self.virtual.setChecked(False))
             self.r_virtual.set_effect("появится после расчёта света" if not self._stale
-                                      else "результат устарел — пересчитайте свет", warn=True)
+                                      else "результат устарел — пересчитай свет", warn=True)
             return
         self.virtualToggled.emit(on)
 
     # Settings that only change how finished frames are shown, never the frames.
     _SHOW_ONLY_KEYS = frozenset({"ui/speed", "ui/output_kind", "print/brightness", "ui/offset_x",
-                                 "ui/offset_y", "ui/resolution2"})
+                                 "ui/offset_y", "ui/resolution3"})
 
     def _on_setting_changed(self, key: str = "") -> None:
         # Changing physics after a run makes the old result stale.
@@ -1155,6 +1218,10 @@ class ProcessSettingsPanel(QWidget):
                                        else tr("Принтер не подключён"))
         if hasattr(self, "r_printer_write"):
             self.r_printer_write.setVisible(connected)
+        if hasattr(self, "print_connect"):
+            # not connected: Connect right here (the link to the settings would squeeze the text)
+            self.print_connect.setVisible(not connected and state != "busy")
+            self.print_to_settings.setVisible(connected or state == "busy")
         if hasattr(self, "printer_toggle"):
             self.printer_toggle.setText(tr("Отключить") if connected else tr("Подключить"))
             self.printer_toggle.setEnabled(state != "busy")
@@ -1172,6 +1239,56 @@ class ProcessSettingsPanel(QWidget):
         self.stop_link.setVisible(stoppable)
         self._refresh_print_buttons()
 
+    def set_print_progress(self, stage: str, progress: Optional[float] = None, detail: str = "") -> None:
+        """The progress card of a print on the printer ("" hides it). progress None = no bar yet."""
+        self.prog_card.setVisible(bool(stage))
+        if not stage:
+            self._refresh_print_buttons()
+            return
+        self.prog_stage.setText(tr(stage))
+        self.prog_bar.setVisible(progress is not None)
+        if progress is not None:
+            self.prog_bar.setValue(int(max(0.0, min(1.0, progress)) * 1000))
+        self.prog_detail.setText(tr(detail) if detail else "")
+        self.stop_link.setVisible(False)  # the card has its own Stop
+        self._refresh_print_buttons()
+
+    def print_checks(self) -> list[tuple[bool, str]]:
+        """What can be checked before sending, against the connected printer: (ok, text)."""
+        out: list[tuple[bool, str]] = []
+        seen = getattr(self, "_printer_seen", {}) or {}
+        w, h = self.screen_size()
+        pw, ph = seen.get("projector_width"), seen.get("projector_height")
+        if pw and ph:
+            same = (int(pw), int(ph)) == (int(w), int(h))
+            out.append((same, f"{tr('кадры')} {w}×{h} = {tr('проектор')}" if same else
+                        f"{tr('кадры')} {w}×{h}, {tr('проектор принтера')} {pw}×{ph}"))
+        pid = seen.get("profile_id")
+        if pid:
+            same = self.printer_profile_id() == str(pid)
+            out.append((same, tr("профиль этого принтера") if same else tr("профиль другого принтера")))
+        revs = getattr(self, "_print_revs", None)
+        if revs:
+            whole = max(1, round(revs))
+            angle = seen.get("engine") == "angle"
+            out.append((True if angle else abs(whole / revs - 1) < 0.03,
+                        (f"{whole} {tr('об.')} ({f'{revs:.2f}'.replace('.', ',')} {tr('по расчёту')}), "
+                         f"{tr('доза по расчёту')}") if angle else
+                        f"{whole} {tr('об.')} {tr('вместо')} {f'{revs:.2f}'.replace('.', ',')}"))
+        free = seen.get("free_gb")
+        if free is not None:
+            out.append((float(free) > 0.5, f"{tr('место на принтере')}: {float(free):.1f} {tr('ГБ')}".replace(".", ",")))
+        return out
+
+    def set_dose_suggestion(self, now: float, new: Optional[float], prints: int) -> None:
+        """Under the gel dose: "12.0 → 12.8 mJ/cm³ (from 4 prints on this printer) · apply" (None hides it)."""
+        self.r_dose_hint.setVisible(new is not None)
+        if new is not None:
+            def f(v: float) -> str:
+                return f"{v:.1f}".replace(".", ",")
+            self.dose_hint.setText(f"{tr('Доза геля')}: {f(now)} → {f(new)} {tr('мДж/см³')} "
+                                   f"({tr('по')} {prints} {tr('печатям на этом принтере')})")
+
     def _frames_ready(self) -> bool:
         return bool(self._output_dir) and not self._frames_outdated() and not self._running
 
@@ -1179,22 +1296,33 @@ class ProcessSettingsPanel(QWidget):
         """Print needs frames and a connected printer, the stick only frames; the line under the
         buttons says what is missing instead of leaving a grey button to guess at."""
         ready = self._frames_ready()
-        self.print_button.setEnabled(ready and self._printer_on)
+        printing = hasattr(self, "prog_card") and not self.prog_card.isHidden()
+        self.print_button.setEnabled(ready and self._printer_on and not printing)
         self.stick_button.setEnabled(ready)
         for link in self.more_links:
             link.setEnabled(ready)
         text, warn = self._print_status
+        if not text and printing:
+            text = " "  # the progress card says it all
         if not text:
             if not self._output_dir:
-                text = "сначала рассчитайте свет"
+                text = "сначала рассчитай свет"
             elif self._frames_outdated():
-                text, warn = "кадры устарели — пересчитайте свет", True
+                text, warn = "кадры устарели — пересчитай свет", True
             elif not self._printer_on:
                 text = "принтер не подключён: Настройки → Принтер. На флешку можно и так"
             else:
                 text = "файл уйдёт на принтер, его экран спросит «Печатать?»"
         self.r_spin.set_effect(text, warn)
-        self.print_button.setToolTip("" if self._printer_on else tr("Подключите принтер: Настройки → Принтер"))
+        self.print_button.setToolTip("" if self._printer_on else tr("Подключи принтер: Настройки → Принтер"))
+        checks = self.print_checks() if (self._printer_on and ready and not self.prog_card.isVisible()) else []
+        self.checks.setVisible(bool(checks))
+        if checks:
+            from spinslicer.theme import current
+            p = current()
+            self.checks.setText("<br>".join(
+                f"<span style='color:{p.muted if ok else p.warn}'>{'✓' if ok else '!'}</span>&nbsp; "
+                f"<span style='color:{p.text if ok else p.warn}'>{text}</span>" for ok, text in checks))
 
     def printer_values(self) -> dict[str, float]:
         """This slicer's printer settings, in printer_link.profile_settings keys (to write back)."""
@@ -1212,6 +1340,7 @@ class ProcessSettingsPanel(QWidget):
         Only values that differ count as changed: the list is shown as "from the printer: …", and
         it named every field the printer sent, even ones that were already the same."""
         self._printer_profile_id = str(settings.get("profile_id", ""))
+        self._printer_seen = dict(settings)  # for the checks before sending
         changed: list[str] = []
 
         def put(key: str, widget: Stepper, label: str) -> None:
@@ -1341,11 +1470,11 @@ class ProcessSettingsPanel(QWidget):
                                      self.output_res.value_int(), sw)
             smear = v["smear"]
             if self.throw_too_close():
-                self.r_throw.set_effect(f"до оси {f(dist, 0)} мм — ближе колбы, так не бывает: проверьте числа", warn=True)
+                self.r_throw.set_effect(f"до оси {f(dist, 0)} мм — ближе колбы, так не бывает: проверь числа", warn=True)
             else:
                 self.r_throw.set_effect(
                     f"до оси ≈ {f(dist, 0)} мм · по высоте у краёв детали размытие до {f(smear, 2)} мм"
-                    + (" — поставьте проектор дальше" if smear > v["voxel"] * 2 else ""),
+                    + (" — поставь проектор дальше" if smear > v["voxel"] * 2 else ""),
                     warn=smear > v["voxel"] * 2)
         self.r_rays.set_effect("движок трассирует расходящиеся лучи (как у обычного объектива)" if cone
                                else "конус проектора проходит линзу Френеля и становится параллельным")
@@ -1398,24 +1527,24 @@ class ProcessSettingsPanel(QWidget):
     def _todo(self) -> str:
         page = self._page
         if page == "setup":
-            return "Опишите свой принтер и смолу. Это делается один раз — дальше только детали."
+            return "Опиши свой принтер и смолу. Это делается один раз — дальше только детали."
         if page == "model":
             if not self._has_model:
-                return "Загрузите STL: перетащите файл на сцену слева или нажмите кнопку внизу."
+                return "Загрузи STL: перетащи файл на сцену слева или нажми кнопку внизу."
             if not self._fits:
-                return "Деталь не помещается — уменьшите масштаб или нажмите «вписать в колбу»."
-            return "Покрутите деталь мышью и проверьте, как она стоит. Если всё ок — дальше."
+                return "Деталь не помещается — уменьши масштаб или нажми «вписать в колбу»."
+            return "Покрути деталь мышью и проверь, как она стоит. Если всё ок — дальше."
         if page == "light":
             if self._running:
                 return "Считаю кадры для каждого угла. Можно пока поиграть ↓"
             if self._done:
-                return "Готово. Посмотрите совпадение и запас — и переходите к печати."
-            return "Выберите качество и нажмите «Рассчитать свет»."
+                return "Готово. Посмотри совпадение и запас — и переходи к печати."
+            return "Выбери качество и нажми «Рассчитать свет»."
         if not self._output_dir:
-            return "Сначала рассчитайте свет на шаге 2."
+            return "Сначала рассчитай свет на шаге 2."
         if self._frames_outdated():
-            return "Настройки или деталь изменились — кадры устарели. Пересчитайте свет."
-        return "Проверьте разметку колбы на проекторе и запускайте."
+            return "Настройки или деталь изменились — кадры устарели. Пересчитай свет."
+        return "Проверь разметку колбы на проекторе и запускай."
 
     def _refresh_action(self) -> None:
         page = self._page
@@ -1428,11 +1557,11 @@ class ProcessSettingsPanel(QWidget):
         elif page == "model":
             if not self._has_model:
                 self.action_btn.setText(tr("Загрузить STL"))
-                self.action_sub.setText(tr("или перетащите файл на сцену"))
+                self.action_sub.setText(tr("или перетащи файл на сцену"))
             elif not self._fits:
-                self.action_btn.setText(tr("Сначала уместите деталь"))
+                self.action_btn.setText(tr("Сначала умести деталь"))
                 self.action_btn.setEnabled(False)
-                self.action_sub.setText(tr("уменьшите масштаб или возьмите колбу шире"))
+                self.action_sub.setText(tr("уменьши масштаб или возьми колбу шире"))
             else:
                 self.action_btn.setText(tr("Дальше — свет →"))
                 self.action_sub.setText("")
@@ -1447,7 +1576,7 @@ class ProcessSettingsPanel(QWidget):
                 self.action_btn.setText(tr("Рассчитать свет"))
                 self.action_btn.setEnabled(self._has_model)
                 self.action_sub.setText(tr(f"≈ {self._secs(self.derived()['calc_s'])} на обычном компьютере"
-                                           if self._has_model else "сначала загрузите модель"))
+                                           if self._has_model else "сначала загрузи модель"))
         elif self._projecting is not None:
             elapsed, total = self._projecting
             self.action_btn.setText(tr("Остановить засветку"))
@@ -1478,7 +1607,7 @@ class ProcessSettingsPanel(QWidget):
         frames = self.frames.value_int()
         self.ptile_fps.set(f"{f(fps)} {tr('Гц')}", f"{frames} {tr('на оборот')}")
         if not plan:
-            self.plan_label.setText(tr("Сначала рассчитайте свет."))
+            self.plan_label.setText(tr("Сначала рассчитай свет."))
             for tile in (self.ptile_time, self.ptile_revs, self.ptile_tol):
                 tile.set("—")
             return
@@ -1487,7 +1616,7 @@ class ProcessSettingsPanel(QWidget):
         self.tile_match.set(f"{f(100 * iou)} %" if iou is not None else "—",
                             ("почти идеально" if iou > 0.98 else "можно точнее") if iou is not None else "")
         tol = float(plan.get("exposure_tolerance_pct", 0.0))
-        tol_note = "ошибиться сложно" if tol >= 4 else ("нужна калибровка" if tol > 0 else "увеличьте сетку")
+        tol_note = "ошибиться сложно" if tol >= 4 else ("нужна калибровка" if tol > 0 else "увеличь сетку")
         self.tile_tol.set(f"± {f(tol)} %" if tol > 0 else tr("нет"), tol_note, warn=0 < tol < 3)
         self.ptile_tol.set(f"± {f(tol)} %" if tol > 0 else tr("нет"), "", warn=0 < tol < 3)
         self.tile_frames.set(f"{frames}", f"{tr('шаг')} {f(360.0 / frames)}°")
@@ -1504,7 +1633,9 @@ class ProcessSettingsPanel(QWidget):
                 notes.append(f"{tr('яркость')} {round(self.brightness_factor() * 100)} %")
             self.ptile_time.set(self._secs(total * scale), " · ".join(notes))
             self.ptile_revs.set(f(revs * scale))
+            self._print_revs: Optional[float] = revs * scale
         else:
+            self._print_revs = None
             # Not a sentence in place of a number: a dash, and where to fix it.
             self.tile_time.set("—", "нужны поглощение, облучённость и доза: Настройки")
             self.ptile_time.set("—", "нужны данные смолы")
@@ -1582,9 +1713,9 @@ class ProcessSettingsPanel(QWidget):
             self._done = False
             self._review = False
             if not was:
-                self.game_title.setText(tr("Пока считается — засветите деталь сами"))
+                self.game_title.setText(tr("Пока считается — засвети деталь сами"))
         elif was:
-            self.game_title.setText(tr("Пока ждёте — засветите деталь сами"))
+            self.game_title.setText(tr("Пока ждёте — засвети деталь сами"))
         self.r_virtual.setVisible(not running and self._virtual_ready)
         self.r_comp.setVisible(not running and self.projector_blur.value() > 0)
         self._show_light_stage()
@@ -1635,7 +1766,7 @@ class ProcessSettingsPanel(QWidget):
                 with QSignalBlocker(self.virtual):
                     self.virtual.setChecked(False)
                 self.virtualToggled.emit(False)
-            self.r_virtual.set_effect("результат устарел — пересчитайте свет" if self._stale
+            self.r_virtual.set_effect("результат устарел — пересчитай свет" if self._stale
                                       else "появится после расчёта света")
         self._show_light_stage()
 

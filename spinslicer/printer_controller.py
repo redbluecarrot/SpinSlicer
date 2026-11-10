@@ -43,11 +43,12 @@ def build_job(panel: Any, out_dir: str, name: str, frames: int, width: int, heig
     slice_parameters = manifest.get("slice_parameters") or {}
     direction = int(slice_parameters.get("angle_direction", 1) or 1)
     optics = slice_parameters.get("optics") or {}
-    resin = {
+    resin: dict[str, Any] = {
         "alpha_per_mm": float(optics.get("alpha_per_mm", panel.alpha_absorption.value())),
         "n_resin": float(optics.get("n_resin", panel.n_resin.value())),
         "gel_dose_mj_cm3": float(panel.gel_dose.value()),
     }
+    resin["id"] = printer_link.resin_id(resin["alpha_per_mm"], resin["n_resin"])  # its correction on the printer
     printer: dict[str, Any] = {
         "vial_diameter_mm": float(slice_parameters.get("diameter_mm", panel.vat_diameter_mm())),
         "vial_wall_mm": float(panel.glass_thickness_mm()),
@@ -67,7 +68,8 @@ def build_job(panel: Any, out_dir: str, name: str, frames: int, width: int, heig
     return PrintJob(name=name, frames=frames, fps=fps, width=width, height=height,
                     angle_direction=direction if direction in (1, -1) else 1, plan=plan,
                     exposure=float(panel.exposure_factor()), brightness=float(panel.brightness_factor()),
-                    resin=resin, printer=printer)
+                    resin=resin, printer=printer,
+                    offset_px=(int(panel.offset_x.value()), int(panel.offset_y.value())))
 
 
 def state_text(state: dict[str, Any]) -> tuple[str, str, bool, bool]:
@@ -77,14 +79,14 @@ def state_text(state: dict[str, Any]) -> tuple[str, str, bool, bool]:
     final = {"cancelled": (tr("Печать отменена на экране принтера."), False),
              "expired": (tr("Принтер не дождался ответа на экране (10 минут)."), True),
              "replaced": (tr("На принтере запустили другую печать."), True),
-             "done": (tr("Готово! Ответьте на принтере, как получилось."), False),
+             "done": (tr("Готово!"), False),
              "stopped": (f"{tr('Печать остановлена.')} {msg}".strip(), True),
              "error": (f"{tr('Ошибка печати:')} {msg}".strip(), True)}
     if what in final:
         text, warn = final[what]
         return what, text, warn, False
     if what == "waiting_confirm":
-        return what, tr("Подтвердите печать на экране принтера: джойстик вправо."), False, True
+        return what, tr("Подтверди печать на экране принтера: джойстик вправо."), False, True
     if what == "starting":
         return what, tr("Принтер готовится: разгон, прогрев, пауза до света…"), False, True
     mins, secs = divmod(int(left + 0.99), 60)
@@ -107,6 +109,7 @@ class PrinterController(QObject):
         self._profile: Optional[ProfileWorker] = None
         self._connected: Optional[printer_link.PrinterAddress] = None
         self._printer_settings: dict[str, Any] = {}   # printer_link.profile_settings of the connected one
+        self._suggestion: Optional[tuple[str, float]] = None   # (resin id, gel dose) the printer's answers suggest
         self._profile_raw: Optional[dict[str, Any]] = None   # its GET /api/printer, as sent
         self._calls: list[CallWorker] = []
         self._printing: Optional[printer_link.PrinterAddress] = None   # the print the slicer follows
@@ -174,6 +177,7 @@ class PrinterController(QObject):
             "printer_manual": self.ask_address, "printer_connect": lambda: self.connect_printer(),
             "printer_disconnect": self.disconnect_printer,
             "printer_write": self.write_to_printer,
+            "printer_apply_dose": self.apply_dose,
         }
         if action not in actions:
             return False
@@ -195,7 +199,7 @@ class PrinterController(QObject):
 
     def _not_connected(self) -> None:
         QMessageBox.information(self._window, tr("Принтер не подключён"),
-                                tr("Подключите принтер: Настройки → Принтер → «Подключить»."))
+                                tr("Подключи принтер: Настройки → Принтер → «Подключить»."))
 
     # ------------------------------------------------------------------ print
     def print_now(self) -> None:
@@ -211,10 +215,10 @@ class PrinterController(QObject):
             # an older SpinPi would start the motor and the light at once, while the slicer says
             # "confirm on the printer's screen": nobody would check that the vial is in place
             QMessageBox.warning(
-                self._window, tr("Обновите принтер"),
+                self._window, tr("Обнови принтер"),
                 tr("Программа этого принтера не спрашивает «Печатать?» на его экране и начала бы печать "
-                   "сразу. Обновите SpinPrinter (на Raspberry Pi ещё раз команду установки) или "
-                   "печатайте с флешки."))
+                   "сразу. Обнови SpinPrinter (на Raspberry Pi ещё раз команду установки) или "
+                   "печатай с флешки."))
             return
         # first: is it free? (the file is packed and sent only then, not to hear "busy" after)
         self._panel.set_print_status(tr("Проверяю принтер…"))
@@ -225,7 +229,7 @@ class PrinterController(QObject):
 
     def _send_if_free(self, printer: printer_link.PrinterAddress, state: Any) -> None:
         if isinstance(state, dict) and printer_link.is_busy(state):
-            self._panel.set_print_status(tr("Принтер сейчас печатает. Дождитесь конца или остановите печать "
+            self._panel.set_print_status(tr("Принтер сейчас печатает. Дождись конца или останови печать "
                                             "на принтере."), warn=True)
             return
         if self._tab.export_spin(printer, on_uploaded=lambda _label, answer: self._after_upload(printer, answer)):
@@ -245,7 +249,9 @@ class PrinterController(QObject):
 
     def _start_following(self, printer: printer_link.PrinterAddress) -> None:
         self._printing = printer
-        self._panel.set_print_status(tr("Подтвердите печать на экране принтера: джойстик вправо."))
+        self._panel.set_print_status(tr("Подтверди печать на экране принтера: джойстик вправо."))
+        if hasattr(self._panel, "set_print_progress"):
+            self._panel.set_print_progress("Ждёт подтверждения на экране принтера", None, "джойстик вправо — печатать")
         self._poll.start()
 
     def _poll_state(self) -> None:
@@ -265,11 +271,40 @@ class PrinterController(QObject):
 
     def _show_state(self, state: dict[str, Any]) -> None:
         what, text, warn, going = state_text(state)
+        printer = self._printing
         if not going:
             self._poll.stop()
             self._printing = None
             self._log(text)
-        self._panel.set_print_status(text, warn=warn, stoppable=going and what != "waiting_confirm")
+        if hasattr(self._panel, "set_print_progress"):
+            stage, progress, detail = printer_link.print_stage(state) if going else ("", None, "")
+            self._panel.set_print_progress(stage, progress, detail)
+            self._panel.set_print_status("" if going else text, warn=warn and not going, stoppable=False)
+        else:
+            self._panel.set_print_status(text, warn=warn, stoppable=going and what != "waiting_confirm")
+        if what == "done" and printer is not None:
+            self._ask_result(printer)
+
+    def _ask_result(self, printer: printer_link.PrinterAddress) -> None:
+        """The print is done: how did it come out? The answer goes to the printer like one given on its
+        screen (it moves the exposure correction for the next print)."""
+        box = QMessageBox(self._window)
+        box.setWindowTitle(tr("Готово!"))
+        box.setText(tr("Как получилась деталь?"))
+        buttons: dict[object, str] = {}
+        for key, label in (("under", "Недосвет"), ("ok", "Норма"), ("over", "Пересвет")):
+            buttons[box.addButton(tr(label), QMessageBox.ButtonRole.AcceptRole)] = key
+        box.addButton(tr("Не знаю, пропустить"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        result = buttons.get(box.clickedButton())
+        if result is None:
+            return
+        self._call(printer_link.send_result, printer, result,
+                   done=lambda answer: self._log(f"{tr('Ответ отправлен на принтер')}: {tr(result)}"
+                                                 + (f" · {tr('поправка')} {answer.get('factor_pct'):+.0f} %"
+                                                    if isinstance(answer, dict) and answer.get("factor_pct") is not None
+                                                    else "")),
+                   failed=lambda msg: self._log(f"{tr('Ответ не отправлен:')} {msg}"))
 
     def stop(self) -> None:
         printer = self._printing
@@ -291,7 +326,7 @@ class PrinterController(QObject):
         sticks = removable.find_sticks()
         if not sticks:
             QMessageBox.information(self._window, tr("Флешка не найдена"),
-                                    tr("Вставьте флешку в компьютер. Пока сохраню файл туда, куда скажете."))
+                                    tr("Вставь флешку в компьютер. Пока сохраню файл туда, куда скажешь."))
             self._tab.export_spin()
             return
         stick = sticks[0]
@@ -314,12 +349,12 @@ class PrinterController(QObject):
         self._log(f".spin: {path}")
         answer = QMessageBox.question(self._window, tr("Готово"),
                                       f"{tr('Файл записан на флешку')} {stick.label}.\n"
-                                      f"{tr('Извлечь флешку? Потом вставьте её в Raspberry Pi принтера.')}")
+                                      f"{tr('Извлечь флешку? Потом вставь её в Raspberry Pi принтера.')}")
         if answer != QMessageBox.StandardButton.Yes:
             return
         self._call(removable.eject, stick,
                    done=lambda ok: self._panel.set_print_status(
-                       tr("Флешку можно вынимать.") if ok else tr("Не удалось извлечь: извлеките её сами."),
+                       tr("Флешку можно вынимать.") if ok else tr("Не удалось извлечь: извлеки её сами."),
                        warn=not ok),
                    failed=lambda msg: self._panel.set_print_status(msg, warn=True))
 
@@ -328,7 +363,7 @@ class PrinterController(QObject):
         if self._discover is not None and self._discover.isRunning():
             return
         if not printer_link.zeroconf_available():
-            self._log(tr("Поиск по mDNS недоступен (pip install zeroconf): проверяю spinprinter.local."))
+            self._log(tr("Поиск по mDNS недоступен (pip install zeroconf): проверяю spinslicer.local и spinprinter.local."))
         else:
             self._log(tr("Ищу принтеры в сети…"))
         self._discover = DiscoverWorker(parent=self)
@@ -342,12 +377,12 @@ class PrinterController(QObject):
             if self._panel.selected_printer() is None:
                 self._panel.printer_box.setCurrentIndex(1)
         else:
-            self._log(tr("Принтер в сети не найден. Введите его адрес."))
+            self._log(tr("Принтер в сети не найден. Введи его адрес."))
 
     def ask_address(self) -> Optional[printer_link.PrinterAddress]:
         current = self._panel.selected_printer()
         default = current.host if current is not None else str(
-            self._settings.value(SETTINGS_ADDRESS, "") or printer_link.DEFAULT_HOST)
+            self._settings.value(SETTINGS_ADDRESS, "") or printer_link.first_known_host())
         text, ok = QInputDialog.getText(self._window, tr("Адрес принтера"),
                                         tr("IP-адрес или имя принтера, например spinprinter.local"),
                                         text=default)
@@ -420,11 +455,48 @@ class PrinterController(QObject):
         size = (settings.get("projector_width"), settings.get("projector_height"))
         if None not in size and size not in RESOLUTIONS:
             self._log(f"{tr('Разрешения проектора нет в списке:')} {size[0]}×{size[1]}")
+        self.load_suggestion()
         name = settings.get("name") or address.label
         if changed:
             self._log(f"{tr('Профиль принтера')} {name}: " + ", ".join(tr(c) for c in changed))
         else:
             self._log(f"{tr('Профиль принтера')} {name}: {tr('ничего не изменилось')}")
+
+    # ------------------------------------------------------------------ the resin's dose, from the answers
+    def _resin_now(self) -> tuple[str, float]:
+        p = self._panel
+        return (printer_link.resin_id(p.alpha_absorption.value(), p.n_resin.value()), float(p.gel_dose.value()))
+
+    def load_suggestion(self) -> None:
+        """Read the printer's log: do its answers for this resin say the gel dose should be another?"""
+        printer = self._connected
+        if printer is None or not hasattr(self._panel, "set_dose_suggestion"):
+            return
+        rid, gel = self._resin_now()
+
+        def got(history: Any) -> None:
+            found = printer_link.dose_suggestion(history if isinstance(history, dict) else {}, rid, gel)
+            if found and abs(found[0] / max(gel, 1e-9) - 1) > 0.01:  # a change worth a look
+                self._suggestion = (rid, found[0])
+                self._panel.set_dose_suggestion(gel, found[0], found[1])
+            else:
+                self._suggestion = None
+                self._panel.set_dose_suggestion(gel, None, 0)
+        self._call(printer_link.get_history, printer, done=got, failed=lambda _m: None)
+
+    def apply_dose(self) -> None:
+        """Take the suggestion into the gel dose; the printer's correction for this resin goes back to 1,
+        or the same correction would count twice."""
+        printer, sug = self._connected, getattr(self, "_suggestion", None)
+        if printer is None or not sug:
+            return
+        rid, dose = sug
+        self._panel.gel_dose.setValue(round(dose, 1))
+        self._suggestion = None
+        self._panel.set_dose_suggestion(dose, None, 0)
+        self._call(printer_link.reset_resin_factor, printer, rid,
+                   done=lambda _r: self._log(f"{tr('Доза геля')}: {dose:.1f} · {tr('поправка смолы на принтере сброшена')}"),
+                   failed=lambda msg: self._log(f"{tr('Поправка на принтере не сброшена:')} {msg}"))
 
     def write_to_printer(self) -> None:
         """Store the slicer's vial, projector and calibration on the printer, after showing what changes."""

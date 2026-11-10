@@ -51,7 +51,7 @@ _EN: dict[str, str] = {
     "Открыть STL-файл модели": "Open an STL model file",
     "Запустить расчёт проекций в фоновом потоке":
         "Start projection generation in a background thread",
-    "Сначала загрузите STL-модель.": "Load an STL model first.",
+    "Сначала загрузи STL-модель.": "Load an STL model first.",
     "Выбрать STL": "Choose an STL file",
     "STL файлы (*.stl)": "STL files (*.stl)",
     "Успех": "Success",
@@ -76,15 +76,15 @@ _EN: dict[str, str] = {
     "Виртуальная печать": "Virtual print",
     "Калибровка": "Calibrate",
     "Калибровка экспозиции": "Exposure calibration",
-    "Пробная печать, которая подберёт экспозицию под вашу смолу": "A test print that finds the exposure for your resin",
+    "Пробная печать, которая подберёт экспозицию под твою смолу": "A test print that finds the exposure for your resin",
     "Сгенерировать калибровку": "Generate calibration",
     "Самый короткий затвердевший столбик:": "Shortest pillar that cured:",
     "Ни один не затвердел": "None cured",
     "Применить": "Apply",
     "мм": "mm",
-    "Сначала сгенерируйте калибровку.": "Generate the calibration first.",
+    "Сначала сгенерируй калибровку.": "Generate the calibration first.",
     "Калибровка работает с физическим движком и круглой колбой.": "Calibration needs the physical engine and a round vial.",
-    "Напечатайте эти кадры, затем откройте «Калибровка» и укажите самый короткий затвердевший столбик.": "Print these frames, then open “Calibrate” and pick the shortest pillar that cured.",
+    "Напечатай эти кадры, затем открой «Калибровка» и укажи самый короткий затвердевший столбик.": "Print these frames, then open “Calibrate” and pick the shortest pillar that cured.",
     "Кнопка «Виртуальная печать» покажет деталь, которая затвердеет из этих кадров.": "The “Virtual print” button shows the part these frames would cure.",
     "Показать, что затвердеет из этих кадров (без принтера)": "Show what these frames would cure (no printer needed)",
     "Модель загружена.": "Model loaded.",
@@ -119,7 +119,7 @@ _PREFIX_EN: tuple[tuple[str, str], ...] = (
     ("ОШИБКА проверки модели: ", "Model check ERROR: "),
     ("Запуск генерации проекций...", "Starting projection generation..."),
     ("Загрузка модели...", "Loading model..."),
-    ("Готово к работе. Загрузите STL-модель, чтобы начать.", "Ready. Load an STL model to begin."),
+    ("Готово к работе. Загрузи STL-модель, чтобы начать.", "Ready. Load an STL model to begin."),
     ("Готово к работе.", "Ready."),
     ("Готово!", "Done!"),
     ("Отменено пользователем.", "Cancelled by user."),
@@ -137,7 +137,7 @@ _PREFIX_RU: tuple[tuple[str, str], ...] = (
     ("Frames ready: ", "Кадры готовы: "),
     ("Starting projection generation...", "Запуск генерации проекций..."),
     ("Loading model...", "Загрузка модели..."),
-    ("Ready. Load an STL model to begin.", "Готово к работе. Загрузите STL-модель, чтобы начать."),
+    ("Ready. Load an STL model to begin.", "Готово к работе. Загрузи STL-модель, чтобы начать."),
     ("Ready.", "Готово к работе."),
     ("Done!", "Готово!"),
     ("Cancelled by user.", "Отменено пользователем."),
@@ -182,30 +182,30 @@ _EN.update({
     "Кадров на оборот": "Frames per turn", "Компенсация размытия": "Blur compensation",
     "Виртуальная печать": "Virtual print", "показать на сцене, что затвердеет": "show on the scene what will cure",
     "совпадение": "match", "запас экспоз.": "exposure margin", "печать": "print",
-    "Пока считается — засветите деталь сами": "While it computes — cure the part yourself",
-    "Свет готов. Доиграйте или идите печатать": "Light is ready. Finish the round or go print",
+    "Пока считается — засвети деталь сами": "While it computes — cure the part yourself",
+    "Свет готов. Доиграй или иди печатать": "Light is ready. Finish the round or go print",
     "Куда выводить": "Output to", "Скорость вращения": "Rotation speed", "Настроить проектор": "Set up the projector",
     "разметка покажет, где должны быть стенки колбы; тест серого — все уровни яркости":
         "the pattern shows where the vial walls must be; the gray test shows every brightness level",
-    "Сначала рассчитайте свет.": "Compute the light first.",
+    "Сначала рассчитай свет.": "Compute the light first.",
     "двигает картинку вверх/вниз, чтобы деталь попала в колбу": "moves the picture up/down so the part lands in the vial",
     "преломление на стенке колбы": "refraction at the vial wall", "преломление на стенке ванны": "refraction at the bath wall",
-    "Опишите свой принтер и смолу. Это делается один раз — дальше только детали.":
+    "Опиши свой принтер и смолу. Это делается один раз — дальше только детали.":
         "Describe your printer and resin. You do this once — after that, just parts.",
-    "Покрутите деталь мышью и проверьте, как она стоит. Если всё ок — дальше.":
+    "Покрути деталь мышью и проверь, как она стоит. Если всё ок — дальше.":
         "Turn the part with the mouse and check how it sits. If it looks right — next.",
-    "Выберите качество и нажмите «Рассчитать свет».": "Pick the quality and press “Compute light”.",
-    "Загрузите STL: перетащите файл на сцену слева или нажмите кнопку внизу.":
+    "Выбери качество и нажми «Рассчитать свет».": "Pick the quality and press “Compute light”.",
+    "Загрузи STL: перетащи файл на сцену слева или нажми кнопку внизу.":
         "Load an STL: drop the file on the scene or press the button below.",
-    "Деталь не помещается — уменьшите масштаб или нажмите «вписать в колбу».":
+    "Деталь не помещается — уменьши масштаб или нажми «вписать в колбу».":
         "The part does not fit — scale it down or press “fit into vial”.",
     "Считаю кадры для каждого угла. Можно пока поиграть ↓": "Computing frames for every angle. Play meanwhile ↓",
-    "Готово. Посмотрите совпадение и запас — и переходите к печати.":
+    "Готово. Посмотри совпадение и запас — и переходи к печати.":
         "Done. Check the match and the margin — then go to printing.",
-    "Проверьте разметку колбы на проекторе и запускайте.": "Check the vial pattern on the projector and start.",
-    "сколько пикселей проектора по ширине занимает колба — проверьте разметкой":
+    "Проверь разметку колбы на проекторе и запускай.": "Check the vial pattern on the projector and start.",
+    "сколько пикселей проектора по ширине занимает колба — проверь разметкой":
         "how many projector pixels the vial spans — check with the pattern",
-    "не знаете? напечатайте шкалу ↓": "not sure? print the ladder ↓", "напечатать шкалу →": "print the ladder →",
+    "не знаешь? напечатай шкалу ↓": "not sure? print the ladder ↓", "напечатать шкалу →": "print the ladder →",
     "натуральный логарифм: α = 2,303·A на 1 мм = 1 / Dp":
         "natural log: α = 2.303·A per 1 mm = 1 / Dp",
     "ниже деталь — меньше слоёв и точнее": "a lower part means fewer layers and more accuracy",
@@ -220,16 +220,16 @@ _EN.update({
     "Готово — к модели": "Done — to the model", "всё сохраняется само": "everything saves itself",
     "нет": "none", "ошибиться сложно": "hard to get wrong", "нужны доза и мощность": "needs dose and power",
     "почти идеально": "nearly perfect", "можно точнее": "could be sharper", "нужна калибровка": "calibrate",
-    "увеличьте сетку": "raise the grid", "Время засветки": "Exposure time", "Обороты": "Revolutions",
-    "Время": "Time", "задайте поглощение, облучённость и дозу": "set absorption, irradiance and dose",
+    "увеличь сетку": "raise the grid", "Время засветки": "Exposure time", "Обороты": "Revolutions",
+    "Время": "Time", "задай поглощение, облучённость и дозу": "set absorption, irradiance and dose",
     "Запас экспозиции": "Exposure margin", "Частота кадров": "Frame rate", "заменить": "replace",
-    "или перетащите файл на сцену": "or drop the file on the scene", "Сначала уместите деталь": "Make the part fit first",
-    "уменьшите масштаб или возьмите колбу шире": "scale it down or use a wider vial", "Дальше — свет →": "Next — light →",
+    "или перетащи файл на сцену": "or drop the file on the scene", "Сначала умести деталь": "Make the part fit first",
+    "уменьши масштаб или возьми колбу шире": "scale it down or use a wider vial", "Дальше — свет →": "Next — light →",
     "проверка модели пройдена": "model check passed", "Остановить": "Stop", "считаю кадры…": "computing frames…",
-    "сначала рассчитайте свет": "compute the light first", "Дальше — печать →": "Next — print →",
+    "сначала рассчитай свет": "compute the light first", "Дальше — печать →": "Next — print →",
     "Рассчитать свет": "Compute light", "Показать на проекторе": "Show on projector", "Сохранить видео": "Save video",
     "Открыть папку кадров": "Open frames folder", "Esc на проекторе — остановить": "Esc on the projector stops it",
-    "кадры готовы": "frames ready", "сначала загрузите модель": "load a model first",
+    "кадры готовы": "frames ready", "сначала загрузи модель": "load a model first",
     "полноэкранно на второй экран, пиксель в пиксель": "full screen on the second display, pixel for pixel",
     "папка PNG для своего софта показа": "a PNG folder for your own player",
     "в ванне": "in a bath", "в воздухе": "in air", "параллельные": "parallel", "конусом": "cone",
@@ -242,7 +242,7 @@ _EN.update({
     "Принтер и смола — настраиваются один раз": "Printer and resin — set up once",
     "журнал ▴": "log ▴", "журнал ▾": "log ▾", "Принтер": "Printer", "зона": "zone", "воксель": "voxel",
     "кадров": "frames", "запас": "margin", "День / ночь": "Day / night",
-    "Перетащите STL сюда": "Drop an STL here", "файл детали в формате STL, в миллиметрах": "the part as an STL file, in millimetres",
+    "Перетащи STL сюда": "Drop an STL here", "файл детали в формате STL, в миллиметрах": "the part as an STL file, in millimetres",
     "Выбрать файл": "Choose file", "Кадры появятся после расчёта света": "Frames appear after the light is computed",
     "Загрузка кадров...": "Loading frames...", "Экспорт в MP4...": "Exporting MP4...",
     "Экспорт тестовой шкалы...": "Exporting the gray test...", "Видео сохранено.": "Video saved.",
@@ -250,20 +250,20 @@ _EN.update({
     "Загружаю кадры…": "Loading frames…", "Не удалось прочитать кадры": "Could not read the frames",
     "Кадры выводятся на второй экран. Esc — остановить.": "Frames go to the second screen. Esc stops.",
     "Готово": "Done", "Видео сохранено": "Video saved", "Сохранить видео ": "Save video",
-    "Второй экран не найден. Подключите проектор как второй монитор (расширенный рабочий стол) или сохраните видео.":
+    "Второй экран не найден. Подключи проектор как второй монитор (расширенный рабочий стол) или сохрани видео.":
         "No second screen found. Connect the projector as a second monitor (extended desktop) or save a video.",
-    "Показывайте его на проекторе во весь экран, без масштабирования.": "Play it full screen on the projector, without scaling.",
-    "Сначала рассчитайте свет.": "Compute the light first.", "Проектор": "Projector",
+    "Показывай его на проекторе во весь экран, без масштабирования.": "Play it full screen on the projector, without scaling.",
+    "Сначала рассчитай свет.": "Compute the light first.", "Проектор": "Projector",
     "Создаю тестовую гайку M20...": "Building the M20 test nut...", "модель": "model",
     "мышь — двигать, клик — старт": "mouse — move, click — start",
     "Засветка": "Cure", "Слои": "Layers", "Фотон": "Photon",
-    "кирпичи — силуэт вашей детали; фотон засвечивает воксели": "bricks are your part's silhouette; the photon cures voxels",
-    "укладывайте воксели в колбу без щелей": "stack voxels in the vial without gaps",
-    "проведите фотон через стенки, не задев стекло": "guide the photon through the walls without touching the glass",
+    "кирпичи — силуэт твоей детали; фотон засвечивает воксели": "bricks are your part's silhouette; the photon cures voxels",
+    "укладывай воксели в колбу без щелей": "stack voxels in the vial without gaps",
+    "проведи фотон через стенки, не задев стекло": "guide the photon through the walls without touching the glass",
     "←/→ — двигать, ↑ — повернуть, ↓ — быстрее": "←/→ move, ↑ rotate, ↓ drop",
     "клик или пробел — подлететь вверх": "click or Space — fly up",
     "появится после расчёта света": "appears after the light is computed",
-    "результат устарел — пересчитайте свет": "result is out of date — compute the light again",
+    "результат устарел — пересчитай свет": "result is out of date — compute the light again",
     "показать в 3D, что затвердеет": "show in 3D what will cure",
 })
 
@@ -281,9 +281,9 @@ _EN_TEMPLATES: dict[str, str] = {
     "пиксель {} мм на оси колбы": "pixel {} mm at the vial axis",
     "пиксель {} мм на оси колбы — шире экрана проектора!": "pixel {} mm at the vial axis — wider than the projector screen!",
     "до оси ≈ {} мм · по высоте у краёв детали размытие до {} мм": "to the axis ≈ {} mm · top and bottom of the part blur up to {} mm",
-    "до оси ≈ {} мм · по высоте у краёв детали размытие до {} мм — поставьте проектор дальше":
+    "до оси ≈ {} мм · по высоте у краёв детали размытие до {} мм — поставь проектор дальше":
         "to the axis ≈ {} mm · top and bottom of the part blur up to {} mm — move the projector farther",
-    "до оси {} мм — ближе колбы, так не бывает: проверьте числа": "to the axis {} mm — closer than the vial, impossible: check the numbers",
+    "до оси {} мм — ближе колбы, так не бывает: проверь числа": "to the axis {} mm — closer than the vial, impossible: check the numbers",
     "кадры подрезкиваются под размытие {} мм": "frames are pre-sharpened for {} mm blur",
     "картинка на экране: x = {} px": "picture on screen: x = {} px",
     "серый → свет по степени {}; кадры пересчитываются": "gray → light with power {}; frames are converted",
@@ -301,7 +301,7 @@ _EN_TEMPLATES: dict[str, str] = {
     "шаг {}° между кадрами": "{}° between frames",
     "подрезка кадров под {} мм": "frames pre-sharpened for {} mm",
     "кадр каждые {} мс · проектор {} Гц": "a frame every {} ms · projector {} Hz",
-    "кадр каждые {} мс · проектор {} Гц — больше {} Гц, проверьте проектор": "a frame every {} ms · projector {} Hz — over {} Hz, check the projector",
+    "кадр каждые {} мс · проектор {} Гц — больше {} Гц, проверь проектор": "a frame every {} ms · projector {} Hz — over {} Hz, check the projector",
     "кадр каждые {} мс · проектор {} Гц — выше частоты проектора ({} Гц)": "a frame every {} ms · projector {} Hz — above the projector refresh rate ({} Hz)",
     "кадр на экране ≥ {} мс": "a frame stays on screen ≥ {} ms",
     "файл {}×{} — показывать во весь экран без масштабирования": "a {}×{} file — play full screen without scaling",
@@ -322,12 +322,12 @@ _EN_TEMPLATES: dict[str, str] = {
         "Fits: {} mm of {}, height {} of {} — right at the wall, better closer to the axis",
     "Шире колбы: деталь уходит на {} мм от оси, внутри {}": "Wider than the vial: the part reaches {} mm from the axis, inside is {}",
     "Выше поля: {} мм при доступных {}": "Taller than the field: {} mm, available {}",
-    "{} столбиков с дозой {}–{} %: выбираете лучший, доза обновится сама": "{} pillars at {}–{} % dose: pick the best one, the dose updates itself",
+    "{} столбиков с дозой {}–{} %: выбираешь лучший, доза обновится сама": "{} pillars at {}–{} % dose: pick the best one, the dose updates itself",
     "или открыть тестовую гайку M{}": "or open the M{} test nut",
     "есть в паспорте проектора, обычно {},{}–{},{}": "in the projector datasheet, usually {}.{}–{}.{}",
     "есть в паспорте проектора, обычно {}–{}": "in the projector datasheet, usually {}–{}",
-    "не знаете? оставьте {}": "not sure? leave {}",
-    "Сначала рассчитайте свет на шаге {}.": "Compute the light in step {} first.",
+    "не знаешь? оставь {}": "not sure? leave {}",
+    "Сначала рассчитай свет на шаге {}.": "Compute the light in step {} first.",
     "BEST {}": "BEST {}",
 }
 _EN.update({
@@ -341,16 +341,16 @@ _EN.update({
     "Загрузка модели...": "Loading model...", "Создаю тестовую гайку M20...": "Building the M20 test nut...",
     "Ошибка загрузки.": "Loading failed.", "Ошибка генерации.": "Computation failed.", "Видео собрано.": "Frames loaded.",
     "Процесс расчёта завершился с кодом": "The compute process exited with code",
-    "Время печати не рассчитано: задайте поглощение смолы (затухание), облучённость проектора и дозу гелеобразования смолы.":
+    "Время печати не рассчитано: задай поглощение смолы (затухание), облучённость проектора и дозу гелеобразования смолы.":
         "Print time not computed: set resin absorption, projector irradiance and the resin gel dose.",
-    "Нет экспозиции, при которой вся деталь печатается чисто (окно процесса отрицательное). Увеличьте число кадров или сетку либо используйте иммерсию.":
+    "Нет экспозиции, при которой вся деталь печатается чисто (окно процесса отрицательное). Увеличь число кадров или сетку либо используй иммерсию.":
         "No exposure prints the whole part cleanly (negative process window). Use more frames, a finer grid or immersion.",
 })
 _EN_TEMPLATES.update({
-    "Меньше {} оборотов: ошибки старта/остановки и синхронизации станут заметными. Уменьшите яркость или мощность проектора.":
+    "Меньше {} оборотов: ошибки старта/остановки и синхронизации станут заметными. Уменьши яркость или мощность проектора.":
         "Fewer than {} revolutions: start/stop and sync errors become visible. Lower the projector brightness or power.",
     "{}% детали лежит дальше r = {} мм от оси: из-за преломления туда приходят лучи не со всех сторон. "
-    "Сдвиньте деталь к оси или используйте иммерсию.":
+    "Сдвинь деталь к оси или используй иммерсию.":
         "{}% of the part lies beyond r = {} mm from the axis: refraction keeps some directions from reaching it. "
         "Move the part towards the axis or use immersion.",
     "Чёрный уровень проектора даёт больше {}% дозы гелеобразования по всему объёму.":
@@ -363,7 +363,7 @@ _EN.update({
     "Доза в смоле": "Dose in the resin", "средний слой детали": "middle layer of the part",
     "розовое — затвердеет · пунктир — модель": "bright — will cure · dashed — the model",
     "экспозиция по плану": "exposure as planned", "нет данных": "no data",
-    "летите сквозь свет вашей печати": "fly through the light of your print",
+    "летишь сквозь свет твоей печати": "fly through the light of your print",
 })
 _EN_TEMPLATES.update({
     "экспозиция +{} %": "exposure +{} %", "экспозиция -{} %": "exposure -{} %",
@@ -387,21 +387,21 @@ _EN.update({
     "частота проектора": "projector refresh rate", "облучённость": "irradiance", "контраст": "contrast",
     "n стекла": "glass n", "колба на экране": "vial on screen", "сдвиг по X": "X offset",
     "сдвиг по Y": "Y offset",
-    "Подождите: идёт экспорт.": "Please wait: an export is running.",
+    "Подожди: идёт экспорт.": "Please wait: an export is running.",
     "Экспорт для принтера (.spin)": "Export for printer (.spin)",
     "Файл для принтера сохранён.": "Printer file saved.", "Файл для принтера сохранён": "Printer file saved",
-    "Скопируйте его на флешку принтера или отправьте по сети.":
+    "Скопируй его на флешку принтера или отправь по сети.":
         "Copy it to the printer's USB stick or send it over the network.",
     "Отправлено на принтер.": "Sent to the printer.", "Отправлено на принтер": "Sent to printer",
     "Не удалось подготовить файл для принтера.": "Could not prepare the printer file.",
     "Не удалось отправить на принтер": "Could not send to the printer",
     "Упаковка файла .spin...": "Packing the .spin file...",
     "Отправка на принтер": "Sending to printer",
-    "Поиск по mDNS недоступен (pip install zeroconf): проверяю spinprinter.local.":
-        "mDNS search is not available (pip install zeroconf): checking spinprinter.local.",
+    "Поиск по mDNS недоступен (pip install zeroconf): проверяю spinslicer.local и spinprinter.local.":
+        "mDNS search is not available (pip install zeroconf): checking spinslicer.local and spinprinter.local.",
     "Ищу принтеры в сети…": "Looking for printers on the network…",
     "Найдено принтеров:": "Printers found:",
-    "Принтер в сети не найден. Введите его адрес.": "No printer found on the network. Enter its address.",
+    "Принтер в сети не найден. Введи его адрес.": "No printer found on the network. Enter its address.",
     "Адрес принтера": "Printer address",
     "IP-адрес или имя принтера, например spinprinter.local": "IP address or name of the printer, e.g. spinprinter.local",
     "Принтер недоступен:": "Printer not reachable:",
@@ -583,7 +583,7 @@ def num(value: float, digits: int = 1) -> str:
     return text.replace(".", ",") if _language == "ru" else text
 
 _EN.update({
-    "Настройки или деталь изменились — кадры устарели. Пересчитайте свет.":
+    "Настройки или деталь изменились — кадры устарели. Пересчитай свет.":
         "Settings or the part changed — the frames are out of date. Compute the light again.",
     "Пересчитать свет": "Compute light again",
     "старые кадры не подходят к новым настройкам": "the old frames do not match the new settings",
@@ -591,19 +591,47 @@ _EN.update({
 
 # The printer: connect, write back, print with a yes on the printer, USB stick.
 _EN.update({
-    "Обновите принтер": "Update the printer",
+    "Обнови принтер": "Update the printer",
     "Программа этого принтера не спрашивает «Печатать?» на его экране и начала бы печать "
-    "сразу. Обновите SpinPrinter (на Raspberry Pi ещё раз команду установки) или "
-    "печатайте с флешки.":
+    "сразу. Обнови SpinPrinter (на Raspberry Pi ещё раз команду установки) или "
+    "печатай с флешки.":
         "This printer's software does not ask \"Print?\" on its screen and would start at once. "
         "Update SpinPrinter (run the install command on the Raspberry Pi again) or print from a USB stick.",
     "Проверяю принтер…": "Checking the printer…",
-    "Принтер сейчас печатает. Дождитесь конца или остановите печать на принтере.":
+    "Принтер сейчас печатает. Дождись конца или останови печать на принтере.":
         "The printer is printing. Wait until it is done or stop the print on the printer.",
     "Деталь": "Part", "Положение": "Position", "Расчёт": "Calculation", "Проверка": "Check", "Доза": "Dose",
     "Оптика и сдвиг": "Optics and shift", "Результат": "Result",
     "Качество": "Quality", "сетка": "grid", "шаг": "step",
     "Подключить": "Connect", "Отключить": "Disconnect", "Принтер отключён.": "Printer disconnected.",
+    # the printer's refusals by code, the print step's progress card, checks and the answer
+    "Принтер занят другой печатью.": "The printer is busy with another print.",
+    "На принтере нет такого файла.": "The printer has no such file.",
+    "Файл на принтере повреждён: отправь его ещё раз.": "The file on the printer is damaged: send it again.",
+    "Экран принтера не подключён: подтвердить печать негде.": "The printer's screen is not connected: nowhere to confirm.",
+    "Проектор не подключён к принтеру (HDMI).": "The projector is not connected to the printer (HDMI).",
+    "Видео для другого направления вращения: на принтере нужен движок angle.":
+        "The video turns the other way: the printer needs the angle engine.",
+    "Прошивка платы принтера не спрашивает «Печатать?»: обнови её.":
+        "The printer's board firmware does not ask \"Print?\": update it.",
+    "Принтер не понял запрос.": "The printer did not understand the request.",
+    "Принтер отказал запросу из этой программы.": "The printer refused a request from this program.",
+    "Ждёт подтверждения на экране принтера": "Waits for a yes on the printer's screen",
+    "джойстик вправо — печатать": "joystick right to print",
+    "Разгон": "Spin-up", "Прогрев проектора": "Projector warm-up", "Пауза до света": "Pause before the light",
+    "Подготовка": "Getting ready", "разгон, прогрев, пауза до света": "spin-up, warm-up, pause before the light",
+    "оборот": "turn", "из": "of", "осталось": "left",
+    "кадры": "frames", "проектор": "projector", "проектор принтера": "the printer's projector",
+    "профиль этого принтера": "this printer's profile", "профиль другого принтера": "another printer's profile",
+    "об.": "turns", "по расчёту": "as planned", "доза по расчёту": "the dose as planned", "вместо": "instead of",
+    "место на принтере": "space on the printer", "ГБ": "GB", "Стоп": "Stop",
+    "Как получилась деталь?": "How did the part come out?",
+    "поправка смолы на принтере сброшена": "the printer's correction for this resin is reset",
+    "Поправка на принтере не сброшена:": "The printer's correction was not reset:",
+    "применить": "apply", "по": "from", "печатям на этом принтере": "prints on this printer",
+    "Недосвет": "Under", "Пересвет": "Over",
+    "Не знаю, пропустить": "Not sure, skip", "Ответ отправлен на принтер": "Answer sent to the printer",
+    "поправка": "correction", "Ответ не отправлен:": "Answer not sent:",
     "Подключаюсь к": "Connecting to", "Подключён:": "Connected:",
     "Не подключён:": "Not connected:", "не подключён": "not connected", "не отвечает": "does not answer",
     "из принтера:": "from the printer:", "ничего нового": "nothing new",
@@ -615,8 +643,8 @@ _EN.update({
     "Настройки записаны в принтер.": "Settings written to the printer.",
     "Не удалось записать в принтер": "Could not write to the printer",
     "Принтер не подключён": "No printer connected",
-    "Подключите принтер: Настройки → Принтер → «Подключить».": "Connect a printer: Settings → Printer → Connect.",
-    "Подключите принтер: Настройки → Принтер": "Connect a printer: Settings → Printer",
+    "Подключи принтер: Настройки → Принтер → «Подключить».": "Connect a printer: Settings → Printer → Connect.",
+    "Подключи принтер: Настройки → Принтер": "Connect a printer: Settings → Printer",
     "Печать на SpinPrinter": "Print on a SpinPrinter", "Напечатать": "Print", "На флешку": "To USB stick",
     "стоп": "stop", "сохранить .spin в папку…": "save the .spin to a folder…",
     "файл .spin уходит на принтер, его экран спросит «Печатать?»":
@@ -625,29 +653,29 @@ _EN.update({
     "Принтер не назвал загруженный файл.": "The printer did not name the uploaded file.",
     "Принтер не принял печать:": "The printer refused the print:",
     "Принтер уже печатает отправленную деталь.": "The printer is already printing the part sent.",
-    "Подтвердите печать на экране принтера: джойстик вправо.":
+    "Подтверди печать на экране принтера: джойстик вправо.":
         "Confirm on the printer's screen: push the joystick right.",
     "Принтер готовится: разгон, прогрев, пауза до света…": "The printer gets ready: spin-up, warm-up, dark pause…",
     "оборот": "turn", "из": "of", "осталось": "left",
     "Печать отменена на экране принтера.": "Print cancelled on the printer's screen.",
     "Принтер не дождался ответа на экране (10 минут).": "Nobody answered on the printer's screen (10 minutes).",
     "На принтере запустили другую печать.": "Another print was started on the printer.",
-    "Готово! Ответьте на принтере, как получилось.": "Done! Tell the printer how it came out.",
+    "Готово! Ответь на принтере, как получилось.": "Done! Tell the printer how it came out.",
     "Печать остановлена.": "Print stopped.", "Ошибка печати:": "Print error:",
     "Нет связи с принтером:": "Lost the printer:", "Остановить печать?": "Stop the print?",
     "Свет погаснет, деталь останется недосвеченной.": "The light goes off, the part stays underexposed.",
     "Не удалось остановить": "Could not stop", "Файл не отправлен.": "The file was not sent.",
     "Флешка не найдена": "No USB stick found",
-    "Вставьте флешку в компьютер. Пока сохраню файл туда, куда скажете.":
+    "Вставь флешку в компьютер. Пока сохраню файл туда, куда скажешь.":
         "Plug a USB stick into the computer. For now I will save the file where you say.",
     "На какую флешку?": "Which USB stick?", "Флешка": "USB stick", "Файл уже есть": "The file is already there",
     "На флешке уже есть": "The stick already has", "Заменить?": "Replace it?",
     "Записываю на флешку": "Writing to the USB stick", "Записано на флешку": "Written to the USB stick",
     "Файл записан на флешку": "The file is on the USB stick",
-    "Извлечь флешку? Потом вставьте её в Raspberry Pi принтера.":
+    "Извлечь флешку? Потом вставь её в Raspberry Pi принтера.":
         "Eject the stick? Then plug it into the printer's Raspberry Pi.",
     "Флешку можно вынимать.": "The stick can be removed.",
-    "Не удалось извлечь: извлеките её сами.": "Could not eject: eject it yourself.",
+    "Не удалось извлечь: извлеки её сами.": "Could not eject: eject it yourself.",
 })
 
 # The interface rework: Settings in tabs, Light in three stages, Print in two ways.
@@ -662,13 +690,13 @@ _EN.update({
     "Деталь или настройки изменились: прошлый результат устарел.":
         "The part or the settings changed: the last result is out of date.",
     "пересчитать с другими параметрами": "compute again with other parameters",
-    "Пока ждёте — засветите деталь сами": "While you wait, cure the part yourself",
+    "Пока ждёте — засвети деталь сами": "While you wait, cure the part yourself",
     "Параметры расчёта": "Calculation parameters", "Игра": "Game",
     "скрыть замечания": "hide the notes", "замечаний": "notes", "показать": "show", "скрыть": "hide",
     "журнал": "log", "скрыть журнал": "hide log", "остановить печать": "stop the print",
     "на проектор этого компьютера": "on this computer's projector", ".spin в папку": ".spin to a folder",
     "Рассчитать свет →": "Compute the light →", "без кадров печатать нечего": "nothing to print without frames",
-    "/мм": "/mm", "кадры устарели — пересчитайте свет": "the frames are out of date: compute the light again",
+    "/мм": "/mm", "кадры устарели — пересчитай свет": "the frames are out of date: compute the light again",
     "принтер не подключён: Настройки → Принтер. На флешку можно и так":
         "no printer connected: Settings → Printer. The USB stick works anyway",
     "файл уйдёт на принтер, его экран спросит «Печатать?»":

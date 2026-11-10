@@ -63,7 +63,7 @@ DARK = Palette(
     dark=True, bg="#0E0D10", view="#09080B", surface="#19161C", surface_alt="#26222B", seg_on="#3B3441",
     input="#0F0E12", border="#403A46", border_soft="#2E2A33", text="#F6F2F4", muted="#C2BBBF", dim="#938C91",
     accent="#FF8DB5", accent_hover="#FFA6C6", accent_pressed="#E9799F", accent_soft="#3A1F2D",
-    action="#F4A6BE", on_action="#3A1022", warn="#FFB86B", sketch="#D9D1D5", resin="#2A2230", liquid="#5FA8C8",
+    action="#FF8DB5", on_action="#3A1022", warn="#FFB86B", sketch="#D9D1D5", resin="#2A2230", liquid="#5FA8C8",
     track="#2C2630", sun="#F1ECEE",
     card="#25212A", card_border="#38323E", well="#131116", well_border="#2B2630",
     raised="#3A3340", raised_border="#4E4656",
@@ -71,9 +71,9 @@ DARK = Palette(
 LIGHT = Palette(
     dark=False, bg="#F6F4F0", view="#EDEAE4", surface="#F6F4F0", surface_alt="#E7E3DC", seg_on="#FFFFFF",
     input="#FFFFFF", border="#DDD8D1", border_soft="#E7E3DC", text="#19171A", muted="#6C686B", dim="#A39E98",
-    accent="#E5452B", accent_hover="#EE5C43", accent_pressed="#C93A22", accent_soft="#F7DDD5",
+    accent="#D63A75", accent_hover="#E0558A", accent_pressed="#B92E62", accent_soft="#F8DCE6",
     action="#19171A", on_action="#F6F4F0", warn="#B86A00", sketch="#3A3537", resin="#C9C2BA", liquid="#7FA4B8",
-    track="#F3D3C6", sun="#F09A1E",
+    track="#F3CFDC", sun="#F09A1E",
 )
 
 # Legacy names still imported by older widgets.
@@ -175,7 +175,7 @@ QFrame#statTile {{ background-color: {p.card}; border: 1px solid {p.card_border}
 QFrame#settingsBlock QFrame#statTile {{ background-color: {p.well}; border: 1px solid {p.well_border}; }}
 QWidget#stepper {{ background-color: {p.well}; border: 1px solid {p.well_border}; border-radius: 11px; }}
 QLabel#tileKey {{ font-size: 11px; color: {p.muted}; }}
-QLabel#tileValue {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 19px; color: {p.text}; }}
+QLabel#tileValue {{ font-family: "{FONT_UI}"; font-weight: 800; font-size: 19px; color: {p.text}; }}
 QLabel#tileValue[warn="true"] {{ color: {p.warn}; }}
 QLabel#tileNote {{ font-size: 11px; color: {p.muted}; }}
 QLabel#printerState {{ font-weight: 600; color: {p.text}; }}
@@ -187,8 +187,8 @@ QPushButton#smallLink {{
 QPushButton#smallLink:hover {{ color: {p.accent}; }}
 QPushButton#smallLink:disabled {{ color: {p.dim}; }}
 QPushButton#secondaryAction {{
-    background-color: transparent; color: {p.text}; border: 1.5px solid {p.border}; border-radius: 18px;
-    min-height: 54px; padding: 0 18px; font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-size: 15px; font-weight: {DISPLAY_WEIGHT};
+    background-color: transparent; color: {p.text}; border: 1.5px solid {p.border}; border-radius: 14px;
+    min-height: 44px; padding: 0 18px; font-family: "{FONT_UI}"; font-size: 15px; font-weight: 800;
 }}
 QPushButton#secondaryAction:hover {{ border-color: {p.accent}; color: {p.accent}; }}
 QPushButton#secondaryAction:disabled {{ color: {p.dim}; border-color: {p.border_soft}; }}
@@ -200,14 +200,19 @@ QToolTip {{
 QLabel {{ color: {p.muted}; background: transparent; }}
 QLabel#appTitle, QLabel#projectName {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 15px; color: {p.text}; }}
 QLabel#projectSub {{ font-family: "{FONT_MONO}"; font-size: 11px; color: {p.muted}; }}
-QLabel#panelTitle {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 20px; color: {p.text}; }}
+QLabel#panelTitle {{ font-family: "{FONT_UI}"; font-weight: 800; font-size: 20px; color: {p.text}; }}
 QLabel#panelLead {{ color: {p.muted}; }}
 QLabel#todoLabel {{ color: {p.text}; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: {p.surface_alt}; border: 1px solid {p.border_soft}; }}
-QLabel#emptyTitle {{ font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-weight: {DISPLAY_WEIGHT}; font-size: 26px; color: {p.text}; }}
+QLabel#emptyTitle {{ font-family: "{FONT_UI}"; font-weight: 800; font-size: 26px; color: {p.text}; }}
 QLabel#planLabel {{ font-family: "{FONT_MONO}"; font-size: 12px; color: {p.text}; }}
 QWidget#printStage {{ background-color: {p.view}; }}
 QSplitter::handle:vertical {{ height: 6px; background: {p.border_soft}; }}
-QLabel#sectionHead {{ font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: {p.accent if p.dark else p.muted}; padding-top: 14px; padding-bottom: 2px; }}
+QLabel#sectionHead {{ font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: {p.muted}; padding-top: 14px; padding-bottom: 2px; }}
+QLabel#progStage {{ font-size: 15px; font-weight: 700; color: {p.text}; }}
+QLabel#printChecks {{ font-size: 12px; }}
+QPushButton#dangerAction {{ min-height: 32px; padding: 0 16px; border-radius: 10px; font-weight: 700;
+    background-color: transparent; color: {p.warn}; border: 1px solid {p.warn}; }}
+QPushButton#dangerAction:hover {{ background-color: {p.warn}; color: {p.bg}; }}
 QLabel#rowLabel {{ color: {p.text}; font-weight: 600; }}
 QLabel#rowValue {{ font-family: "{FONT_MONO}"; color: {p.text}; font-weight: 500; }}
 QLabel#rowEffect {{ font-size: 12px; color: {p.muted}; }}
@@ -268,8 +273,8 @@ QPushButton#linkButton {{
 }}
 QPushButton#linkButton:hover {{ color: {p.accent_hover}; }}
 QPushButton#primaryAction, QPushButton#generateButton {{
-    background-color: {p.action}; color: {p.on_action}; border: none; border-radius: 18px;
-    min-height: 54px; font-family: "{FONT_DISPLAY}", "{FONT_UI}"; font-size: 15px; font-weight: {DISPLAY_WEIGHT};
+    background-color: {p.action}; color: {p.on_action}; border: none; border-radius: 14px;
+    min-height: 44px; font-family: "{FONT_UI}"; font-size: 15px; font-weight: 800;
 }}
 QPushButton#primaryAction:hover, QPushButton#generateButton:hover {{ background-color: {p.accent_hover if p.dark else "#2A272B"}; }}
 QPushButton#primaryAction:disabled {{ background-color: {p.surface_alt}; color: {p.dim}; }}

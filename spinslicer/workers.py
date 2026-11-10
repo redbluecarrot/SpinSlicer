@@ -224,7 +224,7 @@ class VideoAssembleWorker(QThread):
             import cv2
         except ImportError:
             self.failed.emit(
-                "Не установлен OpenCV. Выполните: pip install opencv-python-headless"
+                "Не установлен OpenCV. Выполни: pip install opencv-python-headless"
             )
             return
 
@@ -438,7 +438,7 @@ class VideoExportWorker(QThread):
         try:
             import cv2
         except ImportError:
-            self.failed.emit("Не установлен OpenCV. Выполните: pip install opencv-python-headless")
+            self.failed.emit("Не установлен OpenCV. Выполни: pip install opencv-python-headless")
             return
 
         temporary_path: Optional[str] = None
@@ -484,7 +484,7 @@ class VideoExportWorker(QThread):
                 fourcc = getattr(cv2, "VideoWriter_fourcc")(*"mp4v")
                 writer = cv2.VideoWriter(temporary_path, fourcc, self.fps, (w, h), isColor=True)
                 if not writer.isOpened():
-                    raise RuntimeError("Не удалось открыть VideoWriter — проверьте кодек/путь сохранения.")
+                    raise RuntimeError("Не удалось открыть VideoWriter — проверь кодек/путь сохранения.")
                 done = self._feed(lambda frame: writer.write(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)), (w, h))
                 writer.release()
                 writer = None

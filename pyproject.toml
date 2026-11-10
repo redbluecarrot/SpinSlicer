@@ -43,10 +43,11 @@ dependencies = [
     "opencv-python-headless==5.0.0.93",
     "matplotlib==3.11.1",
     "imageio-ffmpeg==0.7.0",
+    "zeroconf==0.154.0",   # finds SpinPrinters on the network (_spinprinter._tcp)
 ]
 
 [project.optional-dependencies]
-# Finds SpinPrinters by mDNS (_spinprinter._tcp); without it an address typed by hand works.
+# kept for old install commands (pip install spinslicer[network]); zeroconf is a dependency now
 network = ["zeroconf>=0.130"]
 
 [project.urls]

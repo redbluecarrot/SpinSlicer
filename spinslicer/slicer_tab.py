@@ -94,7 +94,7 @@ class SlicerTab(QWidget):
         self._wire_signals()
 
         self._viewport.update_vat(self._process_panel.vat_diameter_mm())
-        self.progress.emit(0.0, "Готово к работе. Загрузите STL-модель, чтобы начать.")
+        self.progress.emit(0.0, "Готово к работе. Загрузи STL-модель, чтобы начать.")
 
     # =======================================================================
     # Построение интерфейса
@@ -124,7 +124,7 @@ class SlicerTab(QWidget):
         toolbar.addWidget(self.virtual_btn)
 
         self.calibrate_btn = QPushButton(tr("Калибровка"))
-        self.calibrate_btn.setToolTip(tr("Пробная печать, которая подберёт экспозицию под вашу смолу"))
+        self.calibrate_btn.setToolTip(tr("Пробная печать, которая подберёт экспозицию под твою смолу"))
         self.calibrate_btn.clicked.connect(self._on_calibrate_clicked)
         toolbar.addWidget(self.calibrate_btn)
         toolbar.addStretch(1)
@@ -435,7 +435,7 @@ class SlicerTab(QWidget):
         self._reset_virtual_print()
 
         if self._model_node is None:
-            QMessageBox.warning(self, tr("Внимание"), tr("Сначала загрузите STL-модель."))
+            QMessageBox.warning(self, tr("Внимание"), tr("Сначала загрузи STL-модель."))
             return
 
         if self._model_node.source_path:
@@ -596,7 +596,7 @@ class SlicerTab(QWidget):
         if has_virtual:
             message += "\n\n" + tr("Кнопка «Виртуальная печать» покажет деталь, которая затвердеет из этих кадров.")
         if getattr(self, "_calibration_run", False):
-            message += "\n\n" + tr("Напечатайте эти кадры, затем откройте «Калибровка» и укажите самый короткий затвердевший столбик.")
+            message += "\n\n" + tr("Напечатай эти кадры, затем открой «Калибровка» и укажи самый короткий затвердевший столбик.")
         QMessageBox.information(self, tr("Успех"), message)
 
     def _on_generation_failed(self, msg: str) -> None:
