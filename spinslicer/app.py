@@ -385,6 +385,8 @@ class CALSlicerMainWindow(QMainWindow):
         panel.settingsChanged.connect(self._refresh_nav)
         panel.settingsChanged.connect(self._apply_canvas)
         panel.scaleRequested.connect(self.slicer_tab.set_scale_pct)
+        panel.toolChanged.connect(self.slicer_tab._on_transform_mode_changed)
+        self.slicer_tab._on_transform_mode_changed(panel.tool_mode())
         panel.orientationRequested.connect(self.slicer_tab.set_orientation)
         panel.virtualToggled.connect(self.slicer_tab.virtual_btn.setChecked)
         panel.settingsChanged.connect(self.slicer_tab.refresh_model_state)
@@ -442,6 +444,15 @@ class CALSlicerMainWindow(QMainWindow):
             self.slicer_tab._on_center()
         elif action == "autofit":
             self.slicer_tab._on_autofit()
+        elif action.startswith("rot:"):
+            _, axis, degrees = action.split(":")
+            self.slicer_tab.rotate_by(int(axis), float(degrees))
+        elif action == "lay_flat":
+            self.slicer_tab.lay_flat()
+        elif action.startswith("place:"):
+            self.slicer_tab.place_z(action.split(":", 1)[1])
+        elif action == "reset_transform":
+            self.slicer_tab._on_reset_transform()
         elif action == "export":
             self._apply_output_light()
             self.projector_tab._on_save_clicked()

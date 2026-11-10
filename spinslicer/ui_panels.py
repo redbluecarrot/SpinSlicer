@@ -307,6 +307,7 @@ class ProcessSettingsPanel(QWidget):
     scaleRequested = pyqtSignal(float)
     orientationRequested = pyqtSignal(int)
     virtualToggled = pyqtSignal(bool)
+    toolChanged = pyqtSignal(str)          # scale | rotate | move: the gizmo on the scene follows
     hintsToggled = pyqtSignal(bool)
     lineStyleChanged = pyqtSignal(str)
     languageChanged = pyqtSignal(int)
@@ -703,28 +704,98 @@ class ProcessSettingsPanel(QWidget):
         self.r_file.label.setProperty("_spinslicer_skip_text_translation", True)
         self.scale = Stepper(1.0, 2000.0, 100.0, 5.0, 0, "%")
         self.r_scale = self._row("Масштаб", self.scale)
+        # The three presets gave way to the turn buttons; the control stays for its callers.
         self.orientation = Segmented([("как в файле", 0), ("на бок", 1), ("на торец", 2)])
-        self.r_orient = self._row("Ориентация", self.orientation, stacked=True,
-                                  hint="ниже деталь — меньше слоёв и точнее")
+        self.r_orient = self._row("Ориентация", self.orientation, stacked=True)
+        self.r_orient.setParent(self)
+        self.r_orient.hide()
         self.preserve_internal_voids = Switch(True)
-        self.r_voids = self._row("Отверстия и резьба", self.preserve_internal_voids)
-        places = QWidget()
-        pl = QHBoxLayout(places)
-        pl.setContentsMargins(0, 0, 0, 0)
-        pl.setSpacing(16)
-        pl.addWidget(self._link("в центр", "center"))
-        pl.addWidget(self._link("вписать в колбу", "autofit"))
-        self.r_place = self._row("Положение", places)
+        self.r_voids = self._row("Печатать отверстия и резьбу", self.preserve_internal_voids,
+                                 "выключи, если нужна сплошная деталь")
+        # The number fields are the transform panel's own (its signals and its sync stay as they
+        # were); here they are laid out by tool instead of in one nine-field grid.
         self.transform_panel = ObjectTransformPanel(self)
-        self._model_rows = [self.r_orient, self.r_scale, self.r_place]
-        self._model_expander = self._expander("Точная позиция", self.transform_panel)
-        self._add_page("model", [self._section("Деталь", [self.r_file, self.r_voids]),
-                                 self._section("Положение", [*self._model_rows, self._model_expander])])
+        self.transform_panel.hide()
+        tp = self.transform_panel
+
+        def strip(*widgets: QWidget) -> QWidget:
+            box = QWidget()
+            lay = QHBoxLayout(box)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setSpacing(8)
+            for w in widgets:
+                if isinstance(w, QDoubleSpinBox):
+                    w.setFixedWidth(64)
+                lay.addWidget(w)
+            return box
+
+        def key(text: str, action: str) -> QPushButton:
+            b = QPushButton(text)
+            b.setObjectName("nudgeButton")
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setProperty("_spinslicer_skip_text_translation", True)
+            b.clicked.connect(lambda: self.actionRequested.emit(action))
+            return b
+
+        # Размер: the scale and the size in millimetres.
+        self.r_size = self._row("Размер, мм", strip(tp.size_x, tp.size_y, tp.size_z), "ширина × глубина × высота")
+        self.r_fit = self._row("Под колбу", self._link("вписать в колбу", "autofit"))
+        size_page = self._group([self.r_scale, self.r_size, self.r_fit])
+        # Поворот: a quarter turn about each axis, or any angle.
+        turns = []
+        for axis, (name, box) in enumerate((("X", tp.rot_x), ("Y", tp.rot_y), ("Z", tp.rot_z))):
+            row = self._row(f"Вокруг {name}", strip(key("−90°", f"rot:{axis}:-90"), box, key("+90°", f"rot:{axis}:90")))
+            turns.append(row)
+        self.r_flat = self._row("Самое низкое положение", self._link("положить плашмя", "lay_flat"),
+                                "ниже деталь — меньше слоёв и точнее")
+        turn_page = self._group([*turns, self.r_flat])
+        # Положение: from the axis, and along it.
+        self.r_axis = self._row("От оси, мм", strip(tp.pos_x, tp.pos_y, self._link("на ось", "center")))
+        self.r_height = self._row("По высоте, мм",
+                                  strip(self._link("вниз", "place:low"), self._link("в середину", "place:mid"),
+                                        self._link("вверх", "place:high"), tp.pos_z))
+        place_page = self._group([self.r_axis, self.r_height])
+
+        self.tool = Segmented([("Размер", "scale"), ("Поворот", "rotate"), ("Положение", "move")], 0)
+        self._tool_stack = QStackedWidget()
+        for page in (size_page, turn_page, place_page):
+            self._tool_stack.addWidget(page)
+        self.tool.changed.connect(self._on_tool)
+        self._fit_tool_stack(0)
+        tool_head = QWidget()
+        thl = QVBoxLayout(tool_head)
+        thl.setContentsMargins(0, 2, 0, 6)
+        thl.addWidget(self.tool)
+        self.r_reset = self._row("", self._link("сбросить размер, поворот и положение", "reset_transform"))
+        self._model_rows = [self._section("Размер и положение", [tool_head, self._tool_stack, self.r_reset]),
+                            self._section("Что печатать", [self.r_voids])]
+        self._add_page("model", [self._section("Деталь", [self.r_file]), *self._model_rows])
+
+    def tool_mode(self) -> str:
+        return str(self.tool.currentData())
+
+    def _fit_tool_stack(self, index: int) -> None:
+        """The stack is as tall as the tool on show, not as the tallest of the three."""
+        for i in range(self._tool_stack.count()):
+            page = self._tool_stack.widget(i)
+            if page is not None:
+                page.setSizePolicy(QSizePolicy.Policy.Preferred,
+                                   QSizePolicy.Policy.Maximum if i == index else QSizePolicy.Policy.Ignored)
+        self._tool_stack.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self._tool_stack.updateGeometry()
+
+    def _on_tool(self, index: int) -> None:
+        # Only the chosen tool's fields are on the panel, and the same tool is on the scene.
+        self._tool_stack.setCurrentIndex(index)
+        self._fit_tool_stack(index)
+        self.toolChanged.emit(self.tool_mode())
 
     def _build_light(self) -> None:
         self.grid_res = Segmented([("Быстро", 128), ("Норма", 256), ("Точно", 384)], 1)
         self.frames = Segmented([("180", 180), ("360", 360), ("720", 720)], 1)
-        self.virtual = Switch(False)
+        self.virtual = QPushButton(tr("показать"))
+        self.virtual.setCheckable(True)
+        self.virtual.setCursor(Qt.CursorShape.PointingHandCursor)
         self._virtual_ready = False
         self._review = False          # "пересчитать": back to the parameters while a result exists
         self.r_grid = self._row("Качество", self.grid_res, stacked=True, hint="для первой печати хватит «Норма»")
@@ -1103,7 +1174,11 @@ class ProcessSettingsPanel(QWidget):
         self._settings.setValue("ui/line_style", style)
         self.lineStyleChanged.emit(style)
 
+    def _sync_virtual_button(self) -> None:
+        self.virtual.setText(tr("скрыть") if self.virtual.isChecked() else tr("показать"))
+
     def _on_virtual_toggled(self, on: bool) -> None:
+        self._sync_virtual_button()
         if not on and not self._virtual_ready:
             self.virtualToggled.emit(False)
             return
@@ -1590,7 +1665,6 @@ class ProcessSettingsPanel(QWidget):
             self._refresh_print_buttons()
         for row in self._model_rows:
             row.setVisible(self._has_model)
-        self._model_expander.setVisible(self._has_model)
 
     def _refresh_plan(self) -> None:
         plan = self._plan
@@ -1685,8 +1759,7 @@ class ProcessSettingsPanel(QWidget):
             self.load_link.setText(tr("заменить"))
             with QSignalBlocker(self.scale):
                 self.scale.setValue(scale_pct)
-            self.r_scale.set_effect(f"{f(size_mm[0])} × {f(size_mm[1])} × {f(size_mm[2])} мм")
-            self.r_orient.set_effect(f"по высоте {f(size_mm[2])} мм из {f(self.printable_height_mm(), 0)}")
+            self.r_scale.set_effect("100 % — как в файле")
         self._refresh_action()
 
     def set_fit(self, ok: bool, text: str) -> None:
@@ -1712,12 +1785,12 @@ class ProcessSettingsPanel(QWidget):
         self._refresh_action()
 
     def _show_light_stage(self) -> None:
-        """Before the run: the parameters and the game. During it: only the game. After: the result
-        (and, after "пересчитать", the parameters and the game again)."""
+        """Before the run: only the parameters. During it: the parameters are gone, the game shows.
+        After: the result and the game. After "пересчитать": the parameters again, no game."""
         running = self._running
         result = self._done and not running and not self._review
         self.calc_block.setVisible(not running and not result)
-        self.game_box.setVisible(not result)
+        self.game_box.setVisible(running or result)
         self.game.setMaximumWidth(16777215 if running else 380)
         self.result_block.setVisible(result)
         self.stale_label.setVisible(self._stale and not running)
@@ -1755,6 +1828,7 @@ class ProcessSettingsPanel(QWidget):
             if self.virtual.isChecked():
                 with QSignalBlocker(self.virtual):
                     self.virtual.setChecked(False)
+                self._sync_virtual_button()
                 self.virtualToggled.emit(False)
             self.r_virtual.set_effect("результат устарел — пересчитай свет" if self._stale
                                       else "появится после расчёта света")

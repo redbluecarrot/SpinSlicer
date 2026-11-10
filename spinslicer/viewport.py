@@ -75,6 +75,40 @@ def _trimesh_to_pyvista(mesh: trimesh.Trimesh) -> pv.PolyData:
     return pv.PolyData(mesh.vertices.astype(np.float64), padded.ravel())
 
 
+def overflow_mesh(display: pv.PolyData, matrix: np.ndarray, radius: float,
+                  half_height: float) -> pv.PolyData | None:
+    """The part of ``display`` (model coordinates) that lies outside the print zone once ``matrix``
+    places it: farther than ``radius`` from the axis or more than ``half_height`` from the middle.
+    Still in model coordinates, cut exactly along the zone's edge. None when all of it is inside."""
+    points = np.asarray(display.points, dtype=np.float64)
+    if not len(points) or radius <= 0 or half_height <= 0:
+        return None
+    m = np.asarray(matrix, dtype=np.float64)
+    world = points @ m[:3, :3].T + m[:3, 3]
+    excess = np.maximum(np.hypot(world[:, 0], world[:, 1]) - radius, np.abs(world[:, 2]) - half_height)
+    if not np.any(excess > 1e-6):
+        return None
+    probe = pv.PolyData(points.copy(), display.faces.copy())
+    # The cut runs where a value interpolated along the edges crosses zero, so a face much larger
+    # than the zone (a box of twelve triangles) would be marked whole: split such faces first.
+    scale = float(abs(np.linalg.det(m[:3, :3])) ** (1.0 / 3.0)) or 1.0
+    try:
+        fine = probe.triangulate().subdivide_adaptive(max_edge_len=min(radius, half_height) / 6.0 / scale,
+                                                      max_n_passes=6)
+        if 0 < fine.n_points <= 400_000:
+            probe = fine
+            world = np.asarray(probe.points, dtype=np.float64) @ m[:3, :3].T + m[:3, 3]
+            excess = np.maximum(np.hypot(world[:, 0], world[:, 1]) - radius, np.abs(world[:, 2]) - half_height)
+    except Exception:
+        pass
+    probe["excess"] = excess
+    try:
+        outside = probe.clip_scalar(scalars="excess", value=0.0, invert=False)
+    except Exception:
+        return None
+    return outside if outside.n_points else None
+
+
 def prepare_display_mesh(mesh: trimesh.Trimesh) -> pv.PolyData:
     """Viewport copy of a mesh: decimated when huge, with crease-aware normals.
 
@@ -401,6 +435,13 @@ class Viewport3D(QWidget):
         self._vat_actor: Any = None
         self._bottom_plane_actor: Any = None
         self._model_actor: Any = None
+        # what sticks out of the print zone is drawn over the model in the warning colour
+        self._model_display: Any = None
+        self._overflow_actor: Any = None
+        self._print_zone: tuple[float, float] | None = None      # radius, half height (mm)
+        self._overflow_timer = QTimer(self)
+        self._overflow_timer.setSingleShot(True)
+        self._overflow_timer.timeout.connect(self._update_overflow)
         self._virtual_actor: Any = None
         self._affine_widget: Any = None
         self._scale_widget: Any = None
@@ -1230,6 +1271,7 @@ class Viewport3D(QWidget):
         if self._model_actor is not None:
             self.plotter.remove_actor(self._model_actor, render=False)
 
+        self._model_display = display_mesh
         self._model_actor = self.plotter.add_mesh(
             display_mesh, color=theme.scene_palette().model, smooth_shading=True,
             specular=0.2, specular_power=18, name="model", pickable=False, render=False,
@@ -1237,6 +1279,33 @@ class Viewport3D(QWidget):
         self._restyle_model()
         self._create_transform_widgets(mesh)
         self.set_transform_mode(self._transform_mode)
+        self.request_render()
+
+    def set_print_zone(self, radius_mm: float, height_mm: float) -> None:
+        """Where the printer can cure: a cylinder about the axis, centred on the scene's middle."""
+        zone = (float(radius_mm), float(height_mm) / 2.0)
+        if zone != self._print_zone:
+            self._print_zone = zone
+            self._overflow_timer.start(0)
+
+    def _update_overflow(self) -> None:
+        """Redraw the part of the model that is outside the print zone (nothing when it all fits)."""
+        if self._overflow_actor is not None:
+            self.plotter.remove_actor(self._overflow_actor, render=False)
+            self._overflow_actor = None
+        actor, zone = self._model_actor, self._print_zone
+        if (self._model_display is not None and actor is not None and zone is not None
+                and actor.user_matrix is not None and actor.GetVisibility()):
+            matrix = np.asarray(actor.user_matrix, dtype=np.float64)
+            outside = overflow_mesh(self._model_display, matrix, *zone)
+            if outside is not None:
+                self._overflow_actor = self.plotter.add_mesh(
+                    outside, color=theme.scene_palette().warn, lighting=False, name="model_overflow",
+                    pickable=False, render=False, reset_camera=False)
+                self._overflow_actor.user_matrix = matrix
+                mapper = self._overflow_actor.GetMapper()
+                mapper.SetResolveCoincidentTopologyToPolygonOffset()      # drawn over the model, no flicker
+                mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-2.0, -2.0)
         self.request_render()
 
     def update_model_transform(self, matrix_4x4: np.ndarray) -> None:
@@ -1282,6 +1351,7 @@ class Viewport3D(QWidget):
         self._sketch.set_visible(False)
         if self._model_actor is not None:
             self._model_actor.SetVisibility(False)
+        self._update_overflow()
         # The gizmo would move the hidden model, not the print: hide it while previewing.
         if self._affine_widget is not None and self._affine_enabled:
             self._affine_widget.disable()
@@ -1351,6 +1421,7 @@ class Viewport3D(QWidget):
         if self._model_actor is not None:
             self._model_actor.SetVisibility(True)
             self.set_transform_mode(self._transform_mode)
+        self._overflow_timer.start(0)
         if render:
             self.request_render()
 
@@ -1361,6 +1432,10 @@ class Viewport3D(QWidget):
     def clear_model(self) -> None:
         self._remove_transform_widgets()
         self._model_bounds = None
+        self._model_display = None
+        if self._overflow_actor is not None:
+            self.plotter.remove_actor(self._overflow_actor, render=False)
+            self._overflow_actor = None
         if self._model_actor is not None:
             self.plotter.remove_actor(self._model_actor, render=False)
             self._model_actor = None
@@ -1422,14 +1497,14 @@ class Viewport3D(QWidget):
         scale_representation.GetHandleProperty().SetOpacity(1.0)
         scale_representation.GetSelectedHandleProperty().SetColor(1.0, 1.0, 1.0)
         scale_representation.GetSelectedHandleProperty().SetOpacity(1.0)
-        scale_representation.GetFaceProperty().SetOpacity(0.035)
+        # No box around the model: only the six handles show. The face being dragged still
+        # lights up, so it is clear which side is moving.
+        scale_representation.GetFaceProperty().SetOpacity(0.0)
         scale_representation.GetSelectedFaceProperty().SetOpacity(0.14)
-        scale_representation.GetOutlineProperty().SetColor(0.70, 0.76, 0.84)
-        scale_representation.GetOutlineProperty().SetLineWidth(1.4)
-        scale_representation.GetOutlineProperty().SetLineStipplePattern(0xF0F0)
-        scale_representation.GetOutlineProperty().SetLineStippleRepeatFactor(2)
-        scale_representation.GetSelectedOutlineProperty().SetColor(0.95, 0.97, 1.0)
-        scale_representation.GetSelectedOutlineProperty().SetLineWidth(1.8)
+        scale_representation.SetOutlineFaceWires(False)
+        scale_representation.SetOutlineCursorWires(False)
+        scale_representation.GetOutlineProperty().SetOpacity(0.0)
+        scale_representation.GetSelectedOutlineProperty().SetOpacity(0.0)
         self._scale_handle_actors = self._style_scale_handles(scale_representation)
 
         scale_widget = vtk.vtkBoxWidget2()
@@ -1686,6 +1761,9 @@ class Viewport3D(QWidget):
         if normalized.shape != (4, 4) or not np.all(np.isfinite(normalized)):
             return
         self._model_actor.user_matrix = normalized
+        if self._overflow_actor is not None:        # rides along until the cut is redone
+            self._overflow_actor.user_matrix = normalized
+        self._overflow_timer.start(80)
         self._update_affine_gizmo(normalized)
         self.request_render()
 

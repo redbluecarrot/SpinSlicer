@@ -17,6 +17,7 @@ from typing import Optional
 
 import numpy as np
 import trimesh
+import trimesh.transformations as tf
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
@@ -208,9 +209,10 @@ class SlicerTab(QWidget):
     def _on_model_loaded(self, path: str, mesh: trimesh.Trimesh) -> None:
         self._scene_stack.setCurrentWidget(self._viewport)
         self._reset_virtual_print()
+        # The model comes in at the size it has in the file, on the axis. Where it does not fit,
+        # the scene shows the part that sticks out; "вписать в колбу" scales it on request.
         node = ModelNode(mesh, path)
         diameter = self._process_panel.vat_diameter_mm()
-        node.fit_to_vat(self._inner_diameter(), self._printable_height(), FILL_FRACTION)
         self._model_node = node
 
         self._viewport.set_model(node.original_mesh)
@@ -361,6 +363,7 @@ class SlicerTab(QWidget):
         self.modelInfo.emit(os.path.basename(node.source_path) or "модель", size, node.face_count, scale_pct)
         ok, text = self.model_fit()
         self.fitChanged.emit(ok, text)
+        self._viewport.set_print_zone(self._inner_diameter() / 2.0, self._printable_height())
 
     def refresh_model_state(self) -> None:
         self._emit_model_state()
@@ -370,6 +373,48 @@ class SlicerTab(QWidget):
         if node is None:
             return
         node.transform.scale = np.full(3, max(pct, 0.1) / 100.0, dtype=np.float64)
+        self._sync_and_redraw()
+
+    def rotate_by(self, axis: int, degrees: float) -> None:
+        node = self._model_node
+        if node is None:
+            return
+        rot = np.asarray(node.transform.rotation_deg, dtype=np.float64).copy()
+        rot[axis] = (rot[axis] + degrees + 180.0) % 360.0 - 180.0
+        node.transform.rotation_deg = rot
+        self._sync_and_redraw()
+
+    def lay_flat(self) -> None:
+        """Turn the part so that it is as low as it can be: fewer layers, a sharper print."""
+        node = self._model_node
+        if node is None:
+            return
+        verts = np.asarray(node.original_mesh.vertices, dtype=np.float64)
+        if len(verts) > 20000:
+            verts = verts[:: max(1, len(verts) // 20000)]
+        best, best_height = (0.0, 0.0, 0.0), np.inf
+        for angles in ((0.0, 0.0, 0.0), (90.0, 0.0, 0.0), (0.0, 90.0, 0.0)):
+            r = tf.euler_matrix(*np.radians(angles), axes="sxyz")[:3, :3]
+            height = float(np.ptp(verts @ r[2]))
+            if height < best_height - 1e-9:
+                best, best_height = angles, height
+        node.transform.rotation_deg = np.array(best, dtype=np.float64)
+        self._sync_and_redraw()
+
+    def place_z(self, where: str) -> None:
+        """Move the part along the axis: onto the bottom of the print zone, its middle or its top."""
+        node = self._model_node
+        if node is None or where not in ("low", "mid", "high"):
+            return
+        verts = np.asarray(node.original_mesh.vertices, dtype=np.float64)
+        m = node.matrix()
+        z = verts @ m[2, :3] + m[2, 3]
+        z_min, z_max = float(z.min()), float(z.max())
+        half = self._printable_height() / 2.0
+        shift = {"low": -half - z_min, "mid": -(z_min + z_max) / 2.0, "high": half - z_max}[where]
+        pos = np.asarray(node.transform.translation, dtype=np.float64).copy()
+        pos[2] += shift
+        node.transform.translation = pos
         self._sync_and_redraw()
 
     def set_orientation(self, index: int) -> None:
