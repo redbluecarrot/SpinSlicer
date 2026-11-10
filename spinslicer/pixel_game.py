@@ -168,7 +168,7 @@ class Game:
 class Cure(Game):
     key = "cure"
     title = "Засветка"
-    hint = "кирпичи — силуэт вашей детали; фотон засвечивает воксели"
+    hint = "кирпичи — силуэт твоей детали; фотон засвечивает воксели"
     PADDLE = 15            # half width: generous, the game is for relaxing
     LIVES = 5
 
@@ -357,7 +357,7 @@ _PIECES = [
 class Layers(Game):
     key = "layers"
     title = "Слои"
-    hint = "укладывайте воксели в колбу без щелей"
+    hint = "укладывай воксели в колбу без щелей"
     BW, BH, CELL = 10, 19, 5
     X0 = (W - 10 * 5) // 2
     Y0 = 12
@@ -500,7 +500,7 @@ class Layers(Game):
 class Photon(Game):
     key = "photon"
     title = "Фотон"
-    hint = "проведите фотон через стенки, не задев стекло"
+    hint = "проведи фотон через стенки, не задев стекло"
     GAP = 38
     WALL_W = 5                                   # glass thickness in pixels (drawn and hit alike)
 
@@ -542,7 +542,7 @@ class Photon(Game):
                     mask[max(0, centre - 10):centre + 10] = True
                 level.append(mask)
         self.level = level
-        self.hint = "летите сквозь свет вашей печати" if level else "проведите фотон через стенки, не задев стекло"
+        self.hint = "летишь сквозь свет твоей печати" if level else "проведи фотон через стенки, не задев стекло"
         self.reset()
 
     def reset(self) -> None:

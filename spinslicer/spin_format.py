@@ -121,6 +121,9 @@ class PrintJob:
     brightness: float = 1.0         # projector brightness baked into the video (0.05…1)
     resin: dict[str, Any] = field(default_factory=dict)
     printer: dict[str, Any] = field(default_factory=dict)
+    # the centering shift already in the frames (CanvasGeometry offset_x / offset_y). SpinPi applies
+    # its own calibration minus this, so the picture is not shifted twice.
+    offset_px: tuple[int, int] = (0, 0)
 
     @property
     def revolution_s(self) -> float:
@@ -167,6 +170,7 @@ class PrintJob:
             "frames_per_rev": int(self.frames_per_rev or self.frames),
             "rotation": rotation_name(self.angle_direction),
             "frame0_angle_deg": float(self.frame0_angle_deg),
+            "offset_px": [int(self.offset_px[0]), int(self.offset_px[1])],
         }
 
     def manifest(self, video_sha256: str, created: Optional[str] = None) -> dict[str, Any]:

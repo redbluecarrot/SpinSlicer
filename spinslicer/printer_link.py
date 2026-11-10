@@ -1,9 +1,9 @@
 """Talking to a SpinPrinter (SpinPi) over the network.
 
 * Discovery: SpinPi announces ``_spinprinter._tcp`` over mDNS with the TXT fields
-  ``name``, ``id`` and ``api``. ``zeroconf`` is used only when it is installed; the
-  printer's default host name ``spinprinter.local`` and an address typed by hand
-  always work.
+  ``name``, ``id`` and ``api`` (``zeroconf``). The host names ``spinprinter.local`` (the
+  printer's name; SpinPi 0.8.9+ answers to it on any Raspberry) and ``spinslicer.local`` (what
+  older SD cards named it) are tried as well, and an address typed by hand always works.
 * ``GET /api/printer``: the printer profile (projector, vial, calibration). Older
   SpinPi versions do not have it yet, so its absence is not an error.
 * ``PUT /api/files/<name>.spin``: upload of a print file, with progress.
@@ -146,6 +146,19 @@ def resolve_default(host: str = DEFAULT_HOST) -> Optional[PrinterAddress]:
     return PrinterAddress(host=host, port=DEFAULT_PORT, name=host, source="default")
 
 
+def known_hosts() -> tuple[str, ...]:
+    """Every host name a SpinPrinter may have, the usual one first."""
+    return (DEFAULT_HOST, *LEGACY_HOSTS)
+
+
+def first_known_host() -> str:
+    """The first of known_hosts() the system resolves; else the printer's own name, spinprinter.local."""
+    for host in known_hosts():
+        if resolve_default(host) is not None:
+            return host
+    return DEFAULT_HOST
+
+
 def discover(timeout_s: float = 2.5) -> list[PrinterAddress]:
     """mDNS printers, then ``spinprinter.local`` if it resolves and is not already listed."""
     printers = discover_mdns(timeout_s)
@@ -163,12 +176,37 @@ def _connection(address: PrinterAddress, timeout_s: float) -> http.client.HTTPCo
     return http.client.HTTPConnection(address.host, address.port, timeout=timeout_s)
 
 
+# SpinPi 0.8.9+ answers a refusal with a code too: the text is then the slicer's, in its language.
+ERROR_CODES: dict[str, str] = {
+    "busy": "Принтер занят другой печатью.",
+    "no_file": "На принтере нет такого файла.",
+    "bad_file": "Файл на принтере повреждён: отправь его ещё раз.",
+    "no_screen": "Экран принтера не подключён: подтвердить печать негде.",
+    "no_hdmi": "Проектор не подключён к принтеру (HDMI).",
+    "reversed_mpv": "Видео для другого направления вращения: на принтере нужен движок angle.",
+    "old_board": "Прошивка платы принтера не спрашивает «Печатать?»: обнови её.",
+    "bad_request": "Принтер не понял запрос.",
+    "foreign": "Принтер отказал запросу из этой программы.",
+}
+
+
+def error_from(data: Any) -> str:
+    """The text for a refusal: the code's, else what the printer wrote."""
+    if not isinstance(data, dict):
+        return ""
+    code = str(data.get("code") or "")
+    if code in ERROR_CODES:
+        from spinslicer.i18n import tr
+        return tr(ERROR_CODES[code])
+    return str(data.get("error") or "")
+
+
 def _error_text(status: int, reason: str, body: bytes) -> str:
     detail = ""
     try:
         data = json.loads(body.decode("utf-8"))
-        if isinstance(data, dict) and data.get("error"):
-            detail = str(data["error"])
+        if isinstance(data, dict) and (data.get("error") or data.get("code")):
+            detail = error_from(data)
     except (ValueError, UnicodeDecodeError):
         detail = body[:200].decode("utf-8", "replace").strip()
     return f"HTTP {status} {reason}" + (f": {detail}" if detail else "")
@@ -332,6 +370,13 @@ def profile_settings(profile: dict[str, Any]) -> dict[str, Any]:
         out["motor_direction"] = int(direction)
     elif isinstance(direction, str) and direction in ("ccw_from_top", "cw_from_top"):
         out["motor_direction"] = 1 if direction == "ccw_from_top" else -1
+    # for the checks before sending (not settings of this slicer)
+    engine = _pick(profile, "software.engine")
+    if isinstance(engine, str):
+        out["engine"] = engine   # "angle": the printer makes up a fraction of a turn with the speed
+    free = _pick(profile, "storage.free_gb")
+    if _number(free) is not None:
+        out["free_gb"] = float(free)
     return out
 
 
@@ -353,7 +398,7 @@ def post_json(address: PrinterAddress, path: str, body: dict[str, Any],
         except ValueError:
             answer = {}
         if isinstance(answer, dict) and answer.get("ok") is False:
-            raise PrinterError(str(answer.get("error") or "the printer refused"))
+            raise PrinterError(error_from(answer) or "the printer refused")
         return answer if isinstance(answer, dict) else {}
     except (OSError, http.client.HTTPException) as exc:
         raise PrinterError(f"{address.label}: {exc}") from exc
@@ -409,6 +454,80 @@ def get_state(address: PrinterAddress, timeout_s: float = 5.0) -> dict[str, Any]
 
 def stop_print(address: PrinterAddress) -> None:
     post_json(address, "/api/stop", {})
+
+
+RESULTS = ("under", "ok", "over")
+
+
+def resin_id(alpha_per_mm: float, n_resin: float) -> str:
+    """Which resin a print is for, from what defines it optically. SpinPi makes the same id for files
+    without one, so its corrections and the slicer's suggestion talk about the same resin."""
+    import hashlib
+    return "r-" + hashlib.sha1(f"{float(alpha_per_mm):.4f}/{float(n_resin):.4f}".encode()).hexdigest()[:10]
+
+
+def get_history(address: PrinterAddress, timeout_s: float = TIMEOUT_S) -> dict[str, Any]:
+    data = get_json(address, "/api/history", timeout_s)
+    return data if isinstance(data, dict) else {}
+
+
+def dose_suggestion(history: dict[str, Any], rid: str, gel_now: float) -> Optional[tuple[float, int]]:
+    """(gel dose, prints it is based on) from this printer's answers for this resin, or None.
+
+    Each answered print says what dose was right for it: the gel dose it was sliced with times the
+    correction the printer used (general x resin). An "ok" gives it directly (the last one counts);
+    an "under" and an "over" without an "ok" meet in the middle (geometric mean); answers in one
+    direction only are not enough to say how far."""
+    rows = []
+    for h in history.get("prints") or []:
+        if not isinstance(h, dict) or h.get("resin_id") != rid or h.get("result") not in RESULTS:
+            continue
+        raw = h.get("resin")
+        resin: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        gel = _number(resin.get("gel_dose_mj_cm3")) or gel_now
+        k = (_number(h.get("factor")) or 1.0) * (_number(h.get("resin_factor")) or 1.0)
+        if gel and gel > 0 and k > 0:
+            rows.append((h["result"], gel * k))
+    oks = [d for r, d in rows if r == "ok"]
+    if oks:
+        return oks[-1], len(rows)
+    under = [d for r, d in rows if r == "under"]
+    over = [d for r, d in rows if r == "over"]
+    if under and over:
+        return (under[-1] * over[-1]) ** 0.5, len(rows)
+    return None
+
+
+def reset_resin_factor(address: PrinterAddress, rid: str) -> dict[str, Any]:
+    """The suggestion went into the resin's dose: the printer's correction for it starts again at 1."""
+    return post_json(address, "/api/settings", {"resin_factor": {"resin_id": rid, "value": 1.0}})
+
+
+def send_result(address: PrinterAddress, result: str) -> dict[str, Any]:
+    """How the print came out (under / ok / over): the printer moves its exposure correction."""
+    if result not in RESULTS:
+        raise PrinterError(f"result: {' / '.join(RESULTS)}")
+    return post_json(address, "/api/result", {"result": result})
+
+
+def print_stage(state: dict[str, Any]) -> tuple[str, Optional[float], str]:
+    """For the progress card: (stage, progress 0..1 or None, detail) of the print the slicer sent."""
+    what, progress, turn, turns, left = describe_state(state)
+    if what == "waiting_confirm":
+        return "Ждёт подтверждения на экране принтера", None, "джойстик вправо — печатать"
+    if what == "starting":
+        wait = state.get("wait")
+        if isinstance(wait, (list, tuple)) and len(wait) == 2:
+            secs, kind = wait
+            name = {"spin": "Разгон", "warm": "Прогрев проектора", "dark": "Пауза до света"}.get(str(kind), "Подготовка")
+            m, s = divmod(int(float(secs) + 0.99), 60)
+            return name, None, f"{m}:{s:02d}"
+        return "Подготовка", None, "разгон, прогрев, пауза до света"
+    if what == "printing":
+        from spinslicer.i18n import tr
+        m, s = divmod(int(left + 0.99), 60)
+        return "Печать", progress, f"{tr('оборот')} {turn} {tr('из')} {turns} · {tr('осталось')} {m}:{s:02d}"
+    return "", None, ""
 
 
 def describe_state(state: dict[str, Any]) -> tuple[str, float, int, int, float]:

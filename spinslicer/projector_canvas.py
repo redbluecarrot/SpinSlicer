@@ -20,7 +20,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-RESOLUTIONS: tuple[tuple[int, int], ...] = ((1024, 768), (1280, 720), (1920, 1080), (2560, 1440))
+RESOLUTIONS: tuple[tuple[int, int], ...] = ((1024, 768), (1280, 720), (1280, 800), (1920, 1080), (2560, 1440))
+# the list before 1280x800 (SpinPrinter's default projector) came in: settings saved as an index into it
+RESOLUTIONS_V2: tuple[tuple[int, int], ...] = ((1024, 768), (1280, 720), (1920, 1080), (2560, 1440))
 
 
 @dataclass(frozen=True)

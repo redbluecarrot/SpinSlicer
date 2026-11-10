@@ -43,7 +43,9 @@ class _Pi(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "no such video", "request": None})
             return self._json({"ok": True, "error": None,
                                "request": {"state": "waiting_confirm", "id": body["id"], "name": "part.spin"}})
-        if self.path in ("/api/stop", "/api/printer", "/api/calibration"):
+        if self.path == "/api/result":
+            return self._json({"ok": True, "factor_pct": 6.0})
+        if self.path in ("/api/stop", "/api/printer", "/api/calibration", "/api/settings"):
             return self._json({"ok": True})
         self._json({"error": "not found"}, 404)
 
@@ -247,17 +249,23 @@ def test_print_from_the_slicer_follows_the_printer(pi, monkeypatch):
     ctl.print_now()
     assert _wait(lambda: ("/api/print", {"id": "lib/part.spin", "confirm": True}) in _Pi.posts)
     assert _wait(lambda: ctl._printing is not None)
-    assert _wait(lambda: "джойстик" in panel.r_spin.effect.text() or "joystick" in panel.r_spin.effect.text())
+    # the progress card: the stage, then a bar with turn and time, and its own Stop
+    assert _wait(lambda: not panel.prog_card.isHidden())
+    assert "подтвержд" in panel.prog_stage.text() or "confirm" in panel.prog_stage.text().lower()
     _Pi.state = {"state": "print", "request": {"state": "started"},
                  "job": {"progress": 0.5, "turn": 3, "revs": 6, "left_s": 30}}
-    assert _wait(lambda: "50%" in panel.r_spin.effect.text(), timeout=4)
-    assert not panel.stop_link.isHidden()
+    assert _wait(lambda: panel.prog_bar.value() == 500, timeout=4)
+    assert "3" in panel.prog_detail.text() and "0:30" in panel.prog_detail.text()
+    assert not panel.prog_stop.isHidden()
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
     ctl.stop()
     assert _wait(lambda: any(p[0] == "/api/stop" for p in _Pi.posts))
+    asked = []
+    monkeypatch.setattr(PrinterController, "_ask_result", lambda self, printer: asked.append(printer))
     _Pi.state = {"state": "done", "request": {"state": "started"}}
     assert _wait(lambda: ctl._printing is None, timeout=4)
-    assert panel.stop_link.isHidden()
+    assert panel.prog_card.isHidden() and panel.stop_link.isHidden()
+    assert asked == [pi]  # "how did it come out?" is asked in the slicer, not only on the printer
 
     # the slicer's vial goes back to the printer, after the question
     panel.diameter.setValue(30.0)
@@ -328,3 +336,91 @@ def test_to_usb_stick(tmp_path, monkeypatch):
     assert tab.exports == [(None, str(tmp_path / "print.spin"))]
     assert _wait(lambda: ejected == [stick])
     assert _wait(lambda: "вынимать" in panel.r_spin.effect.text() or "removed" in panel.r_spin.effect.text())
+
+
+# ---------------------------------------------------------------- the seams with SpinPi
+def test_the_baked_centering_goes_into_the_file():
+    """SpinPi shifts by its calibration minus video.offset_px: the shift is not applied twice."""
+    from spinslicer.spin_format import PrintJob
+    job = PrintJob(name="p", frames=360, fps=24.0, width=1280, height=800, offset_px=(12, -3))
+    assert job.manifest("0" * 64)["video"]["offset_px"] == [12, -3]
+    assert job.mp4_tag()["offset_px"] == [12, -3]
+    assert PrintJob(name="p", frames=360, fps=24.0, width=1280, height=800).video_section()["offset_px"] == [0, 0]
+
+
+def test_spinprinter_projector_size_is_in_the_list():
+    from spinslicer.projector_canvas import RESOLUTIONS, RESOLUTIONS_V2
+    assert (1280, 800) in RESOLUTIONS
+    assert set(RESOLUTIONS_V2) <= set(RESOLUTIONS)  # an old saved choice still has its size
+
+
+def test_the_address_prompt_offers_a_name_that_exists(monkeypatch):
+    resolves = {"spinslicer.local"}
+    monkeypatch.setattr(printer_link, "resolve_default",
+                        lambda host=printer_link.DEFAULT_HOST: printer_link.PrinterAddress(host) if host in resolves else None)
+    assert printer_link.first_known_host() == "spinslicer.local"
+    resolves.clear()
+    assert printer_link.first_known_host() == "spinprinter.local"  # the printer's own name
+    resolves.add("spinprinter.local")
+    assert printer_link.first_known_host() == "spinprinter.local"
+
+
+
+# ---------------------------------------------------------------- the print step talks to the printer
+def test_the_answer_goes_to_the_printer(pi):
+    printer_link.send_result(pi, "under")
+    assert ("/api/result", {"result": "under"}) in _Pi.posts
+    with pytest.raises(printer_link.PrinterError):
+        printer_link.send_result(pi, "great")
+
+
+def test_refusals_in_the_slicers_words():
+    from spinslicer import i18n
+    assert printer_link.error_from({"ok": False, "error": "busy", "code": "busy"}) == i18n.tr("Принтер занят другой печатью.")
+    assert printer_link.error_from({"ok": False, "error": "что-то новое", "code": "later"}) == "что-то новое"
+
+
+def test_checks_before_sending():
+    _qt()
+    from spinslicer.ui_panels import ProcessSettingsPanel
+    panel = ProcessSettingsPanel()
+    panel.apply_printer_profile(printer_link.profile_settings({
+        "id": "p1", "projector": {"width": 1280, "height": 800},
+        "software": {"engine": "angle"}, "storage": {"free_gb": 12.4}}))
+    panel._print_revs = 5.35
+    checks = dict((text, ok) for ok, text in panel.print_checks())
+    size_ok = [ok for text, ok in checks.items() if "1280×800" in text]
+    assert size_ok and size_ok[0] == (panel.screen_size() == (1280, 800))
+    assert any("5" in text and ok for text, ok in checks.items())         # whole turns, the dose as planned
+    assert any("12,4" in text and ok for text, ok in checks.items())      # room on the printer
+
+
+# ---------------------------------------------------------------- step 5b: the answers reach the resin's dose
+def test_resin_id_is_the_printers():
+    # SpinPi makes the same id for files without one (spinpi.resin_id)
+    import hashlib
+    assert printer_link.resin_id(0.08, 1.5) == "r-" + hashlib.sha1(b"0.0800/1.5000").hexdigest()[:10]
+
+
+def test_dose_suggestion():
+    rid = printer_link.resin_id(0.08, 1.5)
+
+    def p(result, factor=1.0, resin_factor=1.0, gel=12.0, r=rid):
+        return {"result": result, "factor": factor, "resin_factor": resin_factor, "resin_id": r,
+                "resin": {"gel_dose_mj_cm3": gel}}
+    # under, under, then ok at +12 %: the dose that was right is 12 x 1.12
+    hist = {"prints": [p("under"), p("under", resin_factor=1.06), p("ok", resin_factor=1.12)]}
+    dose, n = printer_link.dose_suggestion(hist, rid, 12.0)
+    assert abs(dose - 13.44) < 1e-6 and n == 3
+    # under and over without an ok: in the middle
+    hist = {"prints": [p("under", resin_factor=1.0), p("over", resin_factor=1.2)]}
+    dose, _n = printer_link.dose_suggestion(hist, rid, 12.0)
+    assert abs(dose - 12.0 * 1.2 ** 0.5) < 1e-6
+    # one direction only, or another resin: nothing to say
+    assert printer_link.dose_suggestion({"prints": [p("under"), p("under")]}, rid, 12.0) is None
+    assert printer_link.dose_suggestion({"prints": [p("ok", r="other")]}, rid, 12.0) is None
+
+
+def test_applying_resets_the_printers_correction(pi):
+    printer_link.reset_resin_factor(pi, "r-1")
+    assert ("/api/settings", {"resin_factor": {"resin_id": "r-1", "value": 1.0}}) in _Pi.posts

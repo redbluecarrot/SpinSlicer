@@ -177,7 +177,7 @@ class CALSlicerMainWindow(QMainWindow):
         self._apply_canvas()
         self._refresh_chips()
         self._refresh_nav()
-        self._log(tr("Готово к работе. Загрузите STL-модель, чтобы начать."))
+        self._log(tr("Готово к работе. Загрузи STL-модель, чтобы начать."))
 
     @property
     def tabs(self):

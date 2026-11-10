@@ -630,7 +630,7 @@ class EmptyScene(QWidget):
         self._timer.timeout.connect(self._tick)
         layout = QVBoxLayout(self)
         layout.addStretch(5)
-        self.title = QLabel(tr("Перетащите STL сюда"))
+        self.title = QLabel(tr("Перетащи STL сюда"))
         self.title.setObjectName("emptyTitle")
         self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.sub = QLabel(tr("файл детали в формате STL, в миллиметрах"))

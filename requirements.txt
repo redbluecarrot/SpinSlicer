@@ -12,3 +12,4 @@ scikit-image==0.26.0
 opencv-python-headless==5.0.0.93
 matplotlib==3.11.1
 imageio-ffmpeg==0.7.0
+zeroconf==0.154.0

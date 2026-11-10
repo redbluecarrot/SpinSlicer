@@ -619,7 +619,7 @@ class ProjectorTab(QWidget):
 
     def _on_assemble_clicked(self) -> None:
         if not self._output_dir or not os.path.isdir(self._output_dir):
-            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитайте свет."))
+            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитай свет."))
             return
         self._timer.stop()
         self.preview.set_message(tr("Загружаю кадры…"))
@@ -754,8 +754,8 @@ class ProjectorTab(QWidget):
         screens = self.projector_screens()
         if not screens:
             QMessageBox.information(self, tr("Проектор"), tr(
-                "Второй экран не найден. Подключите проектор как второй монитор "
-                "(расширенный рабочий стол) или сохраните видео."))
+                "Второй экран не найден. Подключи проектор как второй монитор "
+                "(расширенный рабочий стол) или сохрани видео."))
             return False
         self.stop_projector()
         if pattern:
@@ -793,7 +793,7 @@ class ProjectorTab(QWidget):
     def _on_save_clicked(self) -> None:
         frames = self._printer_frames()
         if not frames:
-            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитайте свет."))
+            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитай свет."))
             return
         g = self._geometry
         path, _ = QFileDialog.getSaveFileName(self, tr("Сохранить видео"), f"print_{g.width}x{g.height}.mp4", "MP4 (*.mp4)")
@@ -821,10 +821,10 @@ class ProjectorTab(QWidget):
         stick), or saved where the user says. `on_saved` / `on_uploaded` replace the "Done" box."""
         frames = self._printer_frames()
         if not frames:
-            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитайте свет."))
+            QMessageBox.warning(self, tr("Внимание"), tr("Сначала рассчитай свет."))
             return False
         if self.busy():
-            QMessageBox.information(self, tr("Внимание"), tr("Подождите: идёт экспорт."))
+            QMessageBox.information(self, tr("Внимание"), tr("Подожди: идёт экспорт."))
             return False
         job = self._job(len(frames))
         if job is None:
@@ -871,7 +871,7 @@ class ProjectorTab(QWidget):
         self.progress.emit(1.0, "Файл для принтера сохранён.")
         self.logMessage.emit(f".spin: {path}")
         QMessageBox.information(self, tr("Готово"), f"{tr('Файл для принтера сохранён')}:\n{path}\n\n"
-                                + tr("Скопируйте его на флешку принтера или отправьте по сети."))
+                                + tr("Скопируй его на флешку принтера или отправь по сети."))
 
     def _on_spin_uploaded(self, printer: str, answer: object) -> None:
         name = answer.get("name", "") if isinstance(answer, dict) else ""
@@ -908,7 +908,7 @@ class ProjectorTab(QWidget):
         self.progress.emit(1.0, "Видео сохранено.")
         self.logMessage.emit(f"MP4: {path}")
         QMessageBox.information(self, tr("Готово"), f"{tr('Видео сохранено')}:\n{path}\n\n"
-                                + tr("Показывайте его на проекторе во весь экран, без масштабирования."))
+                                + tr("Показывай его на проекторе во весь экран, без масштабирования."))
 
     def _on_export_failed(self, msg: str) -> None:
         self.progress.emit(0.0, "Экспорт не удался.")
