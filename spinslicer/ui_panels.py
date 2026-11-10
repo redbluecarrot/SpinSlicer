@@ -88,6 +88,17 @@ class ObjectTransformPanel(QGroupBox):
     autoFitRequested = pyqtSignal()
     resetRequested = pyqtSignal()
 
+    # made by name in __init__ (setattr); declared here so the type checker knows them
+    pos_x: QDoubleSpinBox
+    pos_y: QDoubleSpinBox
+    pos_z: QDoubleSpinBox
+    rot_x: QDoubleSpinBox
+    rot_y: QDoubleSpinBox
+    rot_z: QDoubleSpinBox
+    size_x: QDoubleSpinBox
+    size_y: QDoubleSpinBox
+    size_z: QDoubleSpinBox
+
     def __init__(self, parent=None):
         super().__init__("", parent)
         self.setFlat(True)

@@ -394,7 +394,8 @@ class SlicerTab(QWidget):
             verts = verts[:: max(1, len(verts) // 20000)]
         best, best_height = (0.0, 0.0, 0.0), np.inf
         for angles in ((0.0, 0.0, 0.0), (90.0, 0.0, 0.0), (0.0, 90.0, 0.0)):
-            r = tf.euler_matrix(*np.radians(angles), axes="sxyz")[:3, :3]
+            rx, ry, rz = (float(a) for a in np.radians(angles))
+            r = tf.euler_matrix(rx, ry, rz, axes="sxyz")[:3, :3]
             height = float(np.ptp(verts @ r[2]))
             if height < best_height - 1e-9:
                 best, best_height = angles, height
