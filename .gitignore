@@ -234,3 +234,4 @@ __marimo__/
 archive_scratch_scripts.tar.gz
 *.tar.gz
 
+/AGENTS.md
