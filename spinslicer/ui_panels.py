@@ -862,11 +862,11 @@ class ProcessSettingsPanel(QWidget):
         gl.setSpacing(6)
         gl.addWidget(self.game_title)
         gl.addWidget(self._arcade(self.game))
-        # Before the run: the parameters and the game. During it: only the game. After it: the result.
+        # Before the run: the parameters. During it: only the game. After it: the result, then the game.
         self.calc_block = self._section("Параметры расчёта", [self.stale_label, self.r_grid, self.r_frames])
         self.game_box = self._section("Игра", [game_body])
         self.result_block = self._section("Результат", [results])
-        self._add_page("light", [self.calc_block, self.game_box, self.result_block])
+        self._add_page("light", [self.calc_block, self.result_block, self.game_box])
         self._show_light_stage()
 
     def _flip_warnings(self) -> None:
