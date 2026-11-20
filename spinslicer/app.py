@@ -98,6 +98,7 @@ from spinslicer.ui_kit import (  # noqa: E402
     set_line_style,
 )
 from spinslicer.ui_panels import ProcessSettingsPanel  # noqa: E402
+from spinslicer.update_controller import UpdateController  # noqa: E402
 from spinslicer.video_tab import ProjectorTab  # noqa: E402
 
 
@@ -379,6 +380,11 @@ class CALSlicerMainWindow(QMainWindow):
         panel.actionRequested.connect(self._on_panel_action)
         self.printer = PrinterController(self, panel, self.projector_tab, panel.output_dir,
                                          lambda: self.slicer_tab._model_node, self._log)
+        self.updates = UpdateController(
+            self, panel, self._settings,
+            busy=lambda: self._job_controller.active() or self.projector_tab.is_projecting(),
+            log=self._log, progress=self._set_progress)
+        self.statusBar().insertPermanentWidget(0, self.updates.status_button)
         panel.sceneChanged.connect(self._scene_timer.start)
         panel.canvasChanged.connect(self._apply_canvas)
         panel.settingsChanged.connect(self._refresh_chips)
@@ -456,6 +462,8 @@ class CALSlicerMainWindow(QMainWindow):
         elif action == "export":
             self._apply_output_light()
             self.projector_tab._on_save_clicked()
+        elif action.startswith("update_"):
+            self.updates.handle(action)
         elif action.startswith(("spin_", "printer_")):
             self._apply_output_light()
             self.printer.handle(action)
@@ -589,6 +597,7 @@ class CALSlicerMainWindow(QMainWindow):
         apply_translations(self)
         # Texts composed from live values are rebuilt by their owners.
         self.settings_tab.refresh_language()
+        self.updates.refresh_language()
         args = getattr(self, "_model_info_args", None)
         if args is not None:
             self._on_model_info(*args)
@@ -677,6 +686,7 @@ def main() -> None:
         raise SystemExit(check_release(app, window, output))
     window.resize(1680, 980)
     window.show()
+    window.updates.start_auto()
     sys.exit(app.exec())
 
 

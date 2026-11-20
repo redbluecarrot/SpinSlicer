@@ -716,3 +716,37 @@ _EN.update({
     "Печатать отверстия и резьбу": "Print holes and threads",
     "выключи, если нужна сплошная деталь": "switch off for a solid part",
 })
+
+# Settings → Updates (update_controller, updater).
+_EN.update({
+    "Обновления": "Updates", "проверить": "check", "проверить снова": "check again",
+    "установить": "install", "отменить": "cancel", "проверяю…": "checking…",
+    "это последняя версия": "this is the latest version", "доступна версия": "version available:",
+    "скачиваю": "downloading", "Проверять при запуске": "Check at startup",
+    "раз в сутки спрашивать GitHub о новой версии": "ask GitHub about a new version once a day",
+    "Доступна версия": "New version available:", "сейчас": "now",
+    "Установлена последняя версия": "You have the latest version",
+    "Обновление SpinSlicer": "SpinSlicer update", "Сейчас установлена": "Installed now:",
+    "Эту копию нужно обновить вручную: откроется страница релиза.":
+        "This copy is updated by hand: the release page will open.",
+    "Открыть страницу": "Open the page",
+    "SpinSlicer скачает обновление и перезапустится.": "SpinSlicer will download the update and restart.",
+    "Установить": "Install", "Что нового": "What's new", "Позже": "Later",
+    "Скачиваю обновление": "Downloading the update", "Обновление скачано.": "Update downloaded.",
+    "Обновление скачано. Установи его, когда закончится расчёт или печать: "
+    "Настройки → Интерфейс → Обновления.":
+        "The update is downloaded. Install it when the calculation or the print is over: "
+        "Settings → Interface → Updates.",
+    "Не удалось установить обновление.": "Could not install the update.",
+    "Запускаю новую версию": "Starting the new version",
+    "Не удалось проверить обновления.": "Could not check for updates.",
+    "Не удалось прочитать версию релиза.": "Could not read the release version.",
+    "Не удалось связаться с GitHub.": "Could not reach GitHub.",
+    "Не удалось скачать обновление.": "Could not download the update.",
+    "Обновление скачалось не полностью.": "The update did not download completely.",
+    "Контрольная сумма не совпала — обновление не будет установлено.":
+        "The checksum did not match: the update will not be installed.",
+    "Загрузка отменена.": "Download cancelled.",
+    "В архиве нет файла SpinSlicer.": "The archive has no SpinSlicer file.",
+    "Эту копию SpinSlicer нужно обновить вручную.": "This copy of SpinSlicer is updated by hand.",
+})

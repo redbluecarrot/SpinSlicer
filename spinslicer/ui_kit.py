@@ -80,7 +80,10 @@ def set_hints_visible(on: bool) -> None:
     global _hints_on
     _hints_on = bool(on)
     for label in list(_hint_labels):
-        label.refresh_visibility()
+        try:
+            label.refresh_visibility()
+        except RuntimeError:                 # its window is gone (Qt deleted the label)
+            _hint_labels.discard(label)
 
 
 class HintLabel(QLabel):

@@ -40,7 +40,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from spinslicer import theme
+from spinslicer import __version__, theme
 from spinslicer.constants import (
     APP_ORG,
     APP_TITLE,
@@ -541,6 +541,7 @@ class ProcessSettingsPanel(QWidget):
         self.n_resin = Stepper(1.0, 2.0, 1.50, 0.01, 2)
         self.gel_dose = Stepper(0.0, 5000.0, 0.0, 10.0, 1, "мДж/см³")
         self.hints_switch = Switch(False)
+        self.update_switch = Switch(True)
         self.blur_compensation = Switch(True)
         self.line_style = Segmented([("прямые", "straight"), ("от руки", "sketch"), ("живые", "live")], 0)
         self.language_box = NoScrollComboBox()
@@ -590,6 +591,17 @@ class ProcessSettingsPanel(QWidget):
         self.r_nglass = self._row("n стекла", self.n_glass)
         self.r_nliquid = self._row("n жидкости ванны", self.n_liquid)
         self.r_hints = self._row("Подсказки маркером", self.hints_switch, "для тех, кто печатает впервые")
+        # Settings → Interface → Updates: the version, a check / install link, its state.
+        self._update_action = "update_check"
+        self.update_link = QPushButton(tr("проверить"))
+        self.update_link.setObjectName("linkButton")
+        self.update_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_link.clicked.connect(lambda: self.actionRequested.emit(self._update_action))
+        self.r_update = self._row(f"SpinSlicer {__version__}", self.update_link)
+        self.r_update.label.setProperty("_spinslicer_skip_text_translation", True)
+        self._update_state: tuple[str, str] = ("", "")
+        self.r_update_auto = self._row("Проверять при запуске", self.update_switch,
+                                       "раз в сутки спрашивать GitHub о новой версии")
         self.r_draw = self._row("Линии", self.line_style, stacked=True,
                                 effect="прямые — по линейке, модель без точек; от руки — неподвижный набросок; живые — набросок «дышит»")
         self.r_language = self._row("Язык", self.language_box)
@@ -649,7 +661,8 @@ class ProcessSettingsPanel(QWidget):
         """Settings, in four tabs: what the window looks like, the printer (its connection, vial,
         calibration and motor), the projector, the resin. One tab on screen at a time."""
         pages = {
-            "interface": [self._section("Внешний вид", [self.r_theme, self.r_language, self.r_draw, self.r_hints])],
+            "interface": [self._section("Внешний вид", [self.r_theme, self.r_language, self.r_draw, self.r_hints]),
+                          self._section("Обновления", [self.r_update, self.r_update_auto])],
             "printer": [
                 self._section("Подключение", [self.printer_status, self.r_printer, self.r_printer_tools,
                                               self.r_printer_write]),
@@ -1123,6 +1136,8 @@ class ProcessSettingsPanel(QWidget):
                 pass
         hints = str(self._settings.value("ui/hints", False)).lower() in {"1", "true", "yes"}
         self.hints_switch.setChecked(hints)
+        auto_update = str(self._settings.value("ui/update_check", True)).lower() in {"1", "true", "yes"}
+        self.update_switch.setChecked(auto_update)
         self._field_auto = True
         self._sync_field()
         style = str(self._settings.value("ui/line_style", "straight"))
@@ -1159,6 +1174,7 @@ class ProcessSettingsPanel(QWidget):
         self.virtual.toggled.connect(self._on_virtual_toggled)
         self.hints_switch.toggled.connect(self.hintsToggled.emit)
         self.hints_switch.toggled.connect(lambda v: self._settings.setValue("ui/hints", v))
+        self.update_switch.toggled.connect(lambda v: self._settings.setValue("ui/update_check", v))
         self.line_style.changed.connect(self._on_line_style)
         self.language_box.currentIndexChanged.connect(self.languageChanged.emit)
         self.output_kind.changed.connect(lambda _i: self._refresh_action())
@@ -1753,6 +1769,28 @@ class ProcessSettingsPanel(QWidget):
         self._refresh()
         for refresh in getattr(self, "_arcade_refresh", []):
             refresh()
+        self.set_update_state(*self._update_state)
+
+    # Settings → Updates.  state: "" | checking | latest | found | downloading | failed
+    _UPDATE_LINKS = {"": ("проверить", "update_check"), "latest": ("проверить", "update_check"),
+                     "failed": ("проверить снова", "update_check"), "checking": ("", ""),
+                     "found": ("установить", "update_install"), "downloading": ("отменить", "update_cancel")}
+
+    def set_update_state(self, state: str, detail: str = "") -> None:
+        """detail: the new version (found), progress (downloading) or the error (failed)."""
+        self._update_state = (state, detail)
+        link, self._update_action = self._UPDATE_LINKS.get(state, self._UPDATE_LINKS[""])
+        self.update_link.setText(tr(link) + (f" {detail}" if state == "found" else ""))
+        self.update_link.setVisible(bool(link))
+        effect = {
+            "": "",
+            "checking": tr("проверяю…"),
+            "latest": tr("это последняя версия"),
+            "found": tr("доступна версия") + f" {detail}",
+            "downloading": tr("скачиваю") + f" {detail}",
+            "failed": detail,
+        }.get(state, "")
+        self.r_update.set_effect(effect, warn=state == "failed")
 
     def set_model_info(self, name: str, size_mm: Sequence[float] | None, faces: int, scale_pct: float) -> None:
         self._model_info_args = (name, size_mm, faces, scale_pct)

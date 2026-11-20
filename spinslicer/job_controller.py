@@ -18,6 +18,10 @@ class JobController:
         self._workers.append(worker)
         worker.finished.connect(lambda worker=worker: self.unregister(worker))
 
+    def active(self) -> bool:
+        """True while any registered job is still running."""
+        return any(worker.isRunning() for worker in self._workers)
+
     def unregister(self, worker: QThread) -> None:
         if worker in self._workers:
             self._workers.remove(worker)
