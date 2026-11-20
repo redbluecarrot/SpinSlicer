@@ -170,6 +170,26 @@ def test_sticks_on_mac(tmp_path):
 
 # ------------------------------------------------------------------ the slicer's side, with Qt
 _APP = []
+_KEEP: list = []
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _join_printer_calls():
+    """Before the interpreter tears Qt down: let every printer call of every test finish,
+    then delete the windows in order (a running QThread destroyed at exit is a crash)."""
+    yield
+    from PyQt6.QtWidgets import QApplication
+    for _window, _panel, _tab, ctl in _KEEP:
+        for worker in list(ctl._calls):
+            worker.wait(10000)
+    if _APP:
+        _APP[0].processEvents()
+    for window, panel, _tab, _ctl in _KEEP:
+        panel.deleteLater()
+        window.deleteLater()
+    if QApplication.instance() is not None:
+        QApplication.processEvents()
+    _KEEP.clear()
 
 
 def _qt():
@@ -229,13 +249,10 @@ class _FakeTab:
 
 
 def test_print_from_the_slicer_follows_the_printer(pi, monkeypatch):
-    _qt()
-    from PyQt6.QtWidgets import QMessageBox, QWidget
+    from PyQt6.QtWidgets import QMessageBox
 
     from spinslicer.printer_controller import PrinterController
-    from spinslicer.ui_panels import ProcessSettingsPanel
-    window, panel, tab = QWidget(), ProcessSettingsPanel(), _FakeTab()
-    ctl = PrinterController(window, panel, tab, lambda: "", lambda: None, lambda _m: None)
+    window, panel, tab, ctl = _controller()
     assert not panel.print_button.isEnabled()                       # no printer, no frames
     assert not panel.stick_button.isEnabled()                       # no frames yet
     ctl._on_profile(pi, {"id": "spinpi-1", "name": "Bench", "vial": {"diameter_mm": 25.0},
@@ -283,6 +300,9 @@ def _controller():
     from spinslicer.ui_panels import ProcessSettingsPanel
     window, panel, tab = QWidget(), ProcessSettingsPanel(), _FakeTab()
     ctl = PrinterController(window, panel, tab, lambda: "", lambda: None, lambda _m: None)
+    # Kept for the whole run: a test may end while its printer calls still run in threads that
+    # are children of this window; collecting it would delete running QThreads (a segfault later).
+    _KEEP.append((window, panel, tab, ctl))
     return window, panel, tab, ctl
 
 
@@ -320,13 +340,8 @@ def test_profile_marks_only_what_changed(pi):
 
 
 def test_to_usb_stick(tmp_path, monkeypatch):
-    _qt()
-    from PyQt6.QtWidgets import QMessageBox, QWidget
-
-    from spinslicer.printer_controller import PrinterController
-    from spinslicer.ui_panels import ProcessSettingsPanel
-    window, panel, tab = QWidget(), ProcessSettingsPanel(), _FakeTab()
-    ctl = PrinterController(window, panel, tab, lambda: "", lambda: None, lambda _m: None)
+    from PyQt6.QtWidgets import QMessageBox
+    window, panel, tab, ctl = _controller()
     stick = removable.Stick(str(tmp_path), "SPIN (E:)")
     monkeypatch.setattr(removable, "find_sticks", lambda: [stick])
     ejected = []
