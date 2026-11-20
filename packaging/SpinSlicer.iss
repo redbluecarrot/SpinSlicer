@@ -1,6 +1,7 @@
 #define MyAppName "SpinSlicer"
 #define MyAppPublisher "SpinSlicer maintainers"
 #define MyAppExeName "SpinSlicer.exe"
+#define MyAppUserModelID "SpinSlicer.OpenCAL.Slicer"
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.8.2"
@@ -46,8 +47,11 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+; AppUserModelID = APP_USER_MODEL_ID in spinslicer/app.py. The window sets that ID, and the
+; taskbar finds the button's icon (and what a pin relaunches) through the shortcut that carries it;
+; without it the icon lives only in the icon cache and goes blank when the cache is cleared.
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; AppUserModelID: "{#MyAppUserModelID}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; AppUserModelID: "{#MyAppUserModelID}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent

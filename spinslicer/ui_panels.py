@@ -48,6 +48,8 @@ from spinslicer.constants import (
     DEFAULT_FRAME_RATE_HZ,
     DEFAULT_NUM_FRAMES,
     DEFAULT_OUTPUT_RESOLUTION,
+    DEFAULT_RESIN_ALPHA_PER_MM,
+    DEFAULT_RESIN_N,
     FILL_FRACTION,
     VAT_HEIGHT_RATIO,
 )
@@ -537,8 +539,8 @@ class ProcessSettingsPanel(QWidget):
         self.projector_irradiance = Stepper(0.0, 200.0, 0.0, 0.5, 2, "мВт/см²")
         self.n_glass = Stepper(1.0, 2.0, 1.51, 0.01, 2)
         self.n_liquid = Stepper(1.0, 2.0, 1.45, 0.01, 2)
-        self.alpha_absorption = Stepper(0.0, 0.1, 0.0, 0.001, 3, "/мм")
-        self.n_resin = Stepper(1.0, 2.0, 1.50, 0.01, 2)
+        self.alpha_absorption = Stepper(0.0, 0.1, DEFAULT_RESIN_ALPHA_PER_MM, 0.001, 3, "/мм")
+        self.n_resin = Stepper(1.0, 2.0, DEFAULT_RESIN_N, 0.01, 2)
         self.gel_dose = Stepper(0.0, 5000.0, 0.0, 10.0, 1, "мДж/см³")
         self.hints_switch = Switch(False)
         self.update_switch = Switch(True)
@@ -1123,6 +1125,7 @@ class ProcessSettingsPanel(QWidget):
                 size = None
             if size in RESOLUTIONS:
                 self._settings.setValue("ui/resolution3", float(RESOLUTIONS.index(size)))
+        self._migrate_resin_defaults()
         for key, widget in self._persisted().items():
             stored = self._settings.value(key, None)
             if stored is None:
@@ -1143,6 +1146,20 @@ class ProcessSettingsPanel(QWidget):
         style = str(self._settings.value("ui/line_style", "straight"))
         index = {"straight": 0, "sketch": 1, "live": 2}.get(style, 0)
         self.line_style.setCurrentIndex(index)
+
+    def _migrate_resin_defaults(self) -> None:
+        """Once (0.8.3): absorption 0 ("unknown") and n 1.50 were the old placeholders;
+        they give way to the OpenCAL Resin Clear defaults. A value set by hand stays."""
+        if str(self._settings.value("physics/resin_defaults", "")) == "opencal-clear":
+            return
+        for key, placeholder in (("physics/alpha", 0.0), ("ui/n_resin", 1.50)):
+            stored = self._settings.value(key, None)
+            try:
+                if stored is not None and abs(float(stored) - placeholder) < 1e-9:
+                    self._settings.remove(key)
+            except (TypeError, ValueError):
+                self._settings.remove(key)
+        self._settings.setValue("physics/resin_defaults", "opencal-clear")
 
     def _save(self, key: str, widget: QWidget) -> None:
         if isinstance(widget, Switch):
