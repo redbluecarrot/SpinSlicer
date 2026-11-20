@@ -384,7 +384,9 @@ class CALSlicerMainWindow(QMainWindow):
             self, panel, self._settings,
             busy=lambda: self._job_controller.active() or self.projector_tab.is_projecting(),
             log=self._log, progress=self._set_progress)
-        self.statusBar().insertPermanentWidget(0, self.updates.status_button)
+        status_bar = self.statusBar()
+        if status_bar is not None:
+            status_bar.insertPermanentWidget(0, self.updates.status_button)
         panel.sceneChanged.connect(self._scene_timer.start)
         panel.canvasChanged.connect(self._apply_canvas)
         panel.settingsChanged.connect(self._refresh_chips)

@@ -250,7 +250,7 @@ def swap_binary(new_binary: Path, executable: Optional[str] = None) -> Path:
 
 def launch(path: Path, args: tuple[str, ...] = ()) -> None:
     flags = 0
-    if os.name == "nt":
+    if sys.platform == "win32":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     env = dict(os.environ)
     # A PyInstaller onefile child must unpack itself, not reuse this process's folder.
