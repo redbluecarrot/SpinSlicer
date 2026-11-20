@@ -1148,7 +1148,7 @@ class ProcessSettingsPanel(QWidget):
         self.line_style.setCurrentIndex(index)
 
     def _migrate_resin_defaults(self) -> None:
-        """Once (0.8.3): absorption 0 ("unknown") and n 1.50 were the old placeholders;
+        """Once (0.8.2): absorption 0 ("unknown") and n 1.50 were the old placeholders;
         they give way to the OpenCAL Resin Clear defaults. A value set by hand stays."""
         if str(self._settings.value("physics/resin_defaults", "")) == "opencal-clear":
             return
